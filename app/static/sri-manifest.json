@@ -2,14 +2,14 @@
  "algorithme": "sha384",
  "fichiers": {
   "/static/app.js": {
-   "integrity": "sha384-1QX1oQI0IsMBGQHqBh/i0dC33cti6FJeqp+01Kdib3zjSM5cSNrgYNerisWLX0dh",
-   "octets": 473616,
-   "sha256": "f68b6b284d04c3ca0f102ac3ba755807116e7f3fc9b93f2cae8154c40f680f03"
+   "integrity": "sha384-bFT3kFYFSIKPy/R33MAJhH7zEjBpx/pZLkccgolw5D15yXojreJq4uSlVNkEHxuN",
+   "octets": 486119,
+   "sha256": "7de996a20ac563a56a11c766e725d3d4c11682dfb2146fa74fa0d8429bd06987"
   },
   "/static/carnet-notes.js": {
-   "integrity": "sha384-LAquTAPg7/U1CPH4oQyM3bAovKYtUsjA5KmecZa8/vtcEPHrfigD1FjVceOH45i6",
-   "octets": 36541,
-   "sha256": "7477e33aa61cdd8044a86d89103f935a9bdf126b2076819ac5a7eeb358a1d145"
+   "integrity": "sha384-rNhlyqrjhKIiqL/xGL3y8DNWtllOzsqPT/r0od3igtWeT9N+xqDolMztixTiIng6",
+   "octets": 37133,
+   "sha256": "ada05f91b8d6b03bd8b415d83896c39dda3d4ea7215d744faef695f6fe30b0d9"
   },
   "/static/cotraitance-crypto.js": {
    "integrity": "sha384-LfIUJUio5EOqmxaVvhatEuTAAt6Duzw/pZHbdBAxOSWQxagrKbYaeNFZxzjc8REs",
@@ -17,14 +17,14 @@
    "sha256": "c7ec3846e80d42f09b317a839e97f916ce5f03e577b477140aaeb880ea7fb73a"
   },
   "/static/i18n.js": {
-   "integrity": "sha384-PBAmdqpanieD+uOBUwLaipTce9nKFT075y7UuXV9Lu8PctHYgtJAKjs4z8w8kWBZ",
-   "octets": 52140,
-   "sha256": "137cb355964d66864a64d0b34f25b45db7d2412e022eaae15f1ff75f326a8a36"
+   "integrity": "sha384-Qy4xfA6X64tNtS1QoeHLMB0WKVrmpIDpiy2JjAOR8jfaxJHIkTIyLU16G70hcMlw",
+   "octets": 69304,
+   "sha256": "240fac972ad3199a0b697d95abdb6fd7a30b917f12da5452279c9dd4b3f718de"
   },
   "/static/redaction-partenaire.js": {
-   "integrity": "sha384-6u2dcizU1R7TgbFpANxwY3jDSA7O0EQpkhqXfp1A4RwHslj7somFoJxnE+iDz027",
+   "integrity": "sha384-a3BQ5CRAqvM5N/hPEMkni8dSIvc/2YxRRPkFUoPmocI3uCl+FckaoEW302Jwsjlb",
    "octets": 89218,
-   "sha256": "9c417942023cb3120e278bd558d107bd6140d868ce7ec824731ef0ecb6b68598"
+   "sha256": "a6a3493f3db168ddf36d7e092deda9933ea1ada2da815672dee7d1ea58ff9ab3"
   },
   "/static/sources-publiques.js": {
    "integrity": "sha384-/0soYF6qmMI5KHOb/uzkHBoYNeOr5+R784XFb0c0+HjUkhtEyVBgunl6Xo08Dok+",

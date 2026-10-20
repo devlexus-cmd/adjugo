@@ -258,7 +258,8 @@ def test_inviter_un_candidat_rattache_lie_l_invitation(client, auth):
     rows = {x["link_id"]: x for x in client.get(f"/api/cotraitants/project/{pid}", headers=h).json()}
     assert rows[lien]["invite_id"] == inv["id"] and rows[lien]["formulaires"] is False
     js = _static("app.js")
-    assert "lc.nom === this.ao.share.form.company_name) ? { link_id: lc.id }" in js
+    # Réorganisation, vague 2a (A2) : la fenêtre d'invitation unique porte le candidat (link_id) jusqu'à POST /invites.
+    assert "v.link_id ? { link_id: v.link_id } : {}" in js and "cotraitantId: fiche ? fiche.id : \"\", link_id: lid" in js
 
 
 def test_recherche_sans_etapes_3_et_4_ni_rattacher():
@@ -266,7 +267,9 @@ def test_recherche_sans_etapes_3_et_4_ni_rattacher():
     assert ">Rattacher</button>" not in html and "aoAttachFromGroup" not in js + html
     assert "srcGenerate" not in js + html and "src.ct." not in js + html and "Étape 3" not in html
     assert "Ouvrir le marché" in html and "Inviter un partenaire" in html and "srcOuvrirMarche(" in js
-    assert "Ajouter un sous-traitant (DC4)" in html and 'aoGrpInvite({ name: c.nom })' in html
+    # Réorganisation, vague 2a (A2) : une entreprise trouvée dans le registre s'invite par lien, avec son SIRET (identité
+    # relue par le serveur), depuis la recherche de « Qui me complète ? ».
+    assert "Ajouter un sous-traitant (DC4)" in html and "rnInviteOpen({ siret: c.siret, name: c.nom, city: c.ville })" in html
     assert '{ company: c, role: "sous_traitant" }' in js
     # Plus de choix « Chef de file / Partenaire » pour une entreprise trouvée dans SIRENE.
     assert '<option value="mandataire">Chef de file</option><option value="cotraitant">Partenaire</option>' not in html

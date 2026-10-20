@@ -8,7 +8,9 @@
  *     tiré de « Comment vous serez noté » (critères et sous-critères), la lecture du courrier collé sans IA ou avec
  *     l'IA en option, les notes validées, le constat et, pour un marché gagné, « Ajouter ce dossier à mon
  *     savoir-faire » ;
- *   • mode « tableau » (tableau de bord) : « Où vous perdez des points » et les rappels « Demandez vos notes ».
+ *   • mode « tableau » (Mes marchés › Bilan) : « Où vous perdez des points » et les rappels « Demandez vos notes » ;
+ *   • mode « rappels » (accueil, réorganisation vague 2a) : les seuls rappels « Demandez vos notes » (des actions), rien
+ *     quand il n'y en a pas.
  *
  * Règles tenues ici (le serveur les impose aussi) :
  *   • une valeur lue dans le courrier (sans IA ou avec l'IA) n'est qu'une PROPOSITION : elle montre la ligne du
@@ -137,7 +139,7 @@
 
   /**
    * mount(el, opts) — opts :
-   *   mode          "marche" | "tableau"
+   *   mode          "marche" | "tableau" | "rappels"
    *   pid           identifiant du marché (mode « marche »)
    *   headers       () => en-têtes d'authentification
    *   onPartenaire  () => ouvre le réseau de partenaires (« Chercher un partenaire qui couvre ce manque »)
@@ -163,7 +165,7 @@
 
     async function load() {
       const seq = (st.seq = (st.seq || 0) + 1);     // deux relectures croisées : seule la dernière compte
-      const r = await call("GET", o.mode === "tableau" ? "/tableau" : "/" + encodeURIComponent(o.pid));
+      const r = await call("GET", o.mode === "tableau" || o.mode === "rappels" ? "/tableau" : "/" + encodeURIComponent(o.pid));
       if (st.destroyed || seq !== st.seq) return;
       if (!r.ok) { st.d = null; st.err = r.status === 404 ? "" : r.message; render(); return; }
       st.d = r.data; st.err = "";
@@ -174,7 +176,7 @@
     function render() {
       if (st.destroyed) return;
       const ouverts = new Set(Array.from(el.querySelectorAll("details[open]")).map(x => x.dataset.k || ""));
-      el.innerHTML = o.mode === "tableau" ? renderTableau() : renderMarche();
+      el.innerHTML = o.mode === "tableau" ? renderTableau() : o.mode === "rappels" ? renderRappels() : renderMarche();
       el.querySelectorAll("details[data-k]").forEach(x => { if (ouverts.has(x.dataset.k)) x.open = true; });
       try { root.lucide && root.lucide.createIcons({ root: el }); } catch (e) {}
     }
@@ -186,15 +188,24 @@
         : '<div class="cn-ok small cn-mt8" role="status">' + ico("check", 14) + "<span>" + cnEsc(m.txt) + "</span></div>");
     }
 
+    function rappelHtml(r) {
+      return '<button type="button" class="alert-callout is-link cn-mt8" data-act="ouvrir" data-pid="' + Number(r.project_id) + '">' + ico("bell", 16)
+        + '<div><b>Demandez vos notes : ' + cnEsc(r.nom) + "</b>" + '<div class="small">Perdu le ' + cnEsc(r.perdu_le_jj) + ". " + cnEsc(r.message) + "</div></div></button>";
+    }
+
+    // Accueil : les rappels seuls (« Demandez vos notes »), sans carte quand il n'y en a pas.
+    function renderRappels() {
+      const d = st.d;
+      if (!d || !(d.rappels || []).length) return "";
+      return '<div class="cn-rappels">' + d.rappels.map(rappelHtml).join("") + "</div>";
+    }
+
     function renderTableau() {
       const d = st.d;
       if (!d || (!(d.familles || []).length && !(d.rappels || []).length)) return "";
       let h = '<div class="card pad cn-tab"><div class="cn-head"><h3 class="cn-title">Où vous perdez des points</h3>' + tip(d.bulle) + "</div>";
       if (d.marches) h += '<div class="muted small cn-sub">' + d.marches + (d.marches > 1 ? " marchés notés" : " marché noté") + "</div>";
-      (d.rappels || []).forEach(r => {
-        h += '<button type="button" class="alert-callout is-link cn-mt8" data-act="ouvrir" data-pid="' + Number(r.project_id) + '">' + ico("bell", 16)
-          + '<div><b>Demandez vos notes : ' + cnEsc(r.nom) + "</b>" + '<div class="small">Perdu le ' + cnEsc(r.perdu_le_jj) + ". " + cnEsc(r.message) + "</div></div></button>";
-      });
+      (d.rappels || []).forEach(r => { h += rappelHtml(r); });
       if (d.constat) {
         h += '<div class="cn-constat small cn-mt8">' + ico("search", 14) + '<span style="flex:1;min-width:0">' + cnEsc(d.constat.message) + "</span>"
           + (d.constat.partenaire && o.onPartenaire ? '<button type="button" class="linkbtn small" data-act="partenaire">Chercher un partenaire qui couvre ce manque</button>' + tip("Ouvre le réseau de partenaires d'Adjugo. C'est un constat sur vos marchés, pas une recommandation.", true) : "") + "</div>";

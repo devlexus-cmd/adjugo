@@ -133,7 +133,8 @@ def test_les_messages_corriges_disent_le_chemin_d_aujourd_hui():
     from app.services import atelier_groupement as ag
     from app.services import preuves_publiques as pp
     from app.services import preuves_reprise as pr
-    assert "dans Mes marchés, onglet « Où je suis partenaire »" in ag.MSG_ESPACE_COMPTE
+    # Vague 2a (A2) : « Où je suis partenaire » est un filtre de Mes marchés (plus un onglet).
+    assert "dans Mes marchés, filtre « Où je suis partenaire »" in ag.MSG_ESPACE_COMPTE
     assert "Partagé" not in ag.MSG_ESPACE_COMPTE
     # Le même texte que le repli de l'écran du partenaire (redaction-partenaire.js), qui ne servait jamais.
     rp = (STATIC / "redaction-partenaire.js").read_text(encoding="utf-8")
@@ -145,11 +146,12 @@ def test_les_messages_corriges_disent_le_chemin_d_aujourd_hui():
     assert "générez-la dans « Convention et \"\n                                        \"accords » (page du marché, étape Préparer)" in red
     res = _py("app/routers/reseau.py")
     assert "depuis Partenaires › Réseau \"\n                    f\"Adjugo › Mon profil partenaire." in res
-    assert "(Partenaires › Réseau \"\n                    \"Adjugo › Invitations reçues)" in res
-    assert "<b>Partenaires › Réseau Adjugo › Invitations reçues</b>" in INV
+    # Vague 2a (A2) : les invitations reçues se traitent dans Mes marchés, filtre « Où je suis partenaire ».
+    assert "(Mes marchés, filtre \"\n                    \"« Où je suis partenaire »)" in res
+    assert "<b>Mes marchés</b>, filtre « Où je suis partenaire »" in INV and "Invitations reçues" not in INV
     assert "menu Réglages › Administration › Profils du réseau à valider" in _py("app/services/partner_network.py")
     # Ces chemins existent bien dans l'application.
-    assert ">Mon profil partenaire</button>" in HTML and "Invitations reçues<span" in HTML
+    assert ">Mon profil partenaire</button>" in HTML and "Invitations à traiter" in zone(HTML, "mes-marches-invitations")
     assert "Profils du réseau à valider" in zone(HTML, "vue-admin")
 
 
@@ -163,7 +165,7 @@ def test_le_partenaire_qui_a_un_compte_est_renvoye_vers_ou_je_suis_partenaire(cl
     v = client.get(f"/api/invite/{a['token']}/redaction")
     assert v.status_code == 200, v.text
     msg = v.json()["espace"]["message"]
-    assert "Mes marchés, onglet « Où je suis partenaire »" in msg and "Partagé avec moi" not in msg
+    assert "Mes marchés, filtre « Où je suis partenaire »" in msg and "Partagé avec moi" not in msg
     r = client.post(f"/api/invite/{a['token']}/redaction/espace", json={})
     assert r.status_code == 403 and r.json()["detail"]["code"] == "espace_par_le_compte"
     assert "Où je suis partenaire" in json.dumps(r.json(), ensure_ascii=False)
@@ -228,8 +230,8 @@ def test_courriels_des_alertes_sans_note_sur_100():
 
 # ═══ Décision 8 : l'accueil, Mes marchés, la vitrine ══════════════════════════════════════════════════════════
 
-def test_bilan_de_l_accueil_en_n_sur_m_et_seul_ou_a_plusieurs():
-    b = zone(HTML, "accueil-bilan")
+def test_bilan_de_mes_marches_en_n_sur_m_et_seul_ou_a_plusieurs():
+    b = zone(HTML, "bilan-gagne-perdu")       # vague 2a (A2) : « Où vous gagnez / perdez » est dans Mes marchés › Bilan
     assert "win_rate }}%" not in b and "win_rate||0 }}%" not in b and "taux global" not in b
     assert not re.search(r"\}\}\s*%", b), "plus aucun pourcentage affiché dans le bilan"
     assert "{{ gagnesSur(stats.by_status && stats.by_status.gagne, stats.decided) }}" in b

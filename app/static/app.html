@@ -23,7 +23,7 @@
 <script src="/static/vendor/lucide-1.20.0.min.js" integrity="sha384-vEpkK5oidsrH6UhRc6tAPlgJZ/qXFwumFY+Kx8vBSeZ7NBag809YZCSmxFYGe/pt"></script>
 <!-- Chiffrement par membre du détail de chiffrage (co-traitance v2) : window.AdjugoCrypto, chargé AVANT app.js -->
 <script src="/static/cotraitance-crypto.js" integrity="sha384-LfIUJUio5EOqmxaVvhatEuTAAt6Duzw/pZHbdBAxOSWQxagrKbYaeNFZxzjc8REs"></script>
-<script src="/static/i18n.js" integrity="sha384-PBAmdqpanieD+uOBUwLaipTce9nKFT075y7UuXV9Lu8PctHYgtJAKjs4z8w8kWBZ" defer></script>
+<script src="/static/i18n.js" integrity="sha384-Qy4xfA6X64tNtS1QoeHLMB0WKVrmpIDpiy2JjAOR8jfaxJHIkTIyLU16G70hcMlw" defer></script>
 </head>
 <body>
 <div id="app">
@@ -185,7 +185,7 @@
                   <summary>Où retrouver vos écrans</summary>
                   <ul class="small reorg-liste">
                     <li>« Tableau de bord » s'appelle « Accueil ».</li>
-                    <li>Mes marchés : « Partagé avec moi » devient « Où je suis partenaire », « Mes groupements » devient « À plusieurs », avec Devis et factures.</li>
+                    <li>Mes marchés : « Partagé avec moi » et « Mes groupements » sont les filtres « Où je suis partenaire » et « À plusieurs » de la liste ; Devis et factures et le Bilan sont des onglets.</li>
                     <li>Partenaires : Mes partenaires, Réseau Adjugo (anciennement « Réseau ») et Contacts.</li>
                     <li>Mes documents : Mes pièces et Mon savoir-faire. Mon entreprise : Identité, Mes critères et Mes preuves.</li>
                     <li>Trouver des marchés : les fins de contrat (anciennement « Radar des échéances ») sont dans l'onglet « À venir », vos alertes dans « Mes alertes ».</li>
@@ -333,57 +333,14 @@
               </div>
 
             </div>
-          <div data-test="accueil-bilan" v-if="stats.segments && (stats.segments.by_zone.length||stats.segments.loss_reasons.length||(stats.segments.by_groupement&&stats.segments.by_groupement.length))" class="card pad dash-wide">
-              <h3>Où vous gagnez / perdez</h3>
-              <!-- Décision 8 : « N sur M » (le seul pourcentage est le couple « Seul X % · À plusieurs Y % » d'un marché) -->
-              <div class="muted small" style="margin:2px 0 12px">{{ stats.decided||0 }} {{ pl(stats.decided||0, 'marché terminé', 'marchés terminés') }} · {{ gagnesSur(stats.by_status && stats.by_status.gagne, stats.decided) }}</div>
-              <!-- Synthèse en langage clair : la leçon apprise de vos marchés (boucle gagné/perdu) -->
-              <div v-if="winInsights.length" style="margin:0 0 12px;padding:10px 12px;background:var(--accent-weak);border-radius:9px">
-                <div class="row small" style="gap:6px;font-weight:600;margin-bottom:4px;color:var(--accent-text)"><i data-lucide="lightbulb" style="width:14px;height:14px"></i>Ce que vos marchés vous apprennent</div>
-                <ul style="margin:0;padding-left:18px">
-                  <li v-for="(ins,i) in winInsights" :key="i" class="small" style="margin:3px 0" v-html="ins"></li>
-                </ul>
-              </div>
-              <div class="seg-grid">
-              <div v-if="stats.segments.by_zone.length">
-                <div class="sectitle">Par département</div>
-                <div v-for="z in stats.segments.by_zone.slice(0,4)" :key="'z'+z.key" class="row small" style="padding:4px 0;gap:8px">
-                  <span class="seg-l">{{ z.key==='Inconnu' ? 'Lieu non précisé' : 'Dépt ' + z.key }}</span>
-                  <div style="flex:1;height:6px;background:var(--hairline);border-radius:4px;overflow:hidden"><div :style="'height:6px;border-radius:4px;width:'+z.win_rate+'%;background:var(--success)'"></div></div>
-                  <span class="num muted seg-v">{{ z.won }} sur {{ z.total }}</span>
-                </div>
-              </div>
-              <div v-if="stats.segments.by_groupement && stats.segments.by_groupement.length">
-                <div class="sectitle">Seul ou à plusieurs</div>
-                <div v-for="g in stats.segments.by_groupement" :key="'g'+g.key" class="row small" style="padding:4px 0;gap:8px">
-                  <span class="seg-l">{{ segmentSeul(g.key) }}</span>
-                  <div style="flex:1;height:6px;background:var(--hairline);border-radius:4px;overflow:hidden"><div :style="'height:6px;border-radius:4px;width:'+g.win_rate+'%;background:var(--accent)'"></div></div>
-                  <span class="num muted seg-v">{{ g.won }} sur {{ g.total }}</span>
-                </div>
-              </div>
-              <div v-if="stats.segments.by_partner && stats.segments.by_partner.length">
-                <div class="sectitle">Par partenaire</div>
-                <div v-for="pt in stats.segments.by_partner.slice(0,4)" :key="'pt'+pt.key" class="row small" style="padding:4px 0;gap:8px">
-                  <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" :title="pt.key">{{ pt.key }}</span>
-                  <span class="num muted seg-v">{{ pt.won }} sur {{ pt.total }}</span>
-                </div>
-              </div>
-              <div v-if="stats.segments.by_type && stats.segments.by_type.length">
-                <div class="sectitle">Par type de marché</div>
-                <div v-for="ty in stats.segments.by_type.slice(0,4)" :key="'ty'+ty.key" class="row small" style="padding:4px 0;gap:8px">
-                  <span class="seg-l">{{ ty.key }}</span>
-                  <div style="flex:1;height:6px;background:var(--hairline);border-radius:4px;overflow:hidden"><div :style="'height:6px;border-radius:4px;width:'+ty.win_rate+'%;background:var(--success)'"></div></div>
-                  <span class="num muted seg-v">{{ ty.won }} sur {{ ty.total }}</span>
-                </div>
-              </div>
-              <div v-if="stats.segments.loss_reasons.length">
-                <div class="sectitle">Motifs de perte</div>
-                <div v-for="r in stats.segments.loss_reasons.slice(0,4)" :key="'lr'+r.reason" class="row small" style="padding:3px 0"><span style="flex:1">{{ nbspUnits(r.reason) }}</span><span class="pill no_go" style="font-size:10px">{{ r.count }}</span></div>
-              </div>
-              </div>
+          <div data-test="accueil-bilan" v-if="stats.decided" class="card pad dash-wide bilan-ligne">
+              <i data-lucide="chart-column" class="bilan-ic" aria-hidden="true"></i>
+              <span class="small bilan-tx"><b>Bilan</b> · {{ stats.decided }} {{ pl(stats.decided, 'marché terminé', 'marchés terminés') }} · {{ gagnesSur(stats.by_status && stats.by_status.gagne, stats.decided) }}</span>
+              <button type="button" class="btn ghost sm" @click="go('bilan')">Voir le bilan<i data-lucide="arrow-right"></i></button>
             </div>
-            <!-- Rédaction, vague 6 (F) : « Où vous perdez des points » et les rappels « Demandez vos notes » (carnet de notes) -->
-            <carnet-notes data-test="accueil-carnet" mode="tableau" class="dash-wide"></carnet-notes>
+            <!-- Rédaction, vague 6 (F) : les rappels « Demandez vos notes » (des actions) ; « Où vous perdez des points » est dans
+                 Mes marchés › Bilan (réorganisation, vague 2a, A2) -->
+            <carnet-notes data-test="accueil-carnet" mode="rappels" class="dash-wide"></carnet-notes>
           </div>
         </section>
 
@@ -415,35 +372,9 @@
               <div class="field" style="margin:0;min-width:160px"><label>Statut</label>
                 <select v-model="ao.project.status" @change="aoStatus"><option v-for="s in statuses2" :key="s" :value="s">{{ statusLabel(s) }}</option></select></div>
             </div>
-            <!-- « Inviter un partenaire » : le bouton le plus visible de chaque marché (décision 0), à toutes
-                 les étapes. Le formulaire s'ouvre ici même ; la liste des invitations est dans Préparer. -->
-            <button data-test="marche-inviter" type="button" class="btn primary" @click="ao.share.open=!ao.share.open" :aria-expanded="ao.share.open?'true':'false'" style="margin-top:12px;width:100%;justify-content:center;padding:12px;font-size:14px"><i data-lucide="user-plus"></i>Inviter un partenaire</button>
-
-            <div data-test="marche-inviter-formulaire" v-if="ao.share.open" ref="inviteForm" tabindex="-1" class="mk-inv-form" style="margin-top:12px;border:1px solid var(--border);border-radius:8px;padding:12px;background:var(--surface-2)">
-              <div class="row wrap" style="gap:8px">
-                <input class="inp" v-model="ao.share.form.company_name" placeholder="Entreprise partenaire" style="width:210px">
-                <input class="inp" v-model="ao.share.form.recipient" placeholder="Nom / email du contact (optionnel)" style="width:230px">
-                <select class="inp" v-model="ao.share.form.role" style="width:150px">
-                  <option value="cotraitant">Partenaire</option>
-                  <option value="sous_traitant">Sous-traitant</option>
-                </select>
-                <select class="inp" v-model.number="ao.share.form.expires_days" style="width:160px">
-                  <option :value="7">Expire dans 7 jours</option>
-                  <option :value="30">Expire dans 30 jours</option>
-                  <option :value="90">Expire dans 90 jours</option>
-                  <option :value="0">Sans expiration</option>
-                </select>
-              </div>
-              <label class="row small" style="gap:7px;margin-top:10px;align-items:center;cursor:pointer"><input type="checkbox" v-model="ao.share.form.can_contribute"> Laisser le partenaire <b>apporter sa part</b> (ses références, son lot, sa partie du dossier)</label>
-              <label class="row small" style="gap:7px;margin-top:8px;align-items:center;cursor:pointer"><input type="checkbox" v-model="ao.share.form.can_view_docs"> Autoriser le téléchargement des pièces du dossier</label>
-              <div class="row" style="margin-top:11px"><button class="btn primary" @click="aoCreateInvite()" :disabled="ao.share.busy"><span v-if="ao.share.busy" class="spin"></span><i v-else data-lucide="link"></i>Générer le lien d'invitation</button></div>
-            </div>
-
-            <div v-if="ao.share.lastUrl" class="row" style="margin-top:10px;gap:8px;align-items:center;padding:9px 11px;border:1px solid var(--accent);border-radius:8px;background:var(--accent-weak)">
-              <i data-lucide="link" style="width:15px;height:15px;color:var(--accent-text)"></i>
-              <input class="inp" :value="ao.share.lastUrl" readonly aria-label="Lien d'invitation à copier" style="flex:1;font-size:12px" onclick="this.select()" @focus="$event.target.select()">
-              <button class="btn sm" @click="copyInvite(ao.share.lastUrl)"><i data-lucide="copy"></i>Copier</button>
-            </div>
+            <!-- « Inviter un partenaire » : le bouton le plus visible de chaque marché (décision 0), à toutes les étapes. Il
+                 ouvre la fenêtre d'invitation unique (vague 2a, A2) : réseau Adjugo, partenaire connu, registre officiel. -->
+            <button data-test="marche-inviter" type="button" class="btn primary" @click="aoInviter()" aria-haspopup="dialog" style="margin-top:12px;width:100%;justify-content:center;padding:12px;font-size:14px"><i data-lucide="user-plus"></i>Inviter un partenaire</button>
             <div class="cards cols-4" style="margin-top:14px">
               <div class="kpi"><div class="kh"><span>Date limite</span><i data-lucide="calendar-clock"></i></div><div class="v" style="font-size:15px">{{ aoDetails().date_limite || ao.project.deadline || 'non précisée' }}</div></div>
               <div class="kpi"><div class="kh"><span>Montant estimé</span><i data-lucide="banknote"></i></div><div class="v" style="font-size:15px">{{ aoDetails().budget_estime || 'non publié' }}</div></div>
@@ -729,75 +660,133 @@
               </div>
             </div>
 
-            <!-- « Qui me complète ? » (co-traitance v2, vague 3) : lot par lot, les
-                 profils du réseau Adjugo classés (un RANG + des critères sourcés et datés, jamais une note), puis le
-                 repli SIRENE. Le seul pourcentage reste celui de la simulation (« Simuler le groupement »). -->
-            <div data-test="marche-qui-me-complete" v-if="ao.project.ai_analysis" class="card rn-pm" ref="pmCard" role="region" aria-labelledby="pm-h">
-              <div class="ch" style="flex-wrap:wrap;row-gap:6px"><i data-lucide="puzzle" style="color:var(--accent-text)"></i><h3 id="pm-h">Qui me complète ?</h3><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Lot par lot, les entreprises du réseau Adjugo qui font ce que vous ne faites pas, puis celles du registre officiel des entreprises (Insee).<template v-if="ao.pm.d && ao.pm.d.explication"> {{ ao.pm.d.explication }}</template></span></button><div class="spacer"></div>
-                <button type="button" class="btn sm primary" @click="aoPmLoad()" :disabled="ao.pm.loading" :aria-busy="ao.pm.loading?'true':'false'"><span v-if="ao.pm.loading" class="spin"></span><i v-else :data-lucide="ao.pm.loaded?'refresh-cw':'search'"></i>{{ ao.pm.loaded ? 'Relancer la recherche' : 'Chercher des partenaires' }}</button></div>
+            <!-- « Qui me complète ? » : UN SEUL composant pour trouver qui vous complète (co-traitance v2, vague 3 ;
+                 réorganisation, vague 2a, A2). Partie par partie, trois réservoirs dans le même ordre, chacun avec son
+                 compte : Réseau Adjugo (un RANG et des critères sourcés et datés, jamais une note), Mes partenaires (votre
+                 annuaire), Entreprises de la zone (registre officiel) ; puis la recherche libre dans la zone, avec la
+                 déclaration d'un sous-traitant (DC4). « Inviter » ouvre la fenêtre d'invitation unique. Le seul
+                 pourcentage reste celui de la simulation (« Simuler le groupement »). Le 4e réservoir de l'étude
+                 (« Déjà retenus sur des marchés publics ») viendra avec le moteur, V3. -->
+            <div data-test="marche-qui-me-complete" class="card rn-pm" ref="pmCard" tabindex="-1" role="region" aria-labelledby="pm-h">
+              <div class="ch" style="flex-wrap:wrap;row-gap:6px"><i data-lucide="puzzle" style="color:var(--accent-text)"></i><h3 id="pm-h">Qui me complète ?</h3><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Partie par partie, dans le même ordre : les entreprises du réseau Adjugo qui font ce que vous ne faites pas, celles de votre annuaire « Mes partenaires », puis celles de la zone, trouvées dans le registre officiel des entreprises (Insee).<template v-if="ao.pm.d && ao.pm.d.explication"> {{ ao.pm.d.explication }}</template></span></button><div class="spacer"></div>
+                <button v-if="ao.project.ai_analysis" type="button" class="btn sm primary" @click="aoPmLoad()" :disabled="ao.pm.loading" :aria-busy="ao.pm.loading?'true':'false'"><span v-if="ao.pm.loading" class="spin"></span><i v-else :data-lucide="ao.pm.loaded?'refresh-cw':'search'"></i>{{ ao.pm.loaded ? 'Relancer la recherche' : 'Chercher des partenaires' }}</button></div>
               <div class="cb rn-pm-b">
                 <div class="sr-only" role="status" aria-live="polite">{{ ao.pm.live }}</div>
-                <p v-if="!ao.pm.loaded && !ao.pm.loading && !ao.pm.error" class="muted small">Aucune recherche lancée pour ce marché.</p>
-                <div v-if="ao.pm.loading && !ao.pm.d" class="muted small"><span class="spin"></span> Recherche des partenaires, lot par lot…</div>
+                <p v-if="!ao.project.ai_analysis" class="muted small">Analysez d'abord le marché (étape Lire) : Adjugo cherche alors, partie par partie, les entreprises qui vous complètent. Vous pouvez déjà chercher une entreprise de la zone, plus bas.</p>
+                <p v-else-if="!ao.pm.loaded && !ao.pm.loading && !ao.pm.error" class="muted small">Aucune recherche lancée pour ce marché.</p>
+                <div v-if="ao.pm.loading && !ao.pm.d" class="muted small"><span class="spin"></span> Recherche des partenaires, partie par partie…</div>
                 <div v-if="ao.pm.error" class="conv-err" role="alert"><i data-lucide="circle-alert"></i><div style="flex:1;min-width:0">{{ ao.pm.error }} <button type="button" class="linkbtn" @click="aoPmLoad()">Réessayer</button></div></div>
                 <template v-for="pd in (ao.pm.d ? [ao.pm.d] : [])" :key="'pmd'">
                   <div v-for="(w,wi) in (pd.warnings||[])" :key="'pmw'+wi" class="warn-box"><i data-lucide="triangle-alert" style="width:15px;height:15px;flex:none;margin-top:1px"></i><span>{{ w }}</span></div>
                   <div v-if="!pd.reseau_visible && pd.message" class="rn-callout">
                     <i data-lucide="lock"></i>
-                    <div class="rn-callout-t"><b>{{ pd.message }}</b><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Le réseau fonctionne dans les deux sens : publiez votre profil partenaire pour voir les entreprises du réseau et les inviter. Les entreprises du registre officiel restent proposées ci-dessous.</span></button></div>
+                    <div class="rn-callout-t"><b>{{ pd.message }}</b><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Le réseau fonctionne dans les deux sens : publiez votre profil partenaire pour voir les entreprises du réseau et les inviter. Vos partenaires et les entreprises du registre officiel restent proposés ci-dessous.</span></button></div>
                     <button type="button" class="btn sm primary" @click="rnGoPublish()"><i data-lucide="send"></i>{{ rnPubCta() }}</button>
                   </div>
-                  <p v-if="!(pd.lots||[]).length" class="muted small">Aucun lot à compléter : d'après le dossier, vous couvrez seul les métiers repérés. <button type="button" class="linkbtn" @click="go('cotraitants')">Voir mes partenaires</button></p>
+                  <p v-if="!(pd.lots||[]).length" class="muted small">Aucune partie à compléter : d'après le dossier, vous couvrez seul les métiers repérés. <button type="button" class="linkbtn" @click="go('cotraitants')">Voir mes partenaires</button></p>
                   <section v-for="l in (pd.lots||[])" :key="pmLotId(l)" class="rn-lot" :aria-labelledby="pmLotId(l)">
                     <h4 :id="pmLotId(l)" class="rn-lot-h">{{ pmLotTitle(l) }}<span class="muted small rn-lot-m"><template v-if="l.metier_label && l.metier_label!==l.label">{{ l.metier_label }}</template><template v-if="l.departement"> · {{ l.departement_source==='suppose' ? 'département supposé : ' + l.departement : 'exécution dans le ' + l.departement }}</template></span></h4>
-                    <p v-if="l.message && l.message!==pd.message" class="muted small">{{ l.message }}</p>
-                    <!-- Profils du réseau, classés -->
-                    <article v-for="c in (l.reseau||[])" :key="'pmr'+c.profile_id" class="rn-card rn-card-pm" :aria-labelledby="'pmr-'+pmLotId(l)+c.profile_id">
-                      <div class="rn-card-h">
-                        <span class="rn-rang">n° {{ c.rang }}<span class="sr-only"> dans le classement</span></span>
-                        <div class="rn-card-t"><h5 :id="'pmr-'+pmLotId(l)+c.profile_id" class="rn-name">{{ c.name }}</h5><div class="muted small">{{ rnLieu(c) }}<span v-if="c.disponibilite"> · {{ c.disponibilite.label }}</span></div></div>
-                      </div>
-                      <div class="row wrap rn-g6" v-if="c.deja_partenaire || c.deja_invite || inviteDeclinedFor(c.name)">
-                        <span v-if="c.deja_partenaire" class="pill neutral rn-pill-sm">Déjà dans vos partenaires</span>
-                        <span v-if="c.deja_invite" class="pill go rn-pill-sm"><i data-lucide="check"></i>Déjà invité</span>
-                        <span v-else-if="inviteDeclinedFor(c.name)" class="pill declined rn-pill-sm">{{ declinedLabel(inviteDeclinedFor(c.name)) }}</span>
-                      </div>
-                      <rn-badges :badges="c.badges"></rn-badges>
-                      <details class="rn-det"><summary>Pourquoi ce rang</summary><rn-criteres :criteres="c.criteres"></rn-criteres></details>
-                      <div class="row wrap rn-g8 rn-acts">
-                        <button type="button" class="btn sm" @click="aoPmSimulate(c)" :disabled="ao.grp.simulating"><i data-lucide="scale"></i>Simuler le groupement</button>
-                        <button type="button" class="btn sm primary" @click="rnInviteOpen(c, { lot: pmLotPart(l) })" :disabled="c.deja_invite"><i data-lucide="user-plus"></i>{{ c.deja_invite ? 'Déjà invité' : (inviteDeclinedFor(c.name) ? 'Inviter à nouveau' : 'Inviter') }}</button>
-                        <button type="button" class="btn sm ghost" @click="rnOpenFiche(c.profile_id, { lot: pmLotPart(l), projectId: ao.project.id })"><i data-lucide="eye"></i>Voir la fiche</button>
-                      </div>
-                    </article>
-                    <!-- Repli : entreprises du registre SIRENE (hors réseau) -->
-                    <div v-if="(l.sirene||[]).length" class="rn-sub">Entreprises du registre officiel<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Le répertoire officiel des entreprises, tenu par l'Insee. Adjugo ne vous communique pas leur adresse : vous les invitez avec un lien à leur transmettre.</span></button></div>
-                    <article v-for="s in (l.sirene||[])" :key="'pms'+s.siret" class="rn-card rn-card-pm rn-card-sirene">
-                      <div class="rn-card-h">
-                        <div class="rn-card-t"><h5 class="rn-name">{{ s.name }}</h5><div class="muted small">{{ rnLieu(s) }}<span v-if="s.activite"> · {{ s.activite }}</span></div></div>
-                      </div>
-                      <div class="row wrap rn-g6">
-                        <span class="pill neutral rn-pill-sm">{{ s.statut_reseau }}</span>
-                        <span v-if="s.deja_partenaire" class="pill neutral rn-pill-sm">Déjà dans vos partenaires</span>
-                        <span v-if="s.deja_invite" class="pill go rn-pill-sm"><i data-lucide="check"></i>Déjà invité</span>
-                        <span v-else-if="inviteDeclinedFor(s.name)" class="pill declined rn-pill-sm">{{ declinedLabel(inviteDeclinedFor(s.name)) }}</span>
-                      </div>
-                      <rn-badges :badges="s.badges"></rn-badges>
-                      <div class="row wrap rn-g8 rn-acts">
-                        <button type="button" class="btn sm" @click="aoPmSimulate(s)" :disabled="ao.grp.simulating"><i data-lucide="scale"></i>Simuler le groupement</button>
-                        <button type="button" class="btn sm" @click="rnInviteOpen(s, { lot: pmLotPart(l) })" :disabled="s.deja_invite"><i data-lucide="link"></i>{{ s.deja_invite ? 'Déjà invité' : 'Inviter par lien' }}</button>
-                      </div>
-                    </article>
-                    <div v-if="l.sirene_message" class="row wrap rn-g8 rn-mt"><span class="muted small" style="flex:1;min-width:200px">{{ l.sirene_message }}</span><button v-if="l.num" type="button" class="btn sm" @click="aoPmLot(l)" :disabled="!!ao.pm.lotBusy" :aria-busy="ao.pm.lotBusy===String(l.num)?'true':'false'"><span v-if="ao.pm.lotBusy===String(l.num)" class="spin"></span><i v-else data-lucide="search"></i>Chercher pour ce lot</button></div>
-                    <p v-if="l.sirene_cherche && !(l.sirene||[]).length && (l.reseau||[]).length" class="muted small">Aucune autre entreprise trouvée dans le registre officiel pour ce lot.</p>
-                    <div v-if="!(l.reseau||[]).length && !(l.sirene||[]).length && l.sirene_cherche" class="rn-lot-empty">
-                      <span class="muted small">Aucune entreprise trouvée pour ce lot pour l'instant.</span>
-                      <div class="row wrap rn-g8"><button type="button" class="btn sm" @click="rnDiscover(l.metier, l.departement, l.metier_label)"><i data-lucide="search"></i>Chercher dans le registre officiel</button><button type="button" class="btn sm ghost" @click="go('cotraitants')"><i data-lucide="handshake"></i>Mes partenaires</button></div>
+                    <!-- 1. Réseau Adjugo : profils classés (un rang et des critères, jamais une note) -->
+                    <div data-test="complete-reseau" class="pm-res">
+                      <div class="rn-sub">Réseau Adjugo<span v-if="l.n_correspondants" class="pm-n">{{ l.n_correspondants }}<span class="sr-only"> {{ pl(l.n_correspondants, 'entreprise', 'entreprises') }}</span></span><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Les entreprises du réseau Adjugo qui font ce métier, classées (un rang et ses raisons, jamais une note). Adjugo leur envoie votre invitation : leur adresse vous est donnée quand elles ont accepté.</span></button></div>
+                      <p v-if="l.message && l.message!==pd.message" class="muted small">{{ l.message }}</p>
+                      <p v-else-if="pd.reseau_visible && !(l.reseau||[]).length" class="muted small">Aucune entreprise du réseau ne correspond encore à cette partie.</p>
+                      <p v-else-if="!pd.reseau_visible" class="muted small">Visibles quand votre profil partenaire est publié.</p>
+                      <article v-for="c in (l.reseau||[])" :key="'pmr'+c.profile_id" class="rn-card rn-card-pm" :aria-labelledby="'pmr-'+pmLotId(l)+c.profile_id">
+                        <div class="rn-card-h">
+                          <span class="rn-rang">n° {{ c.rang }}<span class="sr-only"> dans le classement</span></span>
+                          <div class="rn-card-t"><h5 :id="'pmr-'+pmLotId(l)+c.profile_id" class="rn-name">{{ c.name }}</h5><div class="muted small">{{ rnLieu(c) }}<span v-if="c.disponibilite"> · {{ c.disponibilite.label }}</span></div></div>
+                        </div>
+                        <div class="row wrap rn-g6" v-if="c.deja_partenaire || c.deja_invite || inviteDeclinedFor(c.name)">
+                          <span v-if="c.deja_partenaire" class="pill neutral rn-pill-sm">Déjà dans vos partenaires</span>
+                          <span v-if="c.deja_invite" class="pill go rn-pill-sm"><i data-lucide="check"></i>Déjà invité</span>
+                          <span v-else-if="inviteDeclinedFor(c.name)" class="pill declined rn-pill-sm">{{ declinedLabel(inviteDeclinedFor(c.name)) }}</span>
+                        </div>
+                        <rn-badges :badges="c.badges"></rn-badges>
+                        <details class="rn-det"><summary>Pourquoi ce rang</summary><rn-criteres :criteres="c.criteres"></rn-criteres></details>
+                        <div class="row wrap rn-g8 rn-acts">
+                          <button type="button" class="btn sm" @click="aoPmSimulate(c)" :disabled="ao.grp.simulating"><i data-lucide="scale"></i>Simuler le groupement</button>
+                          <button type="button" class="btn sm primary" @click="rnInviteOpen(c, { lot: pmLotPart(l) })" :disabled="c.deja_invite"><i data-lucide="user-plus"></i>{{ c.deja_invite ? 'Déjà invité' : (inviteDeclinedFor(c.name) ? 'Inviter à nouveau' : 'Inviter') }}</button>
+                          <button type="button" class="btn sm ghost" @click="rnOpenFiche(c.profile_id, { lot: pmLotPart(l), projectId: ao.project.id })"><i data-lucide="eye"></i>Voir la fiche</button>
+                        </div>
+                      </article>
+                    </div>
+                    <!-- 2. Mes partenaires : votre annuaire, par métier (l'email est celui que vous y avez saisi) -->
+                    <div data-test="complete-mes-partenaires" class="pm-res">
+                      <div class="rn-sub">Mes partenaires<span v-if="l.n_mes_partenaires" class="pm-n">{{ l.n_mes_partenaires }}<span class="sr-only"> {{ pl(l.n_mes_partenaires, 'entreprise', 'entreprises') }}</span></span><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Les entreprises de votre annuaire « Mes partenaires » dont le métier correspond à cette partie. Adjugo leur envoie l'invitation à l'email que vous avez noté ; sans email, vous copiez le lien.</span></button></div>
+                      <p v-if="!(l.mes_partenaires||[]).length" class="muted small">Aucune entreprise de votre annuaire pour cette partie. <button type="button" class="linkbtn" @click="go('cotraitants')">Mes partenaires</button></p>
+                      <article v-for="m in (l.mes_partenaires||[])" :key="'pmm'+m.cotraitant_id" class="rn-card rn-card-pm">
+                        <div class="rn-card-h">
+                          <div class="rn-card-t"><h5 class="rn-name">{{ m.name }}</h5><div class="muted small">{{ rnLieu(m) }}<span v-if="m.specialites"> · {{ m.specialites }}</span></div></div>
+                        </div>
+                        <div class="row wrap rn-g6" v-if="m.deja_invite || inviteDeclinedFor(m.name)">
+                          <span v-if="m.deja_invite" class="pill go rn-pill-sm"><i data-lucide="check"></i>Déjà invité</span>
+                          <span v-else-if="inviteDeclinedFor(m.name)" class="pill declined rn-pill-sm">{{ declinedLabel(inviteDeclinedFor(m.name)) }}</span>
+                        </div>
+                        <div class="row wrap rn-g8 rn-acts">
+                          <button type="button" class="btn sm" @click="aoPmSimulate(m)" :disabled="ao.grp.simulating"><i data-lucide="scale"></i>Simuler le groupement</button>
+                          <button type="button" class="btn sm primary" @click="aoPmInviterConnu(m)" :disabled="m.deja_invite"><i data-lucide="user-plus"></i>{{ m.deja_invite ? 'Déjà invité' : (inviteDeclinedFor(m.name) ? 'Inviter à nouveau' : 'Inviter') }}</button>
+                        </div>
+                      </article>
+                    </div>
+                    <!-- 3. Entreprises de la zone : le registre officiel (hors réseau) -->
+                    <div data-test="complete-zone" class="pm-res">
+                      <div class="rn-sub">Entreprises de la zone<span v-if="(l.sirene||[]).length" class="pm-n">{{ (l.sirene||[]).length }}<span class="sr-only"> {{ pl((l.sirene||[]).length, 'entreprise', 'entreprises') }}</span></span><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Le répertoire officiel des entreprises, tenu par l'Insee. Adjugo ne vous communique pas leur adresse : vous les invitez avec un lien à leur transmettre.</span></button></div>
+                      <article v-for="s in (l.sirene||[])" :key="'pms'+s.siret" class="rn-card rn-card-pm rn-card-sirene">
+                        <div class="rn-card-h">
+                          <div class="rn-card-t"><h5 class="rn-name">{{ s.name }}</h5><div class="muted small">{{ rnLieu(s) }}<span v-if="s.activite"> · {{ s.activite }}</span></div></div>
+                        </div>
+                        <div class="row wrap rn-g6">
+                          <span class="pill neutral rn-pill-sm">{{ s.statut_reseau }}</span>
+                          <span v-if="s.deja_partenaire" class="pill neutral rn-pill-sm">Déjà dans vos partenaires</span>
+                          <span v-if="s.deja_invite" class="pill go rn-pill-sm"><i data-lucide="check"></i>Déjà invité</span>
+                          <span v-else-if="inviteDeclinedFor(s.name)" class="pill declined rn-pill-sm">{{ declinedLabel(inviteDeclinedFor(s.name)) }}</span>
+                        </div>
+                        <rn-badges :badges="s.badges"></rn-badges>
+                        <div class="row wrap rn-g8 rn-acts">
+                          <button type="button" class="btn sm" @click="aoPmSimulate(s)" :disabled="ao.grp.simulating"><i data-lucide="scale"></i>Simuler le groupement</button>
+                          <button type="button" class="btn sm" @click="rnInviteOpen(s, { lot: pmLotPart(l) })" :disabled="s.deja_invite"><i data-lucide="link"></i>{{ s.deja_invite ? 'Déjà invité' : 'Inviter par lien' }}</button>
+                        </div>
+                      </article>
+                      <div v-if="l.sirene_message" class="row wrap rn-g8 rn-mt"><span class="muted small" style="flex:1;min-width:200px">{{ l.sirene_message }}</span><button v-if="l.num" type="button" class="btn sm" @click="aoPmLot(l)" :disabled="!!ao.pm.lotBusy" :aria-busy="ao.pm.lotBusy===String(l.num)?'true':'false'"><span v-if="ao.pm.lotBusy===String(l.num)" class="spin"></span><i v-else data-lucide="search"></i>Chercher pour cette partie</button></div>
+                      <p v-if="l.sirene_cherche && !(l.sirene||[]).length" class="muted small">Aucune entreprise de la zone trouvée dans le registre officiel pour cette partie. <button type="button" class="linkbtn" @click="aoPmZone(l)">Chercher autrement</button></p>
+                      <p v-else-if="!l.sirene_cherche && !l.sirene_message && !(l.sirene||[]).length" class="muted small">Le réseau répond déjà pour cette partie. <button type="button" class="linkbtn" @click="aoPmZone(l)">Chercher aussi dans la zone</button></p>
                     </div>
                   </section>
                   <div v-if="(pd.lots_couverts||[]).length" class="row wrap rn-g6 rn-mt"><span class="muted small">Couverts par vous :</span><span v-for="c in pd.lots_couverts" :key="'pmc'+(c.num||c.metier)" class="pill neutral rn-pill-sm">{{ pmLotTitle(c) }}</span></div>
-                  <div v-if="(pd.lots_non_reconnus||[]).length" class="row wrap rn-g6 rn-mt"><span class="muted small">Lots dont le métier n'a pas été reconnu :<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Adjugo n'a pas reconnu le métier de ces lots d'après leur intitulé : cherchez un partenaire à la main dans « Mes partenaires » ou dans le registre officiel des entreprises.</span></button></span><span v-for="c in pd.lots_non_reconnus" :key="'pmu'+(c.num||c.label)" class="pill neutral rn-pill-sm">{{ pmLotTitle(c) }}</span></div>
+                  <div v-if="(pd.lots_non_reconnus||[]).length" class="row wrap rn-g6 rn-mt"><span class="muted small">Parties dont le métier n'a pas été reconnu :<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Adjugo n'a pas reconnu le métier de ces parties d'après leur intitulé : cherchez un partenaire à la main, dans « Mes partenaires » ou dans la zone, plus bas.</span></button></span><span v-for="c in pd.lots_non_reconnus" :key="'pmu'+(c.num||c.label)" class="pill neutral rn-pill-sm">{{ pmLotTitle(c) }}</span></div>
                 </template>
+                <!-- Chercher une autre entreprise dans la zone (registre officiel) : métier et département libres ; l'inviter
+                     par lien, ou la déclarer comme sous-traitant (DC4, le seul ajout direct). -->
+                <div data-test="complete-recherche" class="pm-recherche" ref="pmZone" tabindex="-1">
+                  <div class="rn-sub">Chercher une entreprise de la zone<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Dans le registre officiel des entreprises (Insee), par métier et département. Un partenaire du groupement s'invite : il n'entre dans vos formulaires officiels qu'après avoir accepté. Un sous-traitant se déclare avec le DC4.</span></button></div>
+                  <div class="row wrap rn-g8">
+                    <input class="inp pm-z-metier" ref="pmZoneMetier" v-model="ao.st.trade" list="trades-dl" placeholder="Métier (libre)" aria-label="Métier de l'entreprise cherchée">
+                    <input class="inp pm-z-dept" v-model="ao.st.dept" placeholder="Département" aria-label="Département">
+                    <button type="button" class="btn sm primary" @click="aoSearchSt()" :disabled="ao.st.loading"><span v-if="ao.st.loading" class="spin"></span><i v-else data-lucide="search"></i>Chercher</button>
+                  </div>
+                  <div v-for="c in ao.st.results" :key="c.siren" class="pm-z-res" :style="c.procedure_collective?'border-color:var(--danger)':''">
+                    <div style="flex:1;min-width:200px">
+                      <div class="row wrap" style="gap:6px">
+                        <span class="strong small">{{ c.nom }}</span>
+                        <span v-if="c.siret_verified" class="pill go" style="font-size:10px;gap:3px"><i data-lucide="badge-check" style="width:11px;height:11px"></i>SIRET vérifié</span>
+                        <span v-if="c.est_rge" class="pill go" style="font-size:10px">RGE</span>
+                        <span v-if="c.est_qualiopi" class="pill go" style="font-size:10px">Qualiopi</span>
+                        <span v-if="c.past_wins" class="pill" style="font-size:10px;background:var(--accent-weak);color:var(--accent-text);gap:3px" :title="'Marchés publics déjà remportés (source DECP)'+(c.last_win_date?' · dernier le '+c.last_win_date:'')"><i data-lucide="trophy" style="width:11px;height:11px"></i>{{ c.past_wins }} gagné(s)</span>
+                        <span v-if="c.categorie" class="pill neutral" style="font-size:10px">{{ c.categorie }}</span>
+                        <span v-if="inviteDeclinedFor(c.nom)" class="pill declined" style="font-size:10px">{{ declinedLabel(inviteDeclinedFor(c.nom)) }}</span>
+                      </div>
+                      <div class="muted small">{{ c.naf_label||c.naf }} · {{ c.ville }} · {{ c.effectif!=null?c.effectif+' sal.':'' }}<span v-if="c.nb_etablissements_ouverts!=null"> · {{ c.nb_etablissements_ouverts }} étab.</span><span v-if="c.provenance && c.provenance.source_url"> · <a :href="safeUrl(c.provenance.source_url)" target="_blank" rel="noopener" style="color:var(--accent-text)">fiche<i data-lucide="external-link" style="width:11px;height:11px;vertical-align:-1px;margin-left:2px"></i></a></span> · <a :href="companyWeb(c)" target="_blank" rel="noopener" style="color:var(--accent-text)">site et contact<i data-lucide="external-link" style="width:11px;height:11px;vertical-align:-1px;margin-left:2px"></i></a></div>
+                      <div v-if="c.red_flags && c.red_flags.length" class="row wrap small" style="gap:5px;margin-top:4px;color:var(--danger);font-weight:600"><i data-lucide="triangle-alert" style="width:13px;height:13px"></i><span v-for="f in c.red_flags" :key="f">{{ f }}</span></div>
+                      <div v-if="verifWhen(c)" class="muted" style="font-size:10.5px;margin-top:3px" title="Registres officiels — statut à cette date">Vérifié le {{ verifWhen(c) }}</div>
+                    </div>
+                    <div class="row wrap" style="gap:6px">
+                      <button type="button" class="btn sm primary" @click="rnInviteOpen({ siret: c.siret, name: c.nom, city: c.ville })"><i data-lucide="link"></i>Inviter par lien</button>
+                      <button v-if="!aoStAttached(c)" type="button" class="btn sm" @click="aoAttachSt(c)"><i data-lucide="file-plus"></i>Ajouter un sous-traitant (DC4)</button>
+                      <span v-else class="pill go" style="font-size:10px">Sous-traitant déclaré</span>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </section>
@@ -806,7 +795,7 @@
           <section data-test="marche-preparer" ref="etPreparer" tabindex="-1" class="mk-etape" aria-labelledby="mk-preparer-h">
             <div class="mk-etape-h"><h3 id="mk-preparer-h">Préparer</h3><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Votre prix, votre dossier de présentation, les formulaires officiels et les pièces. À plusieurs, en plus : les partenaires invités, leurs parts, la convention et les accords.</span></button></div>
             <!-- Chiffrage estimatif (compact, détail repliable) -->
-            <div data-test="marche-prix" class="card" style="margin-top:14px;position:relative">
+            <div data-test="marche-prix" class="card" ref="prixCard" tabindex="-1" style="margin-top:14px;position:relative">
               <div v-if="ao.estimating" class="busy-veil"><div><div class="adj-ripple"><span class="drop"></span><span class="wave"></span><span class="wave"></span><span class="wave"></span></div><div class="bv-msg">Estimation en cours…</div></div></div>
               <div class="ch ch-wrap"><i data-lucide="calculator"></i><h3>Estimation du prix</h3><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">L'IA découpe le travail en tâches et estime le nombre de jours ; le prix est calculé sur <b>vos tarifs de journée</b> (profils et tarifs réglables dans Mon entreprise — sinon des tarifs par défaut, à personnaliser). Le montant lui-même n'est jamais inventé : il est calculé jours × tarif. Ensuite, ajustez jours et profils puis « Recalculer » (calcul instantané, sans IA).</span></button><div class="spacer"></div>
                 <span v-if="ao.estimate" class="pill neutral" style="font-size:11px">{{ eur(ao.estimate.total_ht) }} HT · {{ ao.estimate.jours_total }} j</span>
@@ -923,7 +912,7 @@
                   </div>
                 </div>
               </div>
-              <div data-test="pieces-a-fournir" class="card">
+              <div data-test="pieces-a-fournir" class="card" ref="piecesCard" tabindex="-1">
                 <div class="ch"><i data-lucide="list-checks"></i><h3>Pièces à fournir</h3><div class="spacer"></div>
                   <span v-if="ao.checklist && ao.checklist.stats" class="muted small">{{ ao.checklist.stats.ok }} sur {{ ao.checklist.stats.total }}</span></div>
                 <div class="cb">
@@ -1121,9 +1110,8 @@
                     <template v-else>
                       <div class="muted small" style="margin-top:4px">Les partenaires ne verront le total qu'une fois l'offre figée.</div>
                       <div v-if="ao.share.consortium.offre.total_ht_estime!=null" class="small" style="margin-top:6px">Total prévisionnel : <b>{{ eur(freezeTotal()) }} HT</b><span v-if="ao.share.consortium.offre.lead_total_ht!=null" class="muted"> (dont votre part {{ eur(ao.share.consortium.offre.lead_total_ht) }} HT, d'après votre estimation de prix)</span></div>
-                      <div v-if="ao.share.consortium.offre.lead_total_ht==null && !convVisible()" class="row wrap small" style="gap:8px;margin-top:8px;align-items:center"><span>Votre part (€ HT)</span><input class="inp" type="number" min="0" v-model.number="ao.share.leadTotal" placeholder="ex. 950000" style="width:150px" aria-label="Votre part en euros HT"><span class="muted">— aucune estimation de prix enregistrée sur ce marché</span></div>
-                      <div v-if="!canFreeze() && !convVisible()" class="muted small" style="margin-top:6px">Impossible de figer pour l'instant :<ul style="margin:3px 0 0;padding-left:18px"><li v-for="(m,i) in freezeMissing()" :key="'fm'+i">{{ m }}</li></ul></div>
-                      <button class="btn sm primary btn-wrap" style="margin-top:8px" @click="aoFreezeOffer()" :disabled="ao.share.freezing || (!convVisible() && !canFreeze())"><span v-if="ao.share.freezing" class="spin"></span><i v-else data-lucide="lock"></i>{{ convVisible() ? 'Figer l\'offre et générer la convention' : 'Figer l\'offre commune' }}</button>
+                      <!-- Un seul « Figer l'offre » (vague 2a, A2) : celui de « Convention et accords », qui génère la convention. -->
+                      <div class="row wrap small" style="gap:8px;margin-top:8px;align-items:center"><span class="muted" style="flex:1;min-width:180px">L'offre se fige en générant la convention, dans « Convention et accords ».</span><button type="button" class="btn sm" @click="aoConvScroll('convFoot')"><i data-lucide="scroll-text"></i>Aller à « Convention et accords »</button></div>
                     </template>
                   </div>
 
@@ -1148,13 +1136,13 @@
                  seulement après avoir accepté) ; un sous-traitant se déclare explicitement (DC4). -->
             <div data-test="marche-partenaires" class="card" style="margin-top:14px">
               <div class="ch" style="flex-wrap:wrap;row-gap:6px"><i data-lucide="handshake"></i><h3>Membres et sous-traitants</h3><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Les entreprises qui figurent dans vos formulaires officiels. <b>Un partenaire du groupement s'invite</b> : il n'y entre (DC1, DC2, convention) qu'après avoir accepté votre invitation. <b>Un sous-traitant</b> se déclare avec le DC4. Avant de déposer en groupement, vérifiez le règlement : il peut <b>imposer ou interdire</b> le groupement selon le lot ; une entreprise ne peut être <b>chef de file que d'un seul groupement par lot</b>, ni être à la fois <b>candidat seul et membre</b> d'un groupement.</span></button><div class="spacer"></div>
-                <button class="btn sm" @click="ao.stOpen=!ao.stOpen"><i data-lucide="search"></i>Chercher une entreprise</button></div>
+                <button type="button" class="btn sm" @click="aoChercherEntreprise()"><i data-lucide="search"></i>Chercher une entreprise</button></div>
               <div class="cb">
                 <!-- Règles de conformité du groupement (avertissement, pas un blocage) -->
                 <div class="muted small row" style="margin-bottom:10px;padding:9px 11px;background:var(--surface-2);border-radius:8px;line-height:1.5;gap:7px;align-items:flex-start">
                   <i data-lucide="alert-triangle" style="width:14px;height:14px;flex:none;margin-top:2px;color:var(--warning)"></i><span>Avant de déposer en groupement, <b>vérifiez les règles du règlement</b> sur les groupements.</span>
                 </div>
-                <div v-if="!ao.cotraitants.length && !ao.stOpen" class="muted small">Aucune entreprise ajoutée. Un partenaire du groupement s'invite ; un sous-traitant se déclare avec le <b>DC4</b> (déclaration de sous-traitance).</div>
+                <div v-if="!ao.cotraitants.length" class="muted small">Aucune entreprise ajoutée. Un partenaire du groupement s'invite ; un sous-traitant se déclare avec le <b>DC4</b> (déclaration de sous-traitance).</div>
                 <div v-for="c in ao.cotraitants" :key="c.link_id" class="row" style="padding:9px 0;border-bottom:1px solid var(--hairline);gap:8px;align-items:flex-start">
                   <div style="flex:1;min-width:0"><span class="strong small">{{ c.name }}</span> <span class="pill" :class="c.role==='mandataire'?'go':'neutral'" style="font-size:10px">{{ roleLabel(c.role) }}</span>
                     <div class="muted small">{{ c.specialites||c.code_ape||'' }} · {{ c.city||'' }} · SIRET {{ c.siret||'n/d' }}</div>
@@ -1165,33 +1153,6 @@
                     <div v-else-if="c.formulaires===false" class="small" style="color:var(--warning-text);margin-top:2px">Pas encore d'accord : absent des formulaires officiels tant qu'il n'a pas accepté une invitation.</div></div>
                   <button v-if="c.formulaires===false && c.role!=='sous_traitant' && !c.hors_ligne_en_attente && (!c.invitation || c.invitation==='declinee' || c.invitation==='retiree')" class="btn sm" @click="aoGrpInvite({ name: c.name, link_id: c.link_id })"><i data-lucide="user-plus"></i>{{ c.invitation ? 'Inviter à nouveau' : 'Inviter' }}</button>
                   <button class="btn icon sm ghost" @click="aoDetachSt(c.link_id)" aria-label="Retirer"><i data-lucide="trash-2"></i></button>
-                </div>
-                <div v-if="ao.stOpen" style="margin-top:12px;border-top:1px solid var(--hairline);padding-top:12px">
-                  <div class="row wrap">
-                    <input class="inp" v-model="ao.st.trade" list="trades-dl" placeholder="Activité (libre)" style="width:190px">
-                    <input class="inp" v-model="ao.st.dept" placeholder="Département" style="width:120px">
-                    <button class="btn primary" @click="aoSearchSt()" :disabled="ao.st.loading"><span v-if="ao.st.loading" class="spin"></span><i v-else data-lucide="search"></i>Chercher</button>
-                  </div>
-                  <div v-for="c in ao.st.results" :key="c.siren" class="row wrap" style="padding:9px;margin-top:8px;border:1px solid var(--border);border-radius:8px;align-items:flex-start;gap:8px" :style="c.procedure_collective?'border-color:var(--danger)':''">
-                    <div style="flex:1;min-width:200px">
-                      <div class="row wrap" style="gap:6px">
-                        <span class="strong small">{{ c.nom }}</span>
-                        <span v-if="c.siret_verified" class="pill go" style="font-size:10px;gap:3px"><i data-lucide="badge-check" style="width:11px;height:11px"></i>SIRET vérifié</span>
-                        <span v-if="c.est_rge" class="pill go" style="font-size:10px">RGE</span>
-                        <span v-if="c.est_qualiopi" class="pill go" style="font-size:10px">Qualiopi</span>
-                        <span v-if="c.past_wins" class="pill" style="font-size:10px;background:var(--accent-weak);color:var(--accent-text);gap:3px" :title="'Marchés publics déjà remportés (source DECP)'+(c.last_win_date?' · dernier le '+c.last_win_date:'')"><i data-lucide="trophy" style="width:11px;height:11px"></i>{{ c.past_wins }} gagné(s)</span>
-                        <span v-if="c.categorie" class="pill neutral" style="font-size:10px">{{ c.categorie }}</span>
-                      </div>
-                      <div class="muted small">{{ c.naf_label||c.naf }} · {{ c.ville }} · {{ c.effectif!=null?c.effectif+' sal.':'' }}<span v-if="c.nb_etablissements_ouverts!=null"> · {{ c.nb_etablissements_ouverts }} étab.</span><span v-if="c.provenance && c.provenance.source_url"> · <a :href="safeUrl(c.provenance.source_url)" target="_blank" style="color:var(--accent-text)">fiche ↗</a></span> · <a :href="companyWeb(c)" target="_blank" style="color:var(--accent-text)">site &amp; contact ↗</a></div>
-                      <div v-if="c.red_flags && c.red_flags.length" class="row wrap small" style="gap:5px;margin-top:4px;color:var(--danger);font-weight:600"><i data-lucide="triangle-alert" style="width:13px;height:13px"></i><span v-for="f in c.red_flags" :key="f">{{ f }}</span></div>
-                      <div v-if="verifWhen(c)" class="muted" style="font-size:10.5px;margin-top:3px" title="Registres officiels — statut à cette date">Vérifié le {{ verifWhen(c) }}</div>
-                    </div>
-                    <div class="row wrap" style="gap:6px">
-                      <button class="btn sm primary" @click="aoGrpInvite({ name: c.nom })"><i data-lucide="user-plus"></i>Inviter</button>
-                      <button v-if="!aoStAttached(c)" class="btn sm" @click="aoAttachSt(c)"><i data-lucide="file-plus"></i>Ajouter un sous-traitant (DC4)</button>
-                      <span v-else class="pill go" style="font-size:10px">Sous-traitant déclaré</span>
-                    </div>
-                  </div>
                 </div>
               </div>
             </div>
@@ -1429,48 +1390,45 @@
 
           <!-- ── 4. Déposer ── -->
           <section data-test="marche-deposer" ref="etDeposer" tabindex="-1" class="mk-etape" aria-labelledby="mk-deposer-h">
-            <div class="mk-etape-h"><h3 id="mk-deposer-h">Déposer</h3><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Adjugo ne dépose pas le dossier à votre place : vous le remettez sur la plateforme du client, avant la date limite. Ensuite, indiquez-le : « Marquer déposé » pour un groupement, sinon l'étape « Déposé » en haut de la page.</span></button></div>
-            <!-- « Prêt à déposer » (vague 4) : 4 contrôles fiables calculés à tout moment par le serveur
-                 (GET /groupement/depot), chaque manque sous son contrôle avec l'action qui le règle, « Marquer déposé ».
-                 Affichage « N contrôles sur 4 » : aucun pourcentage (le seul du produit est le score de groupement).
-                 Réservé au groupement : depot_readiness ne vérifie que des points de groupement (parts, attestations
-                 des membres, convention) et signalerait de faux manques à une entreprise seule. -->
-            <section data-test="marche-pret-a-deposer" v-if="depotShown() && (depotIsDeposed() || depotPret() || ao.depot.loading || ao.depot.err)" class="conv-pret" :class="{ok: depotIsDeposed() || (depotPret() && depotPret().pret)}" ref="depotCard" tabindex="-1" aria-labelledby="conv-pret-h">
+            <div class="mk-etape-h"><h3 id="mk-deposer-h">Déposer</h3><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Adjugo ne dépose pas le dossier à votre place : vous le remettez sur la plateforme du client, avant la date limite. Ensuite, indiquez-le avec « Marquer déposé », seul ou à plusieurs.</span></button></div>
+            <!-- « Prêt à déposer » : UNE SEULE liste, pour tous (réorganisation, vague 2a, A2 ; avant : vague 4, réservée au
+                 groupement). Ce qu'Adjugo vérifie, calculé à tout moment par le serveur (GET /groupement/depot) : pour une
+                 entreprise seule, le prix, le dossier de présentation, les formulaires officiels, les pièces demandées et
+                 ses attestations (depot_readiness_seul : jamais un faux manque de groupement) ; à plusieurs, les parts,
+                 les attestations de tous les membres, la convention et les formulaires préparés après elle. Chaque manque
+                 sous son contrôle, avec l'action qui le règle ; puis ce que vous vérifiez vous-même (gardé sur cet
+                 appareil) ; « Marquer déposé ». « N contrôles sur M » : aucun pourcentage. -->
+            <section data-test="marche-pret-a-deposer" class="conv-pret" :class="{ok: depotIsDeposed() || (depotPret() && depotPret().pret)}" ref="depotCard" tabindex="-1" aria-labelledby="conv-pret-h">
               <template v-if="depotIsDeposed()">
-                <div class="conv-st"><i data-lucide="send"></i><span id="conv-pret-h">Dossier marqué déposé</span><span class="pill" :class="'st-'+(depotStatus()||'envoye')" style="font-size:11px">{{ statusLabel(depotStatus()||'envoye') }}</span><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Chaque partenaire voit le marquage dans son journal et l'étape « Déposé » dans son espace. Les relances automatiques sont arrêtées pour ce marché. Adjugo ne dépose pas le dossier à votre place : ce marquage le note.</span></button></div>
+                <div class="conv-st"><i data-lucide="send"></i><span id="conv-pret-h">Dossier marqué déposé</span><span class="pill" :class="'st-'+(depotStatus()||'envoye')" style="font-size:11px">{{ statusLabel(depotStatus()||'envoye') }}</span><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip"><span v-if="depotPourGroupement()">Chaque partenaire voit le marquage dans son journal et l'étape « Déposé » dans son espace. Les relances automatiques sont arrêtées pour ce marché. Adjugo ne dépose pas le dossier à votre place : ce marquage le note.</span><span v-else>Adjugo ne dépose pas le dossier à votre place : ce marquage le note.</span></span></button></div>
                 <div v-if="depotStatus()==='envoye'" class="row wrap conv-actions"><button type="button" class="btn sm ghost btn-wrap" @click="aoDepotAskCancel()" :disabled="!!ao.depot.busy"><span v-if="ao.depot.busy==='annuler'" class="spin"></span><i v-else data-lucide="undo-2"></i>Retirer le marquage « déposé »</button></div>
               </template>
               <template v-else-if="depotPret()">
-                <div class="conv-st"><i :data-lucide="depotPret().pret?'badge-check':'list-checks'"></i><span id="conv-pret-h">{{ depotPret().pret ? 'Prêt à déposer' : 'Avant de déposer' }}</span><span class="pill" :class="depotPret().pret?'go':'a_etudier'" style="font-size:11px">{{ depotCount(depotPret()) }}</span><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Les 4 contrôles qu'Adjugo vérifie avant le dépôt : les parts, les attestations à la date limite, la convention validée par tous et les formulaires officiels préparés après elle. Ce qui manque est listé sous chaque contrôle, avec l'action qui le règle.</span></button><div class="spacer"></div><button type="button" class="btn icon sm ghost" @click="aoDepotLoad()" :disabled="ao.depot.loading" aria-label="Actualiser les contrôles avant dépôt"><span v-if="ao.depot.loading" class="spin"></span><i v-else data-lucide="refresh-cw"></i></button></div>
+                <div class="conv-st"><i :data-lucide="depotPret().pret?'badge-check':'list-checks'"></i><span id="conv-pret-h">{{ depotPret().pret ? 'Prêt à déposer' : 'Avant de déposer' }}</span><span class="pill" :class="depotPret().pret?'go':'a_etudier'" style="font-size:11px">{{ depotCount(depotPret()) }}</span><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip"><span v-if="depotPourGroupement()">Les 4 contrôles qu'Adjugo vérifie avant le dépôt : les parts, les attestations à la date limite, la convention validée par tous et les formulaires officiels préparés après elle. Ce qui manque est listé sous chaque contrôle, avec l'action qui le règle.</span><span v-else>Ce qu'Adjugo vérifie avant le dépôt de votre entreprise seule : votre prix, votre dossier de présentation, les formulaires officiels, les pièces demandées et vos attestations à la date limite. La liste s'allonge quand le dossier du marché est lu. Ce qui manque est listé sous chaque contrôle, avec l'action qui le règle.</span></span></button><div class="spacer"></div><button type="button" class="btn icon sm ghost" @click="aoDepotLoad()" :disabled="ao.depot.loading" aria-label="Actualiser les contrôles avant dépôt"><span v-if="ao.depot.loading" class="spin"></span><i v-else data-lucide="refresh-cw"></i></button></div>
                 <ul class="conv-checks">
-                  <li v-for="k in convPretChecks()" :key="k.key" :class="{ok:k.ok}"><i :data-lucide="k.ok?'circle-check':'circle-dashed'"></i><span>{{ k.label }}<span v-if="k.codes" class="cf-s">{{ k.codes }}</span><span class="sr-only">{{ k.ok ? ' : fait' : ' : à faire' }}</span></span><button v-if="!k.ok && k.cta" type="button" class="btn sm btn-wrap" @click="k.action()" :disabled="(k.key==='cerfa_generes' && ao.generating) || (k.key==='parts_soumises' && !!ao.share._relancing)"><span v-if="k.key==='cerfa_generes' && ao.generating" class="spin"></span><i v-else :data-lucide="k.icon"></i>{{ k.cta }}</button><span v-else-if="!k.ok && k.wait" class="muted small">{{ k.wait }}</span>
+                  <li v-for="k in convPretChecks()" :key="k.key" :class="{ok:k.ok}"><i :data-lucide="k.ok?'circle-check':'circle-dashed'"></i><span>{{ k.label }}<span v-if="k.codes" class="cf-s">{{ k.codes }}</span><span class="sr-only">{{ k.ok ? ' : fait' : ' : à faire' }}</span></span><button v-if="!k.ok && k.cta" type="button" class="btn sm btn-wrap" @click="k.action()" :disabled="((k.key==='cerfa_generes' || k.key==='formulaires') && ao.generating) || (k.key==='parts_soumises' && !!ao.share._relancing)"><span v-if="(k.key==='cerfa_generes' || k.key==='formulaires') && ao.generating" class="spin"></span><i v-else :data-lucide="k.icon"></i>{{ k.cta }}</button><span v-else-if="!k.ok && k.wait" class="muted small">{{ k.wait }}</span>
                     <ul v-if="!k.ok && k.manques.length" class="conv-sub"><li v-for="(m,mi) in k.manques.slice(0,3)" :key="k.key+'m'+mi">{{ m }}</li><li v-if="k.manques.length>3" class="muted">et {{ k.manques.length-3 }} autre{{ k.manques.length-3>1?'s':'' }}</li></ul></li>
                 </ul>
                 <ul v-if="convPretRest().length" class="conv-manques"><li v-for="(m,mi) in convPretRest()" :key="'pm'+mi">{{ m }}</li></ul>
                 <div v-for="(w,wi) in (depotPret().avertissements||[])" :key="'dpw'+wi" class="warn-box"><i data-lucide="triangle-alert" style="width:15px;height:15px;flex:none;margin-top:1px"></i><span>{{ w }}</span></div>
+                <!-- Ce qu'Adjugo ne peut pas vérifier : vous le cochez (gardé sur cet appareil, par marché) -->
+                <div class="pret-soi">
+                  <div class="conv-st pret-soi-h"><span>À vérifier vous-même</span><span class="pill" :class="predepotDone===predepotSteps.length?'go':'neutral'" style="font-size:10px">{{ predepotDone }} sur {{ predepotSteps.length }}</span><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Adjugo ne peut pas le vérifier à votre place : cochez ce que vous avez fait. C'est gardé sur cet appareil, pour ce marché.</span></button></div>
+                  <label v-for="(st,i) in predepotSteps" :key="'pds'+i" class="row small pret-soi-l">
+                    <input type="checkbox" v-model="predepot[i]" @change="savePredepot()">
+                    <span :class="{fait: predepot[i]}" v-html="st"></span>
+                  </label>
+                </div>
+                <p class="muted small pret-depot">Déposez le dossier avant la date limite sur la plateforme de dépôt indiquée dans l'avis du marché, puis marquez-le déposé.</p>
                 <div class="row wrap conv-actions">
                   <button v-if="depotPret().pret" type="button" class="btn sm btn-wrap" @click="aoExport()"><i data-lucide="package"></i>Exporter le dossier complet (ZIP)</button>
-                  <button type="button" class="btn sm btn-wrap" :class="{primary: depotPret().pret}" @click="aoDepotAsk()" :disabled="!!ao.depot.busy"><span v-if="ao.depot.busy==='deposer'" class="spin"></span><i v-else data-lucide="send"></i>Marquer déposé</button><button type="button" class="tip tip-l"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Une fois le dossier remis à l'acheteur (sur sa plateforme ou hors d'Adjugo), marquez-le déposé : le marché passe à l'étape « Déposé », chaque partenaire le voit dans son journal et les relances s'arrêtent. Une confirmation vous est demandée ; un dossier incomplet peut être marqué quand même.</span></button>
+                  <button type="button" class="btn sm btn-wrap" :class="{primary: depotPret().pret}" @click="aoDepotAsk()" :disabled="!!ao.depot.busy"><span v-if="ao.depot.busy==='deposer'" class="spin"></span><i v-else data-lucide="send"></i>Marquer déposé</button><button type="button" class="tip tip-l"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip"><span v-if="depotPourGroupement()">Une fois le dossier remis à l'acheteur (sur sa plateforme ou hors d'Adjugo), marquez-le déposé : le marché passe au statut « Déposé », chaque partenaire le voit dans son journal et les relances s'arrêtent. Une confirmation vous est demandée ; un dossier incomplet peut être marqué quand même.</span><span v-else>Une fois le dossier remis à l'acheteur (sur sa plateforme ou hors d'Adjugo), marquez-le déposé : le marché passe au statut « Déposé ». Une confirmation vous est demandée ; un dossier incomplet peut être marqué quand même.</span></span></button>
                 </div>
               </template>
               <div v-else-if="ao.depot.loading" class="muted small" role="status"><span class="spin"></span> Chargement des contrôles avant dépôt…</div>
               <div v-if="ao.depot.err" class="conv-err" role="alert"><i data-lucide="circle-alert"></i><div style="flex:1;min-width:0">{{ ao.depot.err }} <button type="button" class="linkbtn" @click="aoDepotLoad()">Réessayer</button></div><button type="button" class="btn icon sm ghost" @click="ao.depot.err=''" aria-label="Fermer le message"><i data-lucide="x"></i></button></div>
               <div class="sr-only" aria-live="polite">{{ ao.depot.live }}</div>
             </section>
-
-            <!-- Avant de déposer : la liste à cocher (gardée sur cet appareil, par marché), pour tous, seul ou à plusieurs -->
-            <div data-test="marche-avant-depot" class="card pad" style="margin-top:14px">
-              <div class="row small" style="gap:6px;font-weight:600;margin-bottom:8px;align-items:center">
-                <i data-lucide="list-checks" style="width:14px;height:14px;color:var(--accent-text)"></i>
-                <span style="flex:1">Avant de déposer sur la plateforme du client</span>
-                <span class="pill" :class="predepotDone===predepotSteps.length?'go':'neutral'" style="font-size:10px">{{ predepotDone }} sur {{ predepotSteps.length }}</span>
-              </div>
-              <label v-for="(st,i) in predepotSteps" :key="i" class="row small" style="gap:8px;align-items:flex-start;padding:5px 0;cursor:pointer">
-                <input type="checkbox" v-model="predepot[i]" @change="savePredepot()" style="margin-top:2px">
-                <span :style="predepot[i]?'text-decoration:line-through;opacity:.55':''" v-html="st"></span>
-              </label>
-              <div v-if="predepotDone===predepotSteps.length" class="small" style="color:var(--success);font-weight:600;margin-top:6px"><i data-lucide="check" style="width:13px;height:13px;vertical-align:-2px"></i> Dossier prêt à déposer — bonne chance !</div>
-            </div>
 
             <div data-test="marche-export" v-if="!aoExportDansPret()" class="card pad" style="margin-top:14px">
               <div class="row wrap" style="gap:8px">
@@ -2637,22 +2595,126 @@
           </template>
         </section>
 
-        <!-- ░░ PIPELINE (kanban) ░░ -->
+        <!-- ░░ MES MARCHÉS (liste filtrable) ░░ -->
         <section data-test="vue-pipeline" v-if="view==='pipeline'">
-          <div v-if="!projects.length" class="empty card pad">
+          <!-- Mes marchés en LISTE FILTRABLE (réorganisation, vague 2a, A2 ; contrat docs/REORGANISATION_V2A.md) : Tous ·
+               Je pilote · Où je suis partenaire · À plusieurs, groupés par statut. Les anciennes vues « Où je suis
+               partenaire » (shared), « À plusieurs » (consortiums) et l'onglet « Invitations reçues » du Réseau y
+               fondent : la liste montre ce que montraient ces vues, avec les mêmes réponses du serveur, rien de plus. -->
+          <nav data-test="mes-marches-filtres" class="rn-tabs mm-filtres" aria-label="Filtrer mes marchés">
+            <button v-for="f in mmFiltres()" :key="'mmf'+f.k" type="button" class="rn-tab" :class="{on:mmFiltre===f.k}" :aria-pressed="mmFiltre===f.k?'true':'false'" @click="mmFiltrer(f.k)"><i :data-lucide="f.ic"></i><span>{{ f.label }}</span><span v-if="f.n" class="rn-count">{{ f.n }}<span class="sr-only"> en attente de votre action</span></span></button>
+          </nav>
+          <div v-if="mmFiltre==='plusieurs' && consortiums.active" class="muted small mm-resume">{{ consortiums.active }} en cours · {{ consortiums.partners_total }} {{ pl(consortiums.partners_total, 'partenaire', 'partenaires') }} · {{ consortiums.submitted_total }} {{ pl(consortiums.submitted_total, 'part reçue', 'parts reçues') }}<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Vos marchés avec au moins un partenaire invité, et ceux où une autre entreprise vous a invité. Pour en préparer un à plusieurs : ouvrez le marché, puis « Inviter un partenaire » ; un partenaire n'entre dans le dossier qu'après avoir accepté votre invitation.</span></button></div>
+
+          <!-- Invitations reçues par le réseau Adjugo (anciennement un onglet du Réseau), à traiter en tête de la liste.
+               Réservées au compte à qui Adjugo les a envoyées : les autres membres les voient sans pouvoir les accepter. -->
+          <section data-test="mes-marches-invitations" v-if="mmInvitations().length" class="card pad mm-invitations" aria-labelledby="mm-inv-h">
+            <h2 id="mm-inv-h" class="rn-h2">Invitations à traiter<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Des entreprises du réseau Adjugo vous proposent de rejoindre leur groupement. Votre adresse ne leur est communiquée que si vous acceptez.</span></button></h2>
+            <div class="sr-only" role="status" aria-live="polite">{{ reseau.recues.live }}</div>
+            <article v-for="inv in mmInvitations()" :key="'ri'+inv.token" class="rn-inv">
+              <div class="rn-inv-t">
+                <b class="rn-name">{{ inv.project }}</b>
+                <div class="muted small">Chef de file : {{ inv.mandataire || 'non précisé' }} · rôle proposé : {{ roleLabel(inv.role) }}</div>
+                <div v-if="inv.lot_propose" class="small">Part proposée : {{ inv.lot_propose }}</div>
+                <div class="muted small">Reçue le {{ fmtDate(inv.recue_le) }}<span v-if="inv.deadline"> · date limite {{ fmtDate(inv.deadline) }}</span></div>
+              </div>
+              <span class="pill rn-pill-sm" :class="inv._declined?'declined':inv.statut==='acceptee'?'go':'a_etudier'">{{ inv._declined ? 'Vous avez décliné' : inv.statut_label }}</span>
+              <div v-if="!inv._declined" class="row wrap rn-g8 rn-acts">
+                <span v-if="inv.statut!=='acceptee' && inv.peut_accepter===false" class="muted small">Réservée au compte propriétaire<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">{{ inv.aide }}</span></button></span>
+                <button v-if="inv.statut!=='acceptee' && inv.peut_accepter!==false" type="button" class="btn sm primary" @click="rnAccept(inv)" :disabled="!!reseau.recues.busy" :aria-busy="reseau.recues.busy===inv.token?'true':'false'"><span v-if="reseau.recues.busy===inv.token" class="spin"></span><i v-else data-lucide="check"></i>Accepter depuis mon compte</button>
+                <button v-if="inv.statut==='acceptee'" type="button" class="btn sm primary" @click="rnOpenRecue(inv)"><i data-lucide="folder-open"></i>Ouvrir le dossier</button>
+                <a class="btn sm" :href="'/invite/'+encodeURIComponent(inv.token)" target="_blank" rel="noopener"><i data-lucide="external-link"></i>Voir l'invitation</a>
+                <button v-if="inv.statut!=='acceptee' && inv.peut_accepter!==false" type="button" class="btn sm ghost" @click="rnDecline(inv)" :disabled="!!reseau.recues.busy">Décliner</button>
+              </div>
+            </article>
+          </section>
+
+          <!-- États vides : un par filtre, qui dit quoi faire -->
+          <div v-if="mmVide() && (mmFiltre==='tous' || mmFiltre==='pilote')" class="empty card pad">
             <div class="eic"><i data-lucide="inbox"></i></div>
             <h4>Aucun marché pour l'instant</h4><p>Lancez une recherche pour trouver des marchés qui vous correspondent.</p>
             <button class="btn primary" @click="rubriqueGo('trouver')"><i data-lucide="search"></i>Trouver des marchés</button>
           </div>
-          <div v-else class="kanban">
-            <div v-for="s in statuses2" :key="s" class="kcol">
-              <div class="kcol-h"><span class="pill" :class="'st-'+s">{{ statusLabel(s) }}</span><span class="n">{{ byStatus(s).length }}</span></div>
-              <div v-for="p in byStatus(s)" :key="p.id" class="kcard" @click="openProject(p)">
-                <div class="ti2">{{ (p.name||'').slice(0,60) }}</div>
+          <div v-else-if="mmVide() && mmFiltre==='partenaire'" class="empty card pad">
+            <div class="eic"><i data-lucide="inbox"></i></div>
+            <h4>Aucun marché où vous êtes partenaire</h4><p>Quand une entreprise vous invite dans un groupement et que vous acceptez depuis votre compte, son marché apparaît ici.</p>
+          </div>
+          <div v-else-if="mmVide() && mmFiltre==='plusieurs'" class="empty card pad">
+            <div class="eic"><i data-lucide="handshake"></i></div>
+            <h4>Aucun marché à plusieurs pour l'instant</h4><p>Ouvrez un marché, puis « Inviter un partenaire » : un partenaire n'entre dans le dossier qu'après avoir accepté votre invitation.</p>
+            <button type="button" class="btn" @click="mmFiltrer('tous')"><i data-lucide="list"></i>Voir tous mes marchés</button>
+          </div>
+
+          <!-- La liste, groupée par statut (l'ordre des statuts du marché) -->
+          <section data-test="mes-marches-liste" v-for="g in mmGroupes()" :key="'mmg'+g.k" class="mm-groupe" :aria-labelledby="'mmg-'+g.k">
+            <h3 :id="'mmg-'+g.k" class="mm-groupe-h"><span class="pill" :class="'st-'+g.k">{{ statusLabel(g.k) }}</span><span class="n">{{ g.pilotes.length + g.partenaires.length }}</span></h3>
+            <div class="mm-cartes">
+              <!-- Un marché que je pilote -->
+              <div v-for="p in g.pilotes" :key="'mmp'+p.id" class="kcard" :class="{'mm-large':copen[p.id]}" @click="openProject(p)">
+                <div class="ti2"><button type="button" class="mm-titre" @click.stop="openProject(p)">{{ (p.name||'').slice(0,60) }}</button></div>
                 <div class="me">{{ p.client||'—' }}<span v-if="scoreCourt(p)" class="sc" :style="decColor(p.go_decision)" :title="kanbanScoreTitle(p)"><i v-if="p.go_decision==='go_groupement'" data-lucide="handshake" style="width:12px;height:12px;vertical-align:-2px;margin-right:3px" aria-hidden="true"></i>{{ scoreCourt(p) }}</span></div>
+                <!-- À plusieurs : les parts reçues et le compte-rendu (anciennement « Mes groupements ») -->
+                <template v-for="cs in [mmPlusieurs(p)]" :key="'mmc'+p.id">
+                  <div v-if="cs" data-test="mes-marches-plusieurs" class="mm-l" @click.stop>
+                    <span class="small"><i data-lucide="handshake" aria-hidden="true"></i>parts reçues {{ cs.submitted }} sur {{ cs.partners }}<span v-if="cs.pieces"> · {{ cs.pieces }} {{ pl(cs.pieces, 'pièce', 'pièces') }}</span><span v-if="cs.deadline"> · limite {{ fmtDate(cs.deadline) }}</span></span>
+                    <button type="button" class="linkbtn small" @click="toggleConsortium(p.id)" :aria-expanded="copen[p.id]?'true':'false'">{{ copen[p.id] ? 'Masquer le compte-rendu' : 'Compte-rendu' }}</button>
+                  </div>
+                  <div v-if="cs && copen[p.id]" class="mm-cr" @click.stop>
+                    <div v-if="cerror[p.id]" class="muted small" style="color:var(--danger-text)"><i data-lucide="circle-alert" style="width:13px;height:13px"></i> {{ cerror[p.id] }} · <a @click.stop="retryConsortium(p.id)" style="cursor:pointer;text-decoration:underline">Réessayer</a></div>
+                    <div v-else-if="!cdetail[p.id]" class="muted small"><span class="spin"></span> Chargement du compte-rendu…</div>
+                    <template v-else>
+                      <div v-if="cdetail[p.id].lots.length">
+                        <div class="muted small" style="font-weight:600;margin-bottom:4px">Lots couverts</div>
+                        <div v-for="l in cdetail[p.id].lots" :key="l.lot" class="row small" style="padding:3px 0;gap:8px;align-items:center"><span class="pill go" style="font-size:10px">{{ l.lot }}</span><span class="muted">{{ l.partners.join(', ') }}</span></div>
+                      </div>
+                      <div class="muted small" style="font-weight:600;margin:9px 0 4px">Partenaires et pièces</div>
+                      <div v-for="pp in cdetail[p.id].partners" :key="pp.company" class="row small" style="padding:5px 0;border-bottom:1px solid var(--hairline);gap:8px;align-items:center">
+                        <span class="strong" style="flex:1;min-width:0">{{ pp.company }}</span>
+                        <span class="pill" :class="pp.status==='submitted'?'go':pp.status==='draft'?'a_etudier':'neutral'" style="font-size:10px">{{ pp.status==='submitted'?'Soumise':pp.status==='draft'?'Brouillon':'En attente' }}</span>
+                        <span v-if="pp.pieces_count" class="pill neutral" style="font-size:10px"><i data-lucide="paperclip" style="width:10px;height:10px"></i>{{ pp.pieces_count }}</span>
+                      </div>
+                      <div v-if="cdetail[p.id].readiness.missing.length" style="margin-top:8px">
+                        <div v-for="(m,i) in cdetail[p.id].readiness.missing" :key="'cmh'+i" class="row small" style="gap:6px;padding:2px 0;color:var(--warning-text)"><i data-lucide="circle-alert" style="width:12px;height:12px;flex:none"></i><span>{{ m }}</span></div>
+                      </div>
+                      <div class="row wrap" style="gap:8px;margin-top:13px">
+                        <button type="button" class="btn primary sm" @click="exportConsortium(p.id)" :disabled="cexport[p.id]"><span v-if="cexport[p.id]" class="spin"></span><i v-else data-lucide="download"></i>Exporter le dossier commun</button><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Le dossier ZIP contient le dossier de présentation commun (vos savoir-faire croisés) + les formulaires officiels + les pièces administratives de chaque partenaire.</span></button>
+                        <button type="button" class="btn sm" @click="dossierPreview(p.id)"><i data-lucide="list"></i>{{ cpreview[p.id]?'Masquer l\'aperçu':'Aperçu du dossier' }}</button>
+                        <button type="button" class="btn sm" @click="consortiumReportPdf(p.id)"><i data-lucide="file-text"></i>Compte-rendu interne (PDF)</button><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip"><b>Document interne au chef de file</b> : l'avancement du groupement et les apports reçus. Il ne fait pas partie du dossier remis à l'acheteur. Aucun prix par membre n'y figure.</span></button>
+                      </div>
+                      <div v-if="cexportWarn[p.id] && cexportWarn[p.id].length" style="margin-top:10px">
+                        <div v-for="(w,i) in cexportWarn[p.id]" :key="'cw'+i" class="row small" style="gap:6px;align-items:flex-start;padding:7px 9px;border-radius:8px;margin-bottom:5px"
+                             :style="w.startsWith('BLOQUANT')?'background:rgba(220,38,38,.08);color:#b91c1c':'background:rgba(234,179,8,.10);color:#92400e'">
+                          <i :data-lucide="w.startsWith('BLOQUANT')?'octagon-alert':'triangle-alert'" style="width:14px;height:14px;flex-shrink:0;margin-top:1px"></i>
+                          <span style="flex:1">{{ w }}</span>
+                        </div>
+                      </div>
+                      <!-- Aperçu : ce que contiendra le ZIP, sans le générer -->
+                      <div v-if="cpreview[p.id]" style="margin-top:10px;border:1px solid var(--border);border-radius:9px;padding:11px 13px;background:var(--surface-2)">
+                        <div class="muted small" style="font-weight:600;margin-bottom:5px">Contenu du dossier commun ({{ cpreview[p.id].count }} fichiers · {{ cpreview[p.id].pieces_count }} pièce(s) de partenaires)</div>
+                        <div v-for="f in cpreview[p.id].files" :key="f.name" class="row small" style="padding:3px 0;gap:8px;align-items:baseline">
+                          <i data-lucide="file" style="width:12px;height:12px;color:var(--text-2);flex:none"></i>
+                          <span style="flex:1;min-width:0">{{ f.kind }}</span>
+                          <span class="muted" style="font-size:11px;font-family:var(--mono,monospace)">{{ f.name }}</span>
+                        </div>
+                      </div>
+                    </template>
+                  </div>
+                </template>
+              </div>
+              <!-- Un marché où une autre entreprise m'a invité (anciennement « Partagé avec moi ») : statuts seulement -->
+              <div v-for="s in g.partenaires" :key="'mms'+s.token" data-test="mes-marches-partenaire" class="kcard mm-part" @click="openShared(s)">
+                <div class="ti2"><button type="button" class="mm-titre" @click.stop="openShared(s)">{{ (s.project||'').slice(0,80) }}</button></div>
+                <div class="muted small mm-l2">Chef de file : <b>{{ s.mandataire }}</b> · vous êtes {{ s.role==='sous_traitant'?'sous-traitant':'partenaire' }}<span v-if="s.deadline"> · limite {{ fmtDate(s.deadline) }}</span></div>
+                <div class="row wrap mm-pills">
+                  <!-- « Convention à valider » : convention générée, MON accord attendu (statut seulement, jamais un montant) -->
+                  <span v-if="s.groupement && s.groupement.a_valider" class="pill a_etudier" style="font-size:10px;gap:4px"><i data-lucide="scroll-text" style="width:11px;height:11px"></i>Convention à valider</span>
+                  <!-- Rédaction, vague 4 : mes parties du dossier de présentation (statuts seulement) -->
+                  <span v-if="s.redaction && (s.redaction.a_faire || s.redaction.a_revalider || s.redaction.a_valider || s.redaction.questions)" class="pill a_etudier" style="font-size:10px;gap:4px"><i data-lucide="pen-line" style="width:11px;height:11px"></i>{{ sharedRedLine(s.redaction) }}</span>
+                  <span class="pill" :class="s.contribution_status==='submitted'?'go':s.contribution_status==='draft'?'a_etudier':'neutral'" style="font-size:10px">{{ s.contribution_status==='submitted'?'Part soumise':s.contribution_status==='draft'?'Part en brouillon':'Part à compléter' }}</span>
+                </div>
               </div>
             </div>
-          </div>
+          </section>
         </section>
 
         <!-- ░░ CO-TRAITANTS ░░ -->
@@ -2666,7 +2728,7 @@
             <tr v-for="c in cotraitants" :key="c.id"><td><b>{{ c.name }}</b><span v-if="c.capacites_source==='reseau'" class="pill go_groupement" style="font-size:10px;margin-left:6px">Réseau Adjugo</span><div class="muted small">{{ c.city }} · {{ c.siret }}</div></td>
               <td class="small">{{ c.specialites }}</td><td class="small">{{ c.qualifications }}</td>
               <td>{{ eur(avg(c.ca_n1,c.ca_n2,c.ca_n3)) }}</td><td>{{ c.departement||(c.postal_code||'').slice(0,2) }}</td>
-              <td class="row"><button class="btn icon sm ghost" @click="openCotraitant(c)" aria-label="Modifier"><i data-lucide="pencil"></i></button><button class="btn icon sm ghost" @click="delCotraitant(c)" aria-label="Supprimer"><i data-lucide="trash-2"></i></button></td></tr>
+              <td class="row"><button type="button" class="btn sm ghost" @click="inviterOuvrir({ kind: 'connu', name: c.name, email: c.email || '', cotraitantId: c.id })"><i data-lucide="user-plus"></i>Inviter sur un marché</button><button class="btn icon sm ghost" @click="openCotraitant(c)" aria-label="Modifier"><i data-lucide="pencil"></i></button><button class="btn icon sm ghost" @click="delCotraitant(c)" aria-label="Supprimer"><i data-lucide="trash-2"></i></button></td></tr>
           </tbody></table></div>
         </section>
 
@@ -2717,6 +2779,65 @@
               <button class="btn ghost sm" @click="docQuery=''"><i data-lucide="x"></i>Effacer la recherche</button>
             </div>
           </template>
+        </section>
+
+        <!-- ░░ BILAN (Mes marchés › Bilan, réorganisation, vague 2a, A2) ░░ : « Où vous gagnez / perdez » (anciennement sur
+             l'accueil) et le carnet de notes (« Où vous perdez des points »). Décision 8 : « N sur M », jamais un taux. -->
+        <section data-test="vue-bilan" v-if="view==='bilan'">
+          <div data-test="bilan-gagne-perdu" v-if="bilanVisible()" class="card pad">
+              <h3>Où vous gagnez / perdez</h3>
+              <!-- Décision 8 : « N sur M » (le seul pourcentage est le couple « Seul X % · À plusieurs Y % » d'un marché) -->
+              <div class="muted small" style="margin:2px 0 12px">{{ stats.decided||0 }} {{ pl(stats.decided||0, 'marché terminé', 'marchés terminés') }} · {{ gagnesSur(stats.by_status && stats.by_status.gagne, stats.decided) }}</div>
+              <!-- Synthèse en langage clair : la leçon apprise de vos marchés (boucle gagné/perdu) -->
+              <div v-if="winInsights.length" style="margin:0 0 12px;padding:10px 12px;background:var(--accent-weak);border-radius:9px">
+                <div class="row small" style="gap:6px;font-weight:600;margin-bottom:4px;color:var(--accent-text)"><i data-lucide="lightbulb" style="width:14px;height:14px"></i>Ce que vos marchés vous apprennent</div>
+                <ul style="margin:0;padding-left:18px">
+                  <li v-for="(ins,i) in winInsights" :key="i" class="small" style="margin:3px 0" v-html="ins"></li>
+                </ul>
+              </div>
+              <div class="seg-grid">
+              <div v-if="stats.segments.by_zone.length">
+                <div class="sectitle">Par département</div>
+                <div v-for="z in stats.segments.by_zone.slice(0,4)" :key="'z'+z.key" class="row small" style="padding:4px 0;gap:8px">
+                  <span class="seg-l">{{ z.key==='Inconnu' ? 'Lieu non précisé' : 'Dépt ' + z.key }}</span>
+                  <div style="flex:1;height:6px;background:var(--hairline);border-radius:4px;overflow:hidden"><div :style="'height:6px;border-radius:4px;width:'+z.win_rate+'%;background:var(--success)'"></div></div>
+                  <span class="num muted seg-v">{{ z.won }} sur {{ z.total }}</span>
+                </div>
+              </div>
+              <div v-if="stats.segments.by_groupement && stats.segments.by_groupement.length">
+                <div class="sectitle">Seul ou à plusieurs</div>
+                <div v-for="g in stats.segments.by_groupement" :key="'g'+g.key" class="row small" style="padding:4px 0;gap:8px">
+                  <span class="seg-l">{{ segmentSeul(g.key) }}</span>
+                  <div style="flex:1;height:6px;background:var(--hairline);border-radius:4px;overflow:hidden"><div :style="'height:6px;border-radius:4px;width:'+g.win_rate+'%;background:var(--accent)'"></div></div>
+                  <span class="num muted seg-v">{{ g.won }} sur {{ g.total }}</span>
+                </div>
+              </div>
+              <div v-if="stats.segments.by_partner && stats.segments.by_partner.length">
+                <div class="sectitle">Par partenaire</div>
+                <div v-for="pt in stats.segments.by_partner.slice(0,4)" :key="'pt'+pt.key" class="row small" style="padding:4px 0;gap:8px">
+                  <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" :title="pt.key">{{ pt.key }}</span>
+                  <span class="num muted seg-v">{{ pt.won }} sur {{ pt.total }}</span>
+                </div>
+              </div>
+              <div v-if="stats.segments.by_type && stats.segments.by_type.length">
+                <div class="sectitle">Par type de marché</div>
+                <div v-for="ty in stats.segments.by_type.slice(0,4)" :key="'ty'+ty.key" class="row small" style="padding:4px 0;gap:8px">
+                  <span class="seg-l">{{ ty.key }}</span>
+                  <div style="flex:1;height:6px;background:var(--hairline);border-radius:4px;overflow:hidden"><div :style="'height:6px;border-radius:4px;width:'+ty.win_rate+'%;background:var(--success)'"></div></div>
+                  <span class="num muted seg-v">{{ ty.won }} sur {{ ty.total }}</span>
+                </div>
+              </div>
+              <div v-if="stats.segments.loss_reasons.length">
+                <div class="sectitle">Motifs de perte</div>
+                <div v-for="r in stats.segments.loss_reasons.slice(0,4)" :key="'lr'+r.reason" class="row small" style="padding:3px 0"><span style="flex:1">{{ nbspUnits(r.reason) }}</span><span class="pill no_go" style="font-size:10px">{{ r.count }}</span></div>
+              </div>
+              </div>
+            </div>
+          <div v-else class="empty card pad">
+            <div class="eic"><i data-lucide="chart-column"></i></div>
+            <h4>Aucun marché terminé pour l'instant</h4><p>Quand vous indiquez qu'un marché est gagné ou perdu, son résultat entre ici : par département, seul ou à plusieurs, par partenaire et par type de marché.</p>
+          </div>
+          <carnet-notes data-test="bilan-carnet" mode="tableau" class="bilan-carnet"></carnet-notes>
         </section>
 
         <!-- ░░ INVOICES ░░ -->
@@ -3217,73 +3338,6 @@
           </div>
         </section>
 
-        <!-- Mes marchés › À plusieurs (anciennement « Mes groupements ») — tous mes groupements, compte-rendu + export -->
-        <section data-test="vue-consortiums" v-if="view==='consortiums'">
-          <div class="card pad" style="margin-bottom:14px;border:1.5px solid var(--accent);background:var(--accent-weak)">
-            <div class="row wrap" style="gap:12px;align-items:center">
-              <i data-lucide="handshake" style="color:var(--accent-text);width:22px;height:22px;flex:none"></i>
-              <div style="flex:1;min-width:200px"><b style="font-size:15px">Vos marchés à plusieurs</b>
-                <div v-if="consortiums.active" class="muted small">{{ consortiums.active }} en cours · {{ consortiums.partners_total }} partenaire(s) · {{ consortiums.submitted_total }} part(s) reçue(s)</div></div>
-              <button class="btn primary" @click="go('pipeline')"><i data-lucide="handshake"></i>Préparer à plusieurs</button><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Ouvrez le marché concerné, puis « Inviter un partenaire » : un partenaire n'entre dans le dossier qu'après avoir accepté votre invitation.</span></button>
-            </div>
-          </div>
-
-          <div v-if="!consortiums.consortiums.length" class="card pad"><div class="muted small">Aucun groupement pour l'instant. Ouvrez un marché et invitez un partenaire.</div></div>
-
-          <div v-for="cs in consortiums.consortiums" :key="cs.project_id" class="card pad" style="margin-bottom:12px">
-            <div class="row" style="gap:12px;align-items:center;cursor:pointer" @click="toggleConsortium(cs.project_id)">
-              <div style="flex:1;min-width:0">
-                <div class="strong">{{ cs.project }}</div>
-                <div class="muted small">{{ cs.submitted }} sur {{ cs.partners }} part(s) reçue(s)<span v-if="cs.pieces"> · {{ cs.pieces }} pièce(s)</span><span v-if="cs.deadline"> · limite {{ fmtDate(cs.deadline) }}</span></div>
-              </div>
-              <span class="pill rn-pill-sm" :class="cs.partners && cs.submitted>=cs.partners?'go':'neutral'" style="flex:none">{{ cs.submitted }} sur {{ cs.partners }} {{ pl(cs.partners, 'part', 'parts') }}</span>
-              <i :data-lucide="copen[cs.project_id]?'chevron-up':'chevron-down'" style="width:16px;height:16px;color:var(--text-2);flex:none"></i>
-            </div>
-
-            <div v-if="copen[cs.project_id]" style="margin-top:12px;border-top:1px solid var(--hairline);padding-top:12px">
-              <div v-if="cerror[cs.project_id]" class="muted small" style="color:var(--danger-text)"><i data-lucide="circle-alert" style="width:13px;height:13px"></i> {{ cerror[cs.project_id] }} · <a @click.stop="retryConsortium(cs.project_id)" style="cursor:pointer;text-decoration:underline">Réessayer</a></div>
-              <div v-else-if="!cdetail[cs.project_id]" class="muted small"><span class="spin"></span> Chargement du compte-rendu…</div>
-              <template v-else>
-                <div v-if="cdetail[cs.project_id].lots.length">
-                  <div class="muted small" style="font-weight:600;margin-bottom:4px">Lots couverts</div>
-                  <div v-for="l in cdetail[cs.project_id].lots" :key="l.lot" class="row small" style="padding:3px 0;gap:8px;align-items:center"><span class="pill go" style="font-size:10px">{{ l.lot }}</span><span class="muted">{{ l.partners.join(', ') }}</span></div>
-                </div>
-                <div class="muted small" style="font-weight:600;margin:9px 0 4px">Partenaires &amp; pièces</div>
-                <div v-for="pp in cdetail[cs.project_id].partners" :key="pp.company" class="row small" style="padding:5px 0;border-bottom:1px solid var(--hairline);gap:8px;align-items:center">
-                  <span class="strong" style="flex:1;min-width:0">{{ pp.company }}</span>
-                  <span class="pill" :class="pp.status==='submitted'?'go':pp.status==='draft'?'a_etudier':'neutral'" style="font-size:10px">{{ pp.status==='submitted'?'Soumise':pp.status==='draft'?'Brouillon':'En attente' }}</span>
-                  <span v-if="pp.pieces_count" class="pill neutral" style="font-size:10px"><i data-lucide="paperclip" style="width:10px;height:10px"></i>{{ pp.pieces_count }}</span>
-                </div>
-                <div v-if="cdetail[cs.project_id].readiness.missing.length" style="margin-top:8px">
-                  <div v-for="(m,i) in cdetail[cs.project_id].readiness.missing" :key="'cmh'+i" class="row small" style="gap:6px;padding:2px 0;color:var(--warning-text)"><i data-lucide="circle-alert" style="width:12px;height:12px;flex:none"></i><span>{{ m }}</span></div>
-                </div>
-                <div class="row wrap" style="gap:8px;margin-top:13px">
-                  <button class="btn primary" @click="exportConsortium(cs.project_id)" :disabled="cexport[cs.project_id]"><span v-if="cexport[cs.project_id]" class="spin"></span><i v-else data-lucide="download"></i>Exporter le dossier commun</button><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Le dossier ZIP contient le dossier de présentation commun (vos savoir-faire croisés) + les formulaires officiels + les pièces administratives de chaque partenaire.</span></button>
-                  <button class="btn" @click="dossierPreview(cs.project_id)"><i data-lucide="list"></i>{{ cpreview[cs.project_id]?'Masquer l\'aperçu':'Aperçu du dossier' }}</button>
-                  <button class="btn" @click="consortiumReportPdf(cs.project_id)"><i data-lucide="file-text"></i>Compte-rendu interne (PDF)</button><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip"><b>Document interne au chef de file</b> : l'avancement du groupement et les apports reçus. Il ne fait pas partie du dossier remis à l'acheteur. Aucun prix par membre n'y figure.</span></button>
-                  <button class="btn ghost" @click="openProjectById(cs.project_id)"><i data-lucide="external-link"></i>Ouvrir le marché</button>
-                </div>
-                <div v-if="cexportWarn[cs.project_id] && cexportWarn[cs.project_id].length" style="margin-top:10px">
-                  <div v-for="(w,i) in cexportWarn[cs.project_id]" :key="'cw'+i" class="row small" style="gap:6px;align-items:flex-start;padding:7px 9px;border-radius:8px;margin-bottom:5px"
-                       :style="w.startsWith('BLOQUANT')?'background:rgba(220,38,38,.08);color:#b91c1c':'background:rgba(234,179,8,.10);color:#92400e'">
-                    <i :data-lucide="w.startsWith('BLOQUANT')?'octagon-alert':'triangle-alert'" style="width:14px;height:14px;flex-shrink:0;margin-top:1px"></i>
-                    <span style="flex:1">{{ w }}</span>
-                  </div>
-                </div>
-                <!-- Aperçu : ce que contiendra le ZIP, sans le générer -->
-                <div v-if="cpreview[cs.project_id]" style="margin-top:10px;border:1px solid var(--border);border-radius:9px;padding:11px 13px;background:var(--surface-2)">
-                  <div class="muted small" style="font-weight:600;margin-bottom:5px">Contenu du dossier commun ({{ cpreview[cs.project_id].count }} fichiers · {{ cpreview[cs.project_id].pieces_count }} pièce(s) de partenaires)</div>
-                  <div v-for="f in cpreview[cs.project_id].files" :key="f.name" class="row small" style="padding:3px 0;gap:8px;align-items:baseline">
-                    <i data-lucide="file" style="width:12px;height:12px;color:var(--text-2);flex:none"></i>
-                    <span style="flex:1;min-width:0">{{ f.kind }}</span>
-                    <span class="muted" style="font-size:11px;font-family:var(--mono,monospace)">{{ f.name }}</span>
-                  </div>
-                </div>
-              </template>
-            </div>
-          </div>
-        </section>
-
         <!-- ░░ RÉSEAU DE PARTENAIRES (co-traitance v2, vague 3) ░░
              Contrat : docs/COTRAITANCE_V2_VAGUE3_API.md. Un seul pourcentage dans l'app (le score de
              groupement) : ici un RANG et des CRITÈRES sourcés et datés, jamais une note. Tout texte saisi
@@ -3293,7 +3347,6 @@
             <button type="button" class="rn-tab" :class="{on:reseau.tab==='profil'}" :aria-current="reseau.tab==='profil'?'page':null" @click="rnGo('profil')"><i data-lucide="id-card"></i>Mon profil partenaire</button>
             <button type="button" class="rn-tab" :class="{on:reseau.tab==='annuaire'}" :aria-current="reseau.tab==='annuaire'?'page':null" @click="rnGo('annuaire')"><i data-lucide="network"></i>Annuaire</button>
             <button type="button" class="rn-tab" :class="{on:reseau.tab==='historique'}" :aria-current="reseau.tab==='historique'?'page':null" @click="rnGo('historique')"><i data-lucide="history"></i>Mon historique</button>
-            <button v-if="reseau.recues.list.length" type="button" class="rn-tab" :class="{on:reseau.tab==='recues'}" :aria-current="reseau.tab==='recues'?'page':null" @click="rnGo('recues')"><i data-lucide="inbox"></i>Invitations reçues<span v-if="rnRecuesCount()" class="rn-count">{{ rnRecuesCount() }}<span class="sr-only"> à traiter</span></span></button>
           </nav>
 
           <!-- ── Mon profil partenaire ── -->
@@ -3507,61 +3560,6 @@
             </div>
           </template>
 
-          <!-- ── Invitations reçues par le réseau (côté partenaire) ── -->
-          <template data-test="reseau-recues" v-if="reseau.tab==='recues'">
-            <div class="card pad rn-block">
-              <h2 class="rn-h2">Invitations reçues<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Des entreprises du réseau Adjugo vous proposent de rejoindre leur groupement. Votre adresse ne leur est communiquée que si vous acceptez.</span></button></h2>
-              <div class="sr-only" role="status" aria-live="polite">{{ reseau.recues.live }}</div>
-              <p v-if="!reseau.recues.list.length" class="muted small">Aucune invitation reçue pour l'instant.</p>
-              <article v-for="inv in reseau.recues.list" :key="'ri'+inv.token" class="rn-inv">
-                <div class="rn-inv-t">
-                  <b class="rn-name">{{ inv.project }}</b>
-                  <div class="muted small">Chef de file : {{ inv.mandataire || 'non précisé' }} · rôle proposé : {{ roleLabel(inv.role) }}</div>
-                  <div v-if="inv.lot_propose" class="small">Part proposée : {{ inv.lot_propose }}</div>
-                  <div class="muted small">Reçue le {{ fmtDate(inv.recue_le) }}<span v-if="inv.deadline"> · date limite {{ fmtDate(inv.deadline) }}</span></div>
-                </div>
-                <span class="pill rn-pill-sm" :class="inv._declined?'declined':inv.statut==='acceptee'?'go':'a_etudier'">{{ inv._declined ? 'Vous avez décliné' : inv.statut_label }}</span>
-                <div v-if="!inv._declined" class="row wrap rn-g8 rn-acts">
-                  <span v-if="inv.statut!=='acceptee' && inv.peut_accepter===false" class="muted small">Réservée au compte propriétaire<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">{{ inv.aide }}</span></button></span>
-                  <button v-if="inv.statut!=='acceptee' && inv.peut_accepter!==false" type="button" class="btn sm primary" @click="rnAccept(inv)" :disabled="!!reseau.recues.busy" :aria-busy="reseau.recues.busy===inv.token?'true':'false'"><span v-if="reseau.recues.busy===inv.token" class="spin"></span><i v-else data-lucide="check"></i>Accepter depuis mon compte</button>
-                  <button v-if="inv.statut==='acceptee'" type="button" class="btn sm primary" @click="rnOpenRecue(inv)"><i data-lucide="folder-open"></i>Ouvrir le dossier</button>
-                  <a class="btn sm" :href="'/invite/'+encodeURIComponent(inv.token)" target="_blank" rel="noopener"><i data-lucide="external-link"></i>Voir l'invitation</a>
-                  <button v-if="inv.statut!=='acceptee' && inv.peut_accepter!==false" type="button" class="btn sm ghost" @click="rnDecline(inv)" :disabled="!!reseau.recues.busy">Décliner</button>
-                </div>
-              </article>
-            </div>
-          </template>
-        </section>
-
-        <!-- Partagé avec moi — liste des AO d'autres mandataires -->
-        <section data-test="vue-shared" v-if="view==='shared'">
-          <div class="card pad">
-            <div class="row" style="gap:11px;align-items:flex-start"><i data-lucide="inbox" style="color:var(--accent-text);margin-top:2px"></i>
-              <div style="flex:1"><b style="font-size:14px">Les marchés où vous êtes partenaire</b><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">D'autres entreprises vous ont invité à répondre avec elles sur leurs marchés. Apportez votre part — depuis <b>votre propre espace</b>.</span></button></div></div>
-            <!-- Invitations reçues par le réseau Adjugo, à traiter : elles se traitent dans Partenaires › Réseau Adjugo
-                 (onglets internes gardés en vague 1) ; la pastille de Mes marchés les compte. -->
-            <div v-if="rnRecuesCount()" class="row wrap shared-recues">
-              <i data-lucide="inbox" style="color:var(--accent-text);flex:none"></i>
-              <span class="small" style="flex:1;min-width:180px"><b>{{ rnRecuesCount() }}</b> {{ pl(rnRecuesCount(), 'invitation reçue par le réseau Adjugo, à traiter', 'invitations reçues par le réseau Adjugo, à traiter') }}</span>
-              <button type="button" class="btn sm primary" @click="openReseau('recues')"><i data-lucide="arrow-right"></i>Voir les invitations</button>
-            </div>
-            <div v-if="!shared.length" class="muted small" style="margin-top:12px">Quand une entreprise vous invite dans un groupement et que vous acceptez depuis votre compte, son marché apparaît ici.</div>
-            <div v-for="s in shared" :key="s.token" @click="openShared(s)" @keydown="openSharedKey($event,s)" role="button" tabindex="0" class="row shared-item" style="margin-top:10px;padding:11px 13px;border:1px solid var(--border);border-radius:10px;gap:8px 12px;align-items:center;cursor:pointer;flex-wrap:wrap" @mouseover="$event.currentTarget.style.borderColor='var(--accent)'" @mouseleave="$event.currentTarget.style.borderColor='var(--border)'">
-              <div style="flex:1 1 220px;min-width:0">
-                <div class="strong small">{{ s.project }}</div>
-                <div class="muted small">Chef de file : <b>{{ s.mandataire }}</b> · vous êtes {{ s.role==='sous_traitant'?'sous-traitant':'partenaire' }}<span v-if="s.deadline"> · limite {{ fmtDate(s.deadline) }}</span></div>
-                <div v-if="sharedGrpLine(s)" class="small" style="color:var(--text-2);margin-top:2px">{{ sharedGrpLine(s) }}</div>
-              </div>
-              <div class="row wrap" style="gap:6px;align-items:center">
-                <!-- « À valider » : convention générée, MON accord attendu (statut seulement, jamais un montant) -->
-                <span v-if="s.groupement && s.groupement.a_valider" class="pill a_etudier" style="font-size:10px;gap:4px"><i data-lucide="file-signature" style="width:11px;height:11px"></i>Convention à valider</span>
-                <!-- Rédaction, vague 4 : mes parties du dossier de présentation (statuts seulement) -->
-                <span v-if="s.redaction && (s.redaction.a_faire || s.redaction.a_revalider || s.redaction.a_valider || s.redaction.questions)" class="pill a_etudier" style="font-size:10px;gap:4px"><i data-lucide="pen-line" style="width:11px;height:11px"></i>{{ sharedRedLine(s.redaction) }}</span>
-                <span class="pill" :class="s.contribution_status==='submitted'?'go':s.contribution_status==='draft'?'a_etudier':'neutral'" style="font-size:10px">{{ s.contribution_status==='submitted'?'Soumise':s.contribution_status==='draft'?'Brouillon':'À compléter' }}</span>
-                <i data-lucide="chevron-right" style="width:16px;height:16px;color:var(--text-2)"></i>
-              </div>
-            </div>
-          </div>
         </section>
 
         <!-- Partagé avec moi — état chargement / erreur (sinon écran blanc pendant l'appel ou si le lien a expiré) -->
@@ -3966,39 +3964,76 @@
     </div>
   </div>
 
-  <!-- ══════════ INVITATION EN 1 CLIC (vague 3) ══════════
-       Réseau : Adjugo envoie l'invitation ; l'adresse du partenaire n'est JAMAIS affichée (le serveur ne la
-       renvoie pas). SIRENE : aucun email, un lien à transmettre. 409 « déjà invité » géré. -->
+  <!-- ══════════ INVITER UN PARTENAIRE : une seule fenêtre (réorganisation, vague 2a, A2 ; contrat docs/REORGANISATION_V2A.md) ══════════
+       Trois cas, une seule fenêtre : une entreprise du RÉSEAU Adjugo (Adjugo envoie l'invitation ; son adresse n'est
+       JAMAIS affichée, le serveur ne la renvoie pas), un partenaire CONNU (Adjugo envoie l'invitation à l'email que vous
+       donnez ; sans email, un lien à copier), une entreprise du REGISTRE officiel (identité relue par le serveur, aucun
+       email : vous copiez le lien et l'envoyez). Ouverte sans entreprise (« Inviter un partenaire »), elle demande d'abord
+       qui vous invitez. 409 « déjà invité » et « sur le réseau » gérés. -->
   <div data-test="fenetre-invitation" v-if="rinv" class="overlay" @click.self="rinvClose()" @keydown.esc="rinvClose()">
     <div class="modal rinv-modal" role="dialog" aria-modal="true" aria-labelledby="rinv-t" aria-describedby="rinv-d">
-      <div class="modal-h"><h3 id="rinv-t">Inviter {{ rinv.name || 'ce partenaire' }}</h3><button type="button" class="x" @click="rinvClose()" aria-label="Fermer"><i data-lucide="x"></i></button></div>
+      <div class="modal-h"><h3 id="rinv-t">{{ rinvTitre() }}</h3><button type="button" class="x" @click="rinvClose()" aria-label="Fermer"><i data-lucide="x"></i></button></div>
       <div class="modal-b rn-form">
-        <p id="rinv-d" class="lock-note"><i :data-lucide="rinv.kind==='reseau'?'lock':'link'" style="width:14px;height:14px;flex:none;margin-top:2px"></i><span v-if="rinv.kind==='reseau'">Adjugo envoie l'invitation : vous verrez l'adresse du partenaire quand il aura accepté.</span><span v-else>Adjugo ne connaît pas son adresse : copiez le lien et envoyez-le-lui.</span></p>
-        <template v-if="!rinv.done">
-          <div v-if="rinv.pickProject" class="field"><label for="rinv-p">Marché</label>
-            <select id="rinv-p" class="inp" v-model="rinv.projectId" :disabled="rinv.busy" @change="rinv.err=''; rinv.errCode=''"><option value="">Choisissez un marché</option><option v-for="p in rinvProjects()" :key="'rp'+p.id" :value="p.id">{{ p.name }}</option></select>
-            <div v-if="!rinvProjects().length" class="muted small rn-hint">Aucun marché pour l'instant : <button type="button" class="linkbtn" @click="rinvClose(); go('sourcing')">trouvez un marché</button>, puis invitez depuis sa fiche.</div></div>
-          <p v-if="rinv.noRole" class="conv-err" role="alert"><i data-lucide="circle-alert"></i><span>Ce partenaire n'accepte que le rôle de chef de file : il ne peut pas être invité comme partenaire ou sous-traitant.</span></p>
-          <fieldset v-else class="rn-fs" :disabled="rinv.busy">
-            <legend class="rn-lg">Rôle proposé<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Partenaire du groupement : il en est membre et signe l'offre avec vous. Sous-traitant : il travaille pour vous sans signer l'offre ; vous restez responsable de sa part.</span></button></legend>
-            <label v-for="r in rinv.roles" :key="'rr'+r" class="rn-check"><input type="radio" name="rinv-role" :value="r" v-model="rinv.role"><span>{{ rnRoleLabel(r) }}</span></label>
-          </fieldset>
-          <div class="field"><label for="rinv-l">Part proposée</label><input id="rinv-l" class="inp" v-model="rinv.lot" maxlength="255" :disabled="rinv.busy" placeholder="ex. Lot 2 — Électricité"></div>
-          <div class="rn-check-line"><input id="rinv-docs" type="checkbox" v-model="rinv.can_view_docs" :disabled="rinv.busy"><label for="rinv-docs">Autoriser le téléchargement des pièces du marché</label><button v-if="rinv.kind==='reseau'" type="button" class="tip tip-l"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Le partenaire ne voit les pièces, l'acheteur et la composition du groupement qu'après avoir accepté l'invitation depuis son compte.</span></button></div>
+        <!-- Qui invitez-vous ? (ouverte sans entreprise) -->
+        <template v-if="rinv.kind==='choix'">
+          <p id="rinv-d" class="muted small rinv-p">Le partenaire n'entre dans le dossier qu'après avoir accepté votre invitation.</p>
+          <ul class="rinv-choix" aria-label="Qui invitez-vous ?">
+            <li><button type="button" class="rinv-c" @click="rinvChoisir('connu')"><i data-lucide="contact-round" aria-hidden="true"></i><span class="rinv-c-t"><b>Un partenaire que je connais</b><span class="muted small">Adjugo lui envoie l'invitation par email. Sans email, vous copiez le lien et l'envoyez vous-même.</span></span><i data-lucide="chevron-right" class="rinv-c-go" aria-hidden="true"></i></button></li>
+            <li><button type="button" class="rinv-c" @click="rinvChoisir('reseau')"><i data-lucide="network" aria-hidden="true"></i><span class="rinv-c-t"><b>Une entreprise du réseau Adjugo</b><span class="muted small">Adjugo lui envoie l'invitation ; vous voyez son adresse quand elle a accepté.</span></span><i data-lucide="chevron-right" class="rinv-c-go" aria-hidden="true"></i></button></li>
+            <li><button type="button" class="rinv-c" @click="rinvChoisir('sirene')"><i data-lucide="building" aria-hidden="true"></i><span class="rinv-c-t"><b>Une entreprise du registre officiel</b><span class="muted small">Adjugo ne connaît pas son adresse : vous copiez le lien et l'envoyez vous-même.</span></span><i data-lucide="chevron-right" class="rinv-c-go" aria-hidden="true"></i></button></li>
+          </ul>
         </template>
-        <div v-if="rinv.err" class="conv-err" role="alert"><i data-lucide="circle-alert"></i><div style="flex:1;min-width:0">{{ rinv.err }}
-          <div v-if="rinv.errCode==='sur_le_reseau' && rinv.errProfile" class="rn-mt"><button type="button" class="btn sm primary" @click="rinvViaReseau()"><i data-lucide="network"></i>Inviter via le réseau</button></div>
-          <div v-else-if="rinv.errCode==='deja_invite' && view==='aodetail'" class="rn-mt"><button type="button" class="btn sm" @click="rinvShowInvites()"><i data-lucide="list"></i>Voir les invitations du marché</button></div>
-          <div v-else-if="rinv.errCode==='profil_non_publie'" class="rn-mt"><button type="button" class="btn sm" @click="rinvClose(); rnGoPublish()"><i data-lucide="send"></i>Publier mon profil</button></div></div></div>
-        <div v-if="rinv.done" class="rn-done" role="status">
-          <div class="small"><i data-lucide="check" style="width:13px;height:13px;vertical-align:-2px;color:var(--success-text)"></i> {{ rinv.done }}</div>
-          <div v-if="rinv.url" class="row rn-g8 rn-mt"><input class="inp" :value="rinv.url" readonly aria-label="Lien d'invitation à transmettre" style="flex:1;min-width:0;font-size:12px" @focus="$event.target.select()"><button type="button" class="btn sm" @click="copyInvite(rinv.url)"><i data-lucide="copy"></i>Copier le lien</button></div>
-        </div>
+        <!-- Réseau Adjugo, sans entreprise choisie : on la cherche (partie par partie, ou dans l'annuaire) -->
+        <template v-else-if="rinv.kind==='reseau' && !rinv.profile_id">
+          <p id="rinv-d" class="lock-note"><i data-lucide="lock" style="width:14px;height:14px;flex:none;margin-top:2px"></i><span>Adjugo envoie l'invitation : vous verrez l'adresse du partenaire quand il aura accepté.</span></p>
+          <p class="small rinv-p">Cherchez l'entreprise dans « Qui me complète ? » (partie par partie, sur ce marché) ou dans l'annuaire du réseau, puis « Inviter ».</p>
+          <div class="row wrap rn-g8">
+            <button v-if="view==='aodetail'" type="button" class="btn sm primary" @click="rinvVersQuiMeComplete()"><i data-lucide="puzzle"></i>Chercher dans « Qui me complète ? »</button>
+            <button type="button" class="btn sm" @click="rinvClose(); openReseau('annuaire')"><i data-lucide="network"></i>Ouvrir l'annuaire du réseau</button>
+          </div>
+        </template>
+        <template v-else>
+          <p id="rinv-d" class="lock-note"><i :data-lucide="rinv.kind==='reseau'?'lock':(rinv.kind==='connu'?'mail':'link')" style="width:14px;height:14px;flex:none;margin-top:2px"></i><span v-if="rinv.kind==='reseau'">Adjugo envoie l'invitation : vous verrez l'adresse du partenaire quand il aura accepté.</span><span v-else-if="rinv.kind==='connu'">Avec un email, Adjugo envoie l'invitation ; sans email, vous copiez le lien et l'envoyez vous-même.</span><span v-else>Adjugo ne connaît pas son adresse : copiez le lien et envoyez-le-lui.</span></p>
+          <template v-if="!rinv.done">
+            <div v-if="rinv.pickProject" class="field"><label for="rinv-p">Marché</label>
+              <select id="rinv-p" class="inp" v-model="rinv.projectId" :disabled="rinv.busy" @change="rinv.err=''; rinv.errCode=''"><option value="">Choisissez un marché</option><option v-for="p in rinvProjects()" :key="'rp'+p.id" :value="p.id">{{ p.name }}</option></select>
+              <div v-if="!rinvProjects().length" class="muted small rn-hint">Aucun marché pour l'instant : <button type="button" class="linkbtn" @click="rinvClose(); go('sourcing')">trouvez un marché</button>, puis invitez depuis sa page.</div></div>
+            <!-- Partenaire connu : une entreprise de Mes partenaires, ou une autre ; l'email est celui que VOUS donnez -->
+            <template v-if="rinv.kind==='connu'">
+              <div v-if="rinvMesPartenaires().length" class="field"><label for="rinv-mp">Dans Mes partenaires</label>
+                <select id="rinv-mp" class="inp" v-model="rinv.cotraitantId" :disabled="rinv.busy" @change="rinvDepuisAnnuaire()"><option value="">Une autre entreprise</option><option v-for="c in rinvMesPartenaires()" :key="'rmp'+c.id" :value="c.id">{{ c.name }}</option></select></div>
+              <div class="field"><label for="rinv-n">Entreprise</label><input id="rinv-n" class="inp" v-model="rinv.name" maxlength="255" :disabled="rinv.busy" placeholder="Nom de l'entreprise partenaire"></div>
+              <div class="field"><label for="rinv-e">Email du contact (facultatif)</label><input id="rinv-e" type="email" class="inp" v-model="rinv.email" maxlength="255" autocomplete="off" :disabled="rinv.busy" placeholder="contact@entreprise.fr"></div>
+            </template>
+            <!-- Registre officiel sans entreprise choisie : son SIRET (identité relue par le serveur) -->
+            <div v-if="rinv.kind==='sirene' && rinv.siretSaisi" class="field"><label for="rinv-s">SIRET de l'entreprise</label><input id="rinv-s" class="inp" v-model="rinv.siret" inputmode="numeric" maxlength="20" autocomplete="off" :disabled="rinv.busy" placeholder="14 chiffres"><div class="muted small rn-hint">Adjugo vérifie dans le registre officiel qu'elle est active. <template v-if="view==='aodetail'">Pour chercher par métier et département : <button type="button" class="linkbtn" @click="rinvVersQuiMeComplete(true)">« Qui me complète ? »</button>.</template></div></div>
+            <p v-if="rinv.noRole" class="conv-err" role="alert"><i data-lucide="circle-alert"></i><span>Ce partenaire n'accepte que le rôle de chef de file : il ne peut pas être invité comme partenaire ou sous-traitant.</span></p>
+            <fieldset v-else class="rn-fs" :disabled="rinv.busy">
+              <legend class="rn-lg">Rôle proposé<button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Partenaire du groupement : il en est membre et signe l'offre avec vous. Sous-traitant : il travaille pour vous sans signer l'offre ; vous restez responsable de sa part.</span></button></legend>
+              <label v-for="r in rinv.roles" :key="'rr'+r" class="rn-check"><input type="radio" name="rinv-role" :value="r" v-model="rinv.role"><span>{{ rnRoleLabel(r) }}</span></label>
+            </fieldset>
+            <div v-if="rinv.kind!=='connu'" class="field"><label for="rinv-l">Part proposée</label><input id="rinv-l" class="inp" v-model="rinv.lot" maxlength="255" :disabled="rinv.busy" placeholder="ex. Lot 2 — Électricité"></div>
+            <div v-if="rinv.kind==='connu'" class="rn-check-line"><input id="rinv-part" type="checkbox" v-model="rinv.can_contribute" :disabled="rinv.busy"><label for="rinv-part">Laisser le partenaire apporter sa part (ses références, sa partie, son prix)</label></div>
+            <div class="rn-check-line"><input id="rinv-docs" type="checkbox" v-model="rinv.can_view_docs" :disabled="rinv.busy"><label for="rinv-docs">Autoriser le téléchargement des pièces du marché</label><button v-if="rinv.kind==='reseau'" type="button" class="tip tip-l"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Le partenaire ne voit les pièces, l'acheteur et la composition du groupement qu'après avoir accepté l'invitation depuis son compte.</span></button></div>
+            <div v-if="rinv.kind==='connu'" class="field"><label for="rinv-x">Durée du lien</label><select id="rinv-x" class="inp" v-model.number="rinv.expires_days" :disabled="rinv.busy"><option :value="7">7 jours</option><option :value="30">30 jours</option><option :value="90">90 jours</option><option :value="0">Sans limite</option></select></div>
+            <button v-if="rinv.depuisChoix" type="button" class="linkbtn small rinv-retour" @click="rinvChoisir('choix')"><i data-lucide="arrow-left" aria-hidden="true"></i>Inviter une autre sorte d'entreprise</button>
+          </template>
+          <div v-if="rinv.err" class="conv-err" role="alert"><i data-lucide="circle-alert"></i><div style="flex:1;min-width:0">{{ rinv.err }}
+            <div v-if="rinv.errCode==='sur_le_reseau' && rinv.errProfile" class="rn-mt"><button type="button" class="btn sm primary" @click="rinvViaReseau()"><i data-lucide="network"></i>Inviter via le réseau</button></div>
+            <div v-else-if="rinv.errCode==='deja_invite' && view==='aodetail'" class="rn-mt"><button type="button" class="btn sm" @click="rinvShowInvites()"><i data-lucide="list"></i>Voir les invitations du marché</button></div>
+            <div v-else-if="rinv.errCode==='profil_non_publie'" class="rn-mt"><button type="button" class="btn sm" @click="rinvClose(); rnGoPublish()"><i data-lucide="send"></i>Publier mon profil</button></div>
+            <div v-else-if="rinv.kind==='sirene' && rinv.errStatus===503" class="rn-mt"><button type="button" class="btn sm" @click="rinvSansRegistre()"><i data-lucide="contact-round"></i>Inviter sans passer par le registre</button></div></div></div>
+          <div v-if="rinv.done" class="rn-done" role="status">
+            <div class="small"><i data-lucide="check" style="width:13px;height:13px;vertical-align:-2px;color:var(--success-text)"></i> {{ rinv.done }}</div>
+            <div v-if="rinv.url" class="row rn-g8 rn-mt"><input class="inp" :value="rinv.url" readonly aria-label="Lien d'invitation à transmettre" style="flex:1;min-width:0;font-size:12px" @focus="$event.target.select()"><button type="button" class="btn sm" @click="copyInvite(rinv.url)"><i data-lucide="copy"></i>Copier le lien</button></div>
+          </div>
+        </template>
       </div>
       <div class="modal-f">
-        <template v-if="!rinv.done"><button type="button" class="btn ghost" @click="rinvClose()">Annuler</button>
-          <button type="button" class="btn primary" @click="rinvSend()" :disabled="rinv.busy || rinv.noRole || rinv.errCode==='deja_invite' || rinv.errCode==='sur_le_reseau'" :aria-busy="rinv.busy?'true':'false'"><span v-if="rinv.busy" class="spin"></span><i v-else :data-lucide="rinv.kind==='reseau'?'send':'link'"></i>{{ rinv.kind==='reseau' ? 'Envoyer l\'invitation' : 'Créer le lien' }}</button></template>
-        <button v-else type="button" class="btn primary" @click="rinvClose()">Fermer</button>
+        <template v-if="rinv.done"><button type="button" class="btn primary" @click="rinvClose()">Fermer</button></template>
+        <template v-else-if="rinv.kind==='choix' || (rinv.kind==='reseau' && !rinv.profile_id)"><button type="button" class="btn ghost" @click="rinvClose()">Annuler</button></template>
+        <template v-else><button type="button" class="btn ghost" @click="rinvClose()">Annuler</button>
+          <button type="button" class="btn primary" @click="rinvSend()" :disabled="rinv.busy || rinv.noRole || rinv.errCode==='deja_invite' || rinv.errCode==='sur_le_reseau'" :aria-busy="rinv.busy?'true':'false'"><span v-if="rinv.busy" class="spin"></span><i v-else :data-lucide="rinv.kind==='sirene'?'link':'send'"></i>{{ rinvBouton() }}</button></template>
       </div>
     </div>
   </div>
@@ -4148,9 +4183,9 @@
 
   <div v-if="toast" class="toast" :class="toast.kind"><span>{{ toast.msg }}</span><button v-if="toast.undo" class="toast-undo" @click="doUndo()"><i data-lucide="undo-2" style="width:13px;height:13px"></i>Annuler</button></div>
 </div>
-<script src="/static/redaction-partenaire.js" integrity="sha384-6u2dcizU1R7TgbFpANxwY3jDSA7O0EQpkhqXfp1A4RwHslj7somFoJxnE+iDz027" defer></script>
+<script src="/static/redaction-partenaire.js" integrity="sha384-a3BQ5CRAqvM5N/hPEMkni8dSIvc/2YxRRPkFUoPmocI3uCl+FckaoEW302Jwsjlb" defer></script>
 <script src="/static/sources-publiques.js" integrity="sha384-/0soYF6qmMI5KHOb/uzkHBoYNeOr5+R784XFb0c0+HjUkhtEyVBgunl6Xo08Dok+" defer></script>
-<script src="/static/carnet-notes.js" integrity="sha384-LAquTAPg7/U1CPH4oQyM3bAovKYtUsjA5KmecZa8/vtcEPHrfigD1FjVceOH45i6" defer></script>
-<script src="/static/app.js" integrity="sha384-1QX1oQI0IsMBGQHqBh/i0dC33cti6FJeqp+01Kdib3zjSM5cSNrgYNerisWLX0dh" defer></script>
+<script src="/static/carnet-notes.js" integrity="sha384-rNhlyqrjhKIiqL/xGL3y8DNWtllOzsqPT/r0od3igtWeT9N+xqDolMztixTiIng6" defer></script>
+<script src="/static/app.js" integrity="sha384-bFT3kFYFSIKPy/R33MAJhH7zEjBpx/pZLkccgolw5D15yXojreJq4uSlVNkEHxuN" defer></script>
 </body>
 </html>

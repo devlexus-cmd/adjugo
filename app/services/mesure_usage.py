@@ -30,11 +30,13 @@ PARIS = ZoneInfo("Europe/Paris")
 # Les vues de l'application (clé de `view` dans app.js, ouvertes par go() ou par l'ouverture d'un marché).
 # Menu par rubriques (vague 1, 1.3) : « compte » (Réglages › Mon compte) est une vue ; « avenir » et « alertes » sont
 # les onglets « À venir » et « Mes alertes » de Trouver des marchés, comptés à chaque affichage (« sourcing » compte
-# chaque ouverture de Trouver des marchés, quel que soit l'onglet).
+# chaque ouverture de Trouver des marchés, quel que soit l'onglet). Mes marchés en liste filtrable (vague 2a, A2) :
+# « bilan » (Mes marchés › Bilan) est une vue ; « shared » et « consortiums » comptent les filtres « Où je suis
+# partenaire » et « À plusieurs » de la liste (leurs anciens écrans, pour comparer avant et après).
 ECRANS = frozenset({
     "dashboard", "sourcing", "amont", "pipeline", "aodetail", "atelier", "cotraitants", "reseau", "contacts",
     "documents", "kb", "company", "preuves", "criteria", "invoices", "consortiums", "shared", "sharedao",
-    "team", "billing", "admin", "compte", "avenir", "alertes",
+    "team", "billing", "admin", "compte", "avenir", "alertes", "bilan",
 })
 
 JOURS_MAX = 400          # relevé : au plus ~13 mois d'un coup

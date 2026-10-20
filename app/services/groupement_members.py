@@ -526,7 +526,12 @@ def depot_readiness(project, db: Session, conv=None, invites: Optional[list] = N
             conv = db.query(GroupementConvention).filter(GroupementConvention.project_id == project.id).first()
         except Exception:
             conv = None
+    # Réorganisation, vague 2a (A2) : une seule liste « Prêt à déposer », pour tous. Une entreprise SEULE (aucune
+    # invitation active, aucune convention) a son propre calcul : jamais un faux manque de groupement.
+    if not invites and conv is None:
+        return depot_readiness_seul(project, db)
     checks, manques, avert = {}, [], []
+    par = {k: [] for k, _label in DEPOT_CHECKS}    # chaque manque sous son contrôle (l'écran les range ainsi)
 
     # 1) Parts : chaque co-traitant ACTIF a soumis sa part avec un prix de vente. Un sous-traitant
     #    n'est pas membre du groupement (DC4) : son retard est un avertissement, pas un manque.
@@ -547,6 +552,7 @@ def depot_readiness(project, db: Session, conv=None, invites: Optional[list] = N
         else:
             parts_ok = False
             manques.append(missing)
+            par["parts_soumises"].append(missing)
     checks["parts_soumises"] = parts_ok
 
     # 2) Attestations de tous les membres, valides à la date limite (coffre-fort croisé).
@@ -562,11 +568,14 @@ def depot_readiness(project, db: Session, conv=None, invites: Optional[list] = N
                 # Toutes les alertes (l'écran en montre 3 puis « et N autres » : N doit être exact),
                 # les attestations expirées ou expirant avant la date limite d'abord.
                 items = list(cc.get("alert_items") or [])
-                manques += [a["text"] for a in items if a.get("kind") != "a_fournir"]
-                manques += [a["text"] for a in items if a.get("kind") == "a_fournir"]
+                att = [a["text"] for a in items if a.get("kind") != "a_fournir"] \
+                    + [a["text"] for a in items if a.get("kind") == "a_fournir"]
+                manques += att
+                par["attestations_ok"] += att
         except Exception:
             checks["attestations_ok"] = False
             manques.append("Attestations des partenaires : vérification impossible pour l'instant")
+            par["attestations_ok"].append("Attestations des partenaires : vérification impossible pour l'instant")
     else:
         checks["attestations_ok"] = True       # aucun partenaire invité : rien à suivre ici
     # 2 bis) Le chef de file est membre du groupement : ses propres attestations comptent aussi.
@@ -579,6 +588,7 @@ def depot_readiness(project, db: Session, conv=None, invites: Optional[list] = N
     if lead_problems:
         checks["attestations_ok"] = False
         manques += lead_problems
+        par["attestations_ok"] += lead_problems
     if lead_missing:
         avert.append("Vos propres attestations ne sont pas toutes dans votre coffre-fort Adjugo (absentes : "
                      + ", ".join(lead_missing) + ") : vérifiez-les vous-même avant le dépôt")
@@ -604,11 +614,13 @@ def depot_readiness(project, db: Session, conv=None, invites: Optional[list] = N
     checks["convention_signee"] = bool(conv is not None and conv.status == "signee")
     if not checks["convention_signee"]:
         if conv is None or conv.status == "draft":
-            manques.append("Convention de groupement à générer puis à faire valider par tous les membres")
+            m = "Convention de groupement à générer puis à faire valider par tous les membres"
         elif conv.status == "perimee":
-            manques.append("Convention plus à jour : à régénérer puis à faire valider")
+            m = "Convention plus à jour : à régénérer puis à faire valider"
         else:
-            manques.append("Convention à faire valider par tous les membres")
+            m = "Convention à faire valider par tous les membres"
+        manques.append(m)
+        par["convention_signee"].append(m)
 
     # 4) Formulaires officiels générés APRÈS la (dernière) génération de la convention.
     try:
@@ -624,6 +636,7 @@ def depot_readiness(project, db: Session, conv=None, invites: Optional[list] = N
             if not fresh:
                 ok = False
                 manques.append(f"Formulaire {dt.upper()} à (re)générer après la convention")
+                par["cerfa_generes"].append(f"Formulaire {dt.upper()} à (re)générer après la convention")
         checks["cerfa_generes"] = ok
     except Exception:
         checks["cerfa_generes"] = False
@@ -631,12 +644,151 @@ def depot_readiness(project, db: Session, conv=None, invites: Optional[list] = N
     ordered = {k: bool(checks.get(k)) for k, _label in DEPOT_CHECKS}
     n_ok = sum(1 for v in ordered.values() if v)
     return {
+        "pour": "groupement",
         "checks": ordered,
         "libelles": {k: label for k, label in DEPOT_CHECKS},
         "pret": n_ok == len(ordered),
         "n_ok": n_ok, "n_total": len(ordered),
         "pct": round(100 * n_ok / len(ordered)),
         "manques": manques,
+        "manques_par_controle": par,
+        "avertissements": avert,
+    }
+
+
+# « Prêt à déposer » d'une ENTREPRISE SEULE (réorganisation, vague 2a, A2 ; contrat docs/REORGANISATION_V2A.md) :
+# ce qu'Adjugo peut vérifier lui-même, rien qui suppose un groupement (ni parts, ni convention, ni membres). La liste
+# s'allonge quand le dossier du marché est lu (ses pièces exigées entrent dans « Pièces »). Avertir, pas bloquer.
+DEPOT_CHECKS_SEUL = [
+    ("prix", "Votre prix estimé"),
+    ("dossier", "Dossier de présentation prêt, sans passage à compléter"),
+    ("formulaires", "Formulaires officiels préparés"),
+    ("pieces", "Pièces demandées réunies"),
+    ("attestations", "Vos attestations valides à la date limite"),
+]
+# Formulaires préparés par « Préparer mes documents » (horodatés par mark_cerfa_generated) : DC1, DC2 et acte
+# d'engagement en France ; le DUME ailleurs (app/services/agents/redaction.py).
+FORMULAIRES_FR = ("dc1", "dc2", "attri1")
+FORMULAIRES_HORS_FR = ("dume",)
+
+
+def _pays_du_marche(db: Session, project) -> str:
+    """Pays d'adaptation de l'organisation qui porte le marché (« FR » par défaut), comme la génération."""
+    try:
+        from app.models import Organization, User
+        owner = db.get(User, project.user_id) if project.user_id else None
+        if owner is not None and getattr(owner, "org_id", None):
+            org = db.query(Organization).filter(Organization.id == owner.org_id).first()
+            if org and org.country:
+                return str(org.country).upper()
+    except Exception:
+        pass
+    return "FR"
+
+
+def depot_readiness_seul(project, db: Session) -> dict:
+    """« Prêt à déposer » d'une entreprise seule : prix estimé, dossier de présentation prêt, formulaires officiels
+    préparés, pièces demandées réunies (la carte « Pièces à fournir », une seule vérité), attestations valides à la
+    date limite. Même forme que depot_readiness (checks, libelles, pret, n_ok, n_total, pct, manques,
+    manques_par_controle, avertissements), avec `pour` = « seul ». Le dossier de présentation n'est contrôlé que si
+    la liste des pièces l'exige."""
+    from datetime import date, datetime
+    from app.core.org import member_ids
+    from app.models import GeneratedDoc, User
+    from app.routers.checklist import checklist_du_marche
+    checks, par, avert = {}, {k: [] for k, _label in DEPOT_CHECKS_SEUL}, []
+    owner = db.get(User, project.user_id) if project.user_id else None
+
+    # 1) Prix : une estimation enregistrée sur le marché (« Estimer mon prix »).
+    est = project.estimate if isinstance(project.estimate, dict) else {}
+    try:
+        prix_ok = est.get("total_ht") is not None and float(est.get("total_ht")) >= 0
+    except (TypeError, ValueError):
+        prix_ok = False
+    checks["prix"] = prix_ok
+    if not prix_ok:
+        par["prix"].append("Prix à estimer : « Estimer mon prix », étape Préparer")
+
+    # 2) et 4) La liste des pièces du marché (celle de la carte « Pièces à fournir »).
+    items = []
+    if owner is not None:
+        try:
+            items = checklist_du_marche(db, project, member_ids(owner, db)).get("checklist") or []
+        except Exception:
+            items = []
+            avert.append("La liste des pièces n'a pas pu être relue pour l'instant : vérifiez-la avant le dépôt")
+    memo = next((i for i in items if i.get("id") == "memoire_technique"), None)
+    controle_dossier = bool(memo and memo.get("required"))
+    if controle_dossier:
+        checks["dossier"] = memo.get("status") == "ok"
+        if memo.get("status") == "a_completer":
+            par["dossier"].append(memo.get("context_note") or "Dossier de présentation à terminer avant le dépôt")
+        elif memo.get("status") != "ok":
+            par["dossier"].append("Dossier de présentation à préparer : atelier du dossier de présentation, "
+                                  "étape Préparer")
+    pieces_ok = True
+    for i in items:
+        if not i.get("required") or i.get("id") in ("memoire_technique", "convention_groupement") \
+                or i.get("category") == "cerfa":
+            continue
+        st, nom = i.get("status"), i.get("name") or "Pièce"
+        if st == "manquant":
+            par["pieces"].append(f"{nom} : à ajouter dans Mes documents")
+        elif st == "expire":
+            par["pieces"].append(f"{nom} : expirée, à remplacer")
+        elif st == "a_completer":
+            par["pieces"].append(f"{nom} : à terminer")
+        else:
+            continue
+        pieces_ok = False
+    checks["pieces"] = pieces_ok
+
+    # 3) Formulaires officiels préparés par Adjugo (« Préparer mes documents »).
+    attendus = FORMULAIRES_FR if _pays_du_marche(db, project) == "FR" else FORMULAIRES_HORS_FR
+    formulaires_ok = True
+    try:
+        gens = {g.doc_type: g for g in db.query(GeneratedDoc).filter(GeneratedDoc.project_id == project.id,
+                                                                      GeneratedDoc.doc_type.in_(attendus)).all()}
+    except Exception:
+        gens = {}
+    for dt in attendus:
+        g = gens.get(dt)
+        if not (g and g.status in ("pret", "signe")):
+            formulaires_ok = False
+            par["formulaires"].append(f"Formulaire {dt.upper()} à préparer : « Préparer mes documents »")
+    checks["formulaires"] = formulaires_ok
+
+    # 5) Vos attestations, valides à la DATE LIMITE (même règle que pour un groupement). Une attestation absente est
+    #    déjà dans « Pièces » : seule une attestation expirée, ou qui expire avant la date limite, compte ici.
+    deadline = project.deadline
+    if isinstance(deadline, datetime):
+        deadline = deadline.date()
+    try:
+        problemes, _absentes = _lead_attestations(db, project, deadline)
+    except Exception:
+        problemes = []
+        avert.append("Vos attestations n'ont pas pu être vérifiées pour l'instant : contrôlez-les avant le dépôt")
+    checks["attestations"] = not problemes
+    par["attestations"] += problemes
+    if deadline is None:
+        avert.append("Date limite du marché inconnue : la validité des attestations est vérifiée à "
+                     "aujourd'hui seulement")
+    elif deadline < date.today():
+        avert.append(f"La date limite du marché ({_fr_date(deadline)}) est dépassée")
+
+    cles = [k for k, _label in DEPOT_CHECKS_SEUL if k != "dossier" or controle_dossier]
+    ordered = {k: bool(checks.get(k)) for k in cles}
+    n_ok = sum(1 for v in ordered.values() if v)
+    par = {k: par[k] for k in cles}
+    return {
+        "pour": "seul",
+        "checks": ordered,
+        "libelles": {k: label for k, label in DEPOT_CHECKS_SEUL if k in ordered},
+        "pret": n_ok == len(ordered),
+        "n_ok": n_ok, "n_total": len(ordered),
+        "pct": round(100 * n_ok / len(ordered)) if ordered else 0,
+        "manques": [m for k in cles for m in par[k]],
+        "manques_par_controle": par,
         "avertissements": avert,
     }
 

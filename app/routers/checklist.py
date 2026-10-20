@@ -224,17 +224,25 @@ def get_checklist(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    ids = member_ids(current_user, db)
     project = db.query(Project).filter(
-        Project.id == project_id, Project.user_id.in_(member_ids(current_user, db))
+        Project.id == project_id, Project.user_id.in_(ids)
     ).first()
     if not project:
         raise HTTPException(404, "Projet introuvable")
+    return checklist_du_marche(db, project, ids)
 
+
+def checklist_du_marche(db: Session, project: Project, ids) -> dict:
+    """La liste des pièces d'un marché, calculée pour l'organisation `ids` (ses comptes). Partagée par la route
+    et par « Prêt à déposer » d'une entreprise seule (réorganisation, vague 2a, A2 : groupement_members) : une
+    seule vérité, celle de la carte « Pièces à fournir »."""
+    project_id = project.id
     # MÊME périmètre que l'export ZIP : documents de CE marché + pièces générales du coffre-fort
     # (project_id NULL), jamais ceux d'un AUTRE marché, ni corbeille ni versions remplacées —
     # sinon la checklist coche « ok » des pièces qui ne seront pas dans le pli de CE marché.
     documents = db.query(Document).filter(
-        Document.user_id.in_(member_ids(current_user, db)),
+        Document.user_id.in_(ids),
         Document.deleted_at.is_(None),
         Document.parent_id.is_(None),
         ((Document.project_id == project_id) | (Document.project_id.is_(None))),

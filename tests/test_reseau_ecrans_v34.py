@@ -28,7 +28,7 @@ _DOM = "globalThis.document = { activeElement: null, querySelector: () => null, 
 
 
 def test_invitation_profil_sans_role_declare_sous_node():
-    script = _DOM + _obj("rnInviteOpen") + """
+    script = _DOM + _obj("rnInviteOpen", "_rinvBase", "_rinvFocusPremier") + """
 o.view = "reseau"; o.ao = { project: null }; o.$nextTick = () => {};
 const res = {};
 o.rnInviteOpen({ profile_id: "a".repeat(32), name: "X", roles_acceptes: [] });
@@ -45,7 +45,7 @@ console.log(JSON.stringify(res));
     assert r["st"] == {"noRole": False, "roles": ["sous_traitant"]}
 
 
-def test_chercher_dans_sirene_depuis_un_marche_sous_node():
+def test_chercher_dans_sirene_hors_d_un_marche_sous_node():
     script = _obj("rnOptions", "rnDiscover") + """
 o.reseau = { p: { d: null }, an: { f: { metier: "", departement: "" } } };
 o.discover = {}; o.trades = [];
@@ -64,7 +64,9 @@ console.log(JSON.stringify(res));
     r = _node(script)
     assert r["libelle"] == {"trade": "Électricité", "dept": "29"}
     assert r["trades"] == "Plomberie" and r["cle"] == "menuiserie"
-    assert 'rnDiscover(l.metier, l.departement, l.metier_label)' in PANEL
+    # Réorganisation, vague 2a (A2) : sur un marché, « Qui me complète ? » cherche lui-même dans la zone (métier et
+    # département de la partie, aoPmZone) ; « Découvrir » reste l'ajout à « Mes partenaires », hors d'un marché.
+    assert "rnDiscover(" not in PANEL and "aoPmZone(l)" in PANEL
 
 
 def test_tableau_de_bord_etat_vide_honnete_sous_node():
@@ -126,7 +128,7 @@ def test_explications_dans_des_bulles():
 
 
 def test_invitations_recues_reservees_a_qui_peut_accepter():
-    recues = zone(HTML, "reseau-recues")
+    recues = zone(HTML, "mes-marches-invitations")       # vague 2a (A2) : dans Mes marchés, en tête de la liste
     assert "inv.statut!=='acceptee' && inv.peut_accepter!==false\" type=\"button\" class=\"btn sm primary\" @click=\"rnAccept(inv)\"" in recues
     assert "inv.peut_accepter!==false\" type=\"button\" class=\"btn sm ghost\" @click=\"rnDecline(inv)\"" in recues
     assert "{{ inv.aide }}" in recues
@@ -172,7 +174,7 @@ def test_invitations_recues_rendu_par_le_vrai_compilateur_vue():
     dépôt. « Ouvrir le dossier » ne s'affiche que pour une invitation acceptée : un v-else
     l'attachait au bouton « Accepter », donc un membre non propriétaire le voyait sur une
     invitation encore à accepter (et rnOpenRecue répondait « plus accessible »)."""
-    recues = zone(HTML, "reseau-recues")
+    recues = zone(HTML, "mes-marches-invitations")
     i = recues.index('<div v-if="!inv._declined" class="row wrap rn-g8 rn-acts">')
     j = recues.index("</div>", recues.index("rnDecline(inv)", i)) + len("</div>")
     vue = sorted((STATIC / "vendor").glob("vue-*.prod.js"))[-1]

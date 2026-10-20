@@ -12,7 +12,8 @@ Réseau de partenaires Adjugo — routes de la vague 3 (co-traitance v2, innovat
   GET    /api/reseau/annuaire/{profile_id}     — fiche publique d'un partenaire
   GET    /api/reseau/historique                — COUNT réels, dans les deux sens
   GET    /api/reseau/invitations               — invitations reçues via le réseau
-  GET    /api/projects/{id}/partner-matches    — « Qui me complète ? » lot par lot
+  GET    /api/projects/{id}/partner-matches    — « Qui me complète ? » lot par lot : réseau Adjugo, mes
+                                                 partenaires (mon annuaire), registre officiel
   POST   /api/projects/{id}/reseau/invitations         — mise en relation en 1 clic (réseau)
   POST   /api/projects/{id}/reseau/invitations-sirene  — entreprise hors réseau : lien à transmettre
 
@@ -1035,6 +1036,39 @@ def _active_invite_sirens(db: Session, project_id: int) -> tuple:
     return prof_ids, sirens
 
 
+MES_PARTENAIRES_PAR_LOT = 5
+MES_PARTENAIRES_MAX = 500
+
+
+def _mes_partenaires(db: Session, member_ids_: list) -> list:
+    """L'annuaire « Mes partenaires » de l'organisation, avec les métiers de chaque fiche (mêmes mots-clés que les
+    lots du dossier : own_trades). Seulement ses propres fiches : rien d'une autre organisation, rien du réseau.
+    L'adresse est celle que l'organisation a saisie elle-même sur sa fiche (jamais celle d'un profil du réseau,
+    qui n'est pas copiée dans l'annuaire)."""
+    from app.routers.cotraitants import Cotraitant
+    from app.services.groupement_members import nom_cle
+    from app.sourcing.groupement import own_trades
+    out = []
+    for ct in db.query(Cotraitant).filter(Cotraitant.user_id.in_(member_ids_)).order_by(
+            Cotraitant.name, Cotraitant.id).limit(MES_PARTENAIRES_MAX).all():
+        metiers = own_trades({"specialites": ct.specialites or "", "qualifications": ct.qualifications or "",
+                              "code_ape": ct.code_ape or "", "name": ct.name or ""})
+        out.append({"cotraitant_id": ct.id, "name": ct.name or "", "siret": ct.siret or "",
+                    "siren": pn.clean_siren(ct.siret), "city": ct.city or "",
+                    "departement": ct.departement or (ct.postal_code or "")[:2], "specialites": ct.specialites or "",
+                    "email": (ct.email or "").strip(), "reseau": (ct.capacites_source or "") == "reseau",
+                    "_metiers": metiers, "_nom": nom_cle(ct.name)})
+    return out
+
+
+def _active_invite_names(db: Session, project_id: int) -> set:
+    """Noms (normalisés) des entreprises qui ont une invitation ACTIVE sur ce marché."""
+    from app.routers.invites import _is_expired
+    from app.services.groupement_members import active_invites, nom_cle
+    return {nom_cle(i.company_name) for i in active_invites(db, project_id)
+            if not _is_expired(i.expires_at) and (i.company_name or "").strip()}
+
+
 @router.get("/api/projects/{project_id}/partner-matches")
 @limiter.limit("60/hour")
 def partner_matches(request: Request, project_id: int, lot: str = "",
@@ -1084,6 +1118,8 @@ def partner_matches(request: Request, project_id: int, lot: str = "",
     by_pid = {d["public_id"]: (p, d) for p, d in zip(profiles, dicts)}
     invited_profiles, invited_sirens = _active_invite_sirens(db, project.id)
     known = _my_sirets(db, ctx["member_ids"])
+    mes_partenaires = _mes_partenaires(db, ctx["member_ids"])
+    invited_names = _active_invite_names(db, project.id)
     matched_ids, shown = set(), set()
     out_lots, jobs = [], []
     for idx, l in enumerate(todo):
@@ -1110,6 +1146,18 @@ def partner_matches(request: Request, project_id: int, lot: str = "",
                 shown.add(p.id)
                 if p.siren:
                     shown_sirens.add(p.siren)
+        # Mes partenaires (vague 2a, A2) : les fiches de MON annuaire qui font ce métier. Une entreprise déjà
+        # montrée par le réseau pour ce lot n'y est pas répétée (on l'invite par le réseau : adresse masquée).
+        mp = [m for m in mes_partenaires if l["metier"] and l["metier"] in m["_metiers"]
+              and not (m["siren"] and m["siren"] in shown_sirens)]
+        entry["n_mes_partenaires"] = len(mp)
+        entry["mes_partenaires"] = [
+            {k: v for k, v in m.items() if not k.startswith("_")}
+            | {"deja_invite": bool((m["siren"] and m["siren"] in invited_sirens) or m["_nom"] in invited_names)}
+            for m in mp[:MES_PARTENAIRES_PAR_LOT]]
+        for m in mp:
+            if m["siren"]:
+                shown_sirens.add(m["siren"])
         if len(entry["reseau"]) < 3 and l["metier"]:
             if len(jobs) < MAX_SIRENE_LOTS:
                 jobs.append((idx, l["metier"], l["departement"] or ""))
@@ -1133,7 +1181,7 @@ def partner_matches(request: Request, project_id: int, lot: str = "",
             continue
         for m in found:
             sn = pn.clean_siren(m.get("siret"))
-            # Seuls les doublons d'une carte du réseau DÉJÀ affichée pour ce lot sont retirés :
+            # Seuls les doublons d'une carte DÉJÀ affichée pour ce lot (réseau, mes partenaires) sont retirés :
             # rien ne dépend de l'appartenance au réseau d'une entreprise non affichée.
             if not sn or sn in entry["_shown_sirens"] or sn == ctx["siren"]:
                 continue
@@ -1356,8 +1404,8 @@ def _invite_reseau_locked(request: Request, db: Session, current_user: User, pro
         "annuaire": attach,
         "message": ("Invitation envoyée par Adjugo. L'adresse du partenaire vous sera visible quand il aura "
                     "accepté ; il retrouve aussi l'invitation dans son espace Adjugo.") if emailed else
-                   ("Invitation créée : le partenaire la retrouve dans son espace Adjugo (Partenaires › Réseau "
-                    "Adjugo › Invitations reçues). L'email n'a pas pu partir pour le moment."),
+                   ("Invitation créée : le partenaire la retrouve dans son espace Adjugo (Mes marchés, filtre "
+                    "« Où je suis partenaire »). L'email n'a pas pu partir pour le moment."),
     }
 
 

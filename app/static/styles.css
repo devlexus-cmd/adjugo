@@ -182,11 +182,7 @@ tbody tr { transition:background .08s; } tbody tr:hover { background:var(--surfa
 @media(max-width:680px){ .frow,.frow.t3{ grid-template-columns:1fr; } }
 .sectitle { display:flex; align-items:center; gap:6px; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); margin:20px 0 10px; }
 
-/* ---------- Kanban ---------- */
-.kanban { display:grid; grid-template-columns:repeat(5,minmax(214px,1fr)); gap:14px; overflow-x:auto; padding-bottom:6px; }
-.kcol { background:var(--surface-2); border:1px solid var(--border); border-radius:16px; padding:10px; min-height:160px; }
-.kcol-h { display:flex; align-items:center; gap:7px; padding:6px 7px 10px; font-size:12px; font-weight:600; }
-.kcol-h .n { margin-left:auto; color:var(--muted); font-variant-numeric:tabular-nums; }
+/* ---------- Cartes de Mes marchés (anciennement le kanban) ---------- */
 .kcard { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:12px; margin-bottom:9px; cursor:pointer; box-shadow:var(--shadow); transition:border-color .12s,box-shadow .12s,transform .1s; }
 .kcard:hover { border-color:color-mix(in srgb,var(--accent) 45%,transparent); box-shadow:0 12px 26px color-mix(in srgb,var(--accent) 14%,transparent); transform:translateY(-1px); }
 .kcard .ti2 { font-weight:600; font-size:12.5px; line-height:1.35; margin-bottom:8px; }
@@ -327,7 +323,6 @@ tbody tr { transition:background .08s; } tbody tr:hover { background:var(--surfa
   .t-wrap { overflow-x:auto; }
   .t-wrap table { min-width:560px; }
   .cards.cols-4 { grid-template-columns:1fr 1fr; }  /* KPIs : 2 colonnes, pas 1 */
-  .kanban { grid-template-columns:1fr; overflow-x:visible; }  /* colonnes EMPILÉES (plus de scroll horizontal) */
 }
 @media (max-width:520px) {
   .cards.cols-4 { grid-template-columns:1fr; }
@@ -626,7 +621,6 @@ ol.gstep { list-style:none; padding-left:0; padding-right:0; }
 .reorg-liste { margin:0; padding-left:18px; line-height:1.55; }
 .reorg-liste li + li { margin-top:3px; }
 .reorg-h > .btn.icon { flex:none; margin:-4px -6px 0 0; }
-.shared-recues { margin-top:12px; gap:8px 10px; padding:10px 12px; border:1px solid var(--accent); border-radius:10px; background:var(--accent-weak); }
 
 /* ══════════ Bulle d'information « ⓘ » : les phrases d'explication sortent des cartes ══════════
    <button type="button" class="tip"><i data-lucide="info"></i><span class="tip-b" role="tooltip">…</span></button>
@@ -769,7 +763,6 @@ ol.gstep { list-style:none; padding-left:0; padding-right:0; }
 .conv-kv .v { flex:1 1 200px; min-width:0; overflow-wrap:anywhere; }
 .linkbtn { border:0; background:none; padding:0; color:var(--accent-text); text-decoration:underline; cursor:pointer; font:inherit; }
 .linkbtn:focus-visible { outline:2px solid var(--accent); outline-offset:2px; border-radius:4px; }
-.shared-item:focus-visible { outline:none; box-shadow:0 0 0 3px var(--ring); border-color:var(--accent) !important; }
 /* Boîte de confirmation */
 .cdlg .modal-f { flex-wrap:wrap; }
 .cdlg-lines { margin:0; padding-left:18px; font-size:13px; line-height:1.55; }
@@ -1691,3 +1684,60 @@ sup.atl-ref-p { font-size:10px; font-weight:700; color:var(--text-2); background
    compte (réorganisation, vague 1). Sur ordinateur, à droite du menu ; sur téléphone, effacé quand le menu est ouvert. */
 .bandeau-cookies { position:fixed; left:12px; right:12px; bottom:12px; z-index:70; background:var(--surface); border:1px solid var(--border); border-radius:11px; box-shadow:0 8px 28px rgba(0,0,0,.16); padding:13px 16px; display:flex; flex-wrap:wrap; gap:10px; align-items:center; max-width:760px; margin:0 auto; }
 @media (min-width:861px) { .bandeau-cookies.avec-menu { left:calc(248px + 12px); } }
+
+/* ══════════ Mes marchés en liste filtrable, invitations, « Prêt à déposer » (réorganisation, vague 2a, A2) ══════════
+   Contrat : docs/REORGANISATION_V2A.md, section A2. Même graphisme que l'existant (onglets rn-tab, cartes kcard). */
+.mm-filtres { margin-bottom:14px; }
+@media (max-width:560px) { .mm-filtres { grid-template-columns:repeat(2, minmax(0,1fr)); } }
+.mm-resume { display:flex; flex-wrap:wrap; align-items:center; gap:4px; margin:-4px 0 12px; }
+.mm-invitations { margin-bottom:16px; }
+.mm-groupe { margin-bottom:18px; min-width:0; }
+.mm-groupe-h { display:flex; align-items:center; gap:8px; margin:0 0 10px; font-size:13px; font-weight:600; }
+.mm-groupe-h .n { color:var(--muted); font-variant-numeric:tabular-nums; }
+.mm-cartes { display:grid; grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); gap:10px; align-items:start; }
+.mm-cartes .kcard { margin-bottom:0; min-width:0; }
+.mm-cartes .kcard.mm-large { grid-column:1 / -1; }
+.mm-titre { border:0; background:none; padding:0; margin:0; font:inherit; color:inherit; text-align:left; cursor:pointer; overflow-wrap:anywhere; }
+.mm-titre:focus-visible { outline:2px solid var(--accent); outline-offset:2px; border-radius:4px; }
+.mm-l { display:flex; flex-wrap:wrap; align-items:center; gap:4px 10px; margin-top:8px; padding-top:8px; border-top:1px solid var(--hairline); color:var(--text-2); cursor:default; }
+.mm-l .lucide { width:12px; height:12px; vertical-align:-2px; margin-right:4px; color:var(--accent-text); }
+.mm-cr { margin-top:10px; padding-top:10px; border-top:1px solid var(--hairline); cursor:default; }
+.mm-l2 { margin-bottom:6px; overflow-wrap:anywhere; }
+.mm-pills { gap:6px; }
+@media (max-width:560px) { .mm-cartes { grid-template-columns:minmax(0,1fr); } }
+/* Accueil : une ligne vers Mes marchés › Bilan ; Mes marchés › Bilan : le carnet de notes sous le bilan */
+.bilan-ligne { display:flex; flex-wrap:wrap; align-items:center; gap:8px 12px; }
+.bilan-ic { color:var(--accent-text); flex:none; }
+.bilan-tx { flex:1; min-width:180px; }
+.bilan-carnet { display:block; margin-top:14px; }
+.cn-rappels > .alert-callout:first-child { margin-top:0; }
+/* La fenêtre d'invitation unique : « Qui invitez-vous ? » */
+.rinv-p { margin:0 0 12px; }
+.rinv-choix { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:8px; }
+.rinv-c { width:100%; display:flex; align-items:flex-start; gap:12px; padding:12px 14px; border:1px solid var(--border); border-radius:12px; background:var(--surface); color:var(--text); text-align:left; cursor:pointer; font:inherit; }
+.rinv-c:hover { border-color:var(--accent); background:var(--surface-2); }
+.rinv-c:focus-visible { outline:none; box-shadow:0 0 0 3px var(--ring); border-color:var(--accent); }
+.rinv-c > .lucide, .rinv-c > i > .lucide { width:18px; height:18px; flex:none; margin-top:2px; color:var(--accent-text); }
+.rinv-c-t { flex:1; min-width:0; display:flex; flex-direction:column; gap:2px; }
+.rinv-c-go { flex:none; align-self:center; color:var(--subtle); }
+.rinv-c-go .lucide { width:16px; height:16px; color:var(--subtle); }
+.rinv-retour { display:inline-flex; align-items:center; gap:4px; margin-top:10px; }
+.rinv-retour .lucide { width:13px; height:13px; }
+/* « Qui me complète ? » : trois réservoirs comptés, puis la recherche dans la zone */
+.pm-res { min-width:0; }
+.pm-res > * + * { margin-top:8px; }
+.pm-n { display:inline-grid; place-items:center; min-width:20px; height:18px; padding:0 6px; margin-left:6px; border-radius:999px; background:var(--surface-2); border:1px solid var(--border); color:var(--text-2); font-size:11px; font-weight:700; font-variant-numeric:tabular-nums; }
+.pm-recherche { margin-top:16px; padding-top:14px; border-top:1px solid var(--hairline); }
+.pm-recherche:focus { outline:none; }
+.pm-recherche > .row { margin-top:8px; }
+.pm-z-metier { width:190px; }
+.pm-z-dept { width:120px; }
+.pm-z-res { display:flex; flex-wrap:wrap; align-items:flex-start; gap:8px; padding:9px; margin-top:8px; border:1px solid var(--border); border-radius:8px; min-width:0; }
+@media (max-width:560px) { .pm-z-metier, .pm-z-dept { width:100%; flex:1 1 100%; } }
+/* « Prêt à déposer » : ce que vous vérifiez vous-même */
+.pret-soi { margin-top:12px; padding-top:10px; border-top:1px solid var(--hairline); }
+.pret-soi-h { gap:6px; }
+.pret-soi-l { gap:8px; align-items:flex-start; padding:5px 0; cursor:pointer; }
+.pret-soi-l input { margin-top:2px; }
+.pret-soi-l .fait { text-decoration:line-through; opacity:.55; }
+.pret-depot { margin:10px 0 0; }
