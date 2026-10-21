@@ -1,0 +1,798 @@
+{
+ "lu_le": "2026-10-21",
+ "source": "API BOAMP (OpenDataSoft, https://www.boamp.fr/api/explore/v2.1/catalog/datasets/boamp/records), lue en GET avec l'en-tête AdjugoBot le 21/10/2026 ; corps des suites réduit au bloc rectificatif/annulation (contacts retirés) ; champs des avis = SELECT de app/sourcing/sources/boamp.py",
+ "avis": [
+  {
+   "idweb": "26-95755",
+   "objet": "Orange (84) - Base Aérienne 115 - Capitaine de Seynes - Création d'une aire de jeux de type PADEL",
+   "nomacheteur": "SID Sud-Est",
+   "code_departement": [
+    "84",
+    "13",
+    "30",
+    "26",
+    "4"
+   ],
+   "dateparution": "2026-10-05",
+   "datelimitereponse": "2026-10-29T17:00:00+00:00",
+   "descripteur_libelle": [
+    "Terrassement",
+    "Terrain de sport"
+   ],
+   "descripteur_code": [
+    "341",
+    "342"
+   ],
+   "nature_libelle": "Avis de marché",
+   "famille_libelle": "Marchés entre 90 k€ et seuils européens",
+   "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-95755",
+   "type_marche": [
+    "TRAVAUX"
+   ],
+   "procedure_libelle": "Procédure Ouverte",
+   "annonce_lie": null,
+   "nature": "APPEL_OFFRE",
+   "etat": "INITIAL",
+   "contractfolderid": null
+  },
+  {
+   "idweb": "26-90521",
+   "objet": "Fourniture et installation de vestiaires et stockages avec éléments modulaires ou conteneurs pour une base kayak",
+   "nomacheteur": "Communauté d'Agglomération Vichy Communauté",
+   "code_departement": [
+    "3",
+    "63"
+   ],
+   "dateparution": "2026-09-18",
+   "datelimitereponse": "2026-10-21T12:00:00+00:00",
+   "descripteur_libelle": [
+    "Bâtiments modulaires"
+   ],
+   "descripteur_code": [
+    "27"
+   ],
+   "nature_libelle": "Avis de marché",
+   "famille_libelle": "Marchés entre 90 k€ et seuils européens",
+   "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-90521",
+   "type_marche": [
+    "FOURNITURES"
+   ],
+   "procedure_libelle": "Procédure Ouverte",
+   "annonce_lie": null,
+   "nature": "APPEL_OFFRE",
+   "etat": "INITIAL",
+   "contractfolderid": null
+  },
+  {
+   "idweb": "26-94570",
+   "objet": "Marché de travaux pour la sécurisation électrique du Service National de Police Scientifique (SNPS) à Écully (69)",
+   "nomacheteur": "SGAMI SUD-EST",
+   "code_departement": [
+    "69"
+   ],
+   "dateparution": "2026-09-30",
+   "datelimitereponse": "2026-10-29T12:00:00+00:00",
+   "descripteur_libelle": [
+    "Electricité (travaux)"
+   ],
+   "descripteur_code": [
+    "105"
+   ],
+   "nature_libelle": "Avis de marché",
+   "famille_libelle": "Marchés entre 90 k€ et seuils européens",
+   "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-94570",
+   "type_marche": [
+    "TRAVAUX"
+   ],
+   "procedure_libelle": "Procédure Ouverte",
+   "annonce_lie": null,
+   "nature": "APPEL_OFFRE",
+   "etat": "INITIAL",
+   "contractfolderid": null
+  },
+  {
+   "idweb": "26-93829",
+   "objet": "FOURNITURE DE CARBURANT EN STATION PAR CARTES ACCREDITIVES",
+   "nomacheteur": "Ville de Châlette-sur-Loing",
+   "code_departement": [
+    "45"
+   ],
+   "dateparution": "2026-09-30",
+   "datelimitereponse": "2026-11-02T11:00:00+00:00",
+   "descripteur_libelle": [
+    "Carburant, hydrocarbure"
+   ],
+   "descripteur_code": [
+    "52"
+   ],
+   "nature_libelle": "Avis de marché",
+   "famille_libelle": "Marchés européens",
+   "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-93829",
+   "type_marche": [
+    "FOURNITURES"
+   ],
+   "procedure_libelle": "Procédure Ouverte",
+   "annonce_lie": null,
+   "nature": "APPEL_OFFRE",
+   "etat": "INITIAL",
+   "contractfolderid": "092ae047-596f-44ad-b29c-1a81802ecccd"
+  },
+  {
+   "idweb": "26-95098",
+   "objet": "Entretien des espaces verts",
+   "nomacheteur": "FLERS AGGLO",
+   "code_departement": [
+    "61"
+   ],
+   "dateparution": "2026-10-03",
+   "datelimitereponse": "2026-11-03T11:00:00+00:00",
+   "descripteur_libelle": [
+    "Espaces verts",
+    "Prestations de services"
+   ],
+   "descripteur_code": [
+    "116",
+    "274"
+   ],
+   "nature_libelle": "Avis de marché",
+   "famille_libelle": "Marchés européens",
+   "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-95098",
+   "type_marche": [
+    "SERVICES"
+   ],
+   "procedure_libelle": "Procédure Ouverte",
+   "annonce_lie": null,
+   "nature": "APPEL_OFFRE",
+   "etat": "INITIAL",
+   "contractfolderid": "bb7d9a5a-9d54-420c-81ec-352f1cef5d01"
+  },
+  {
+   "idweb": "26-91602",
+   "objet": "Restructuration du Bâtiment Émile ROUX pour les besoins de l’Hôpital Simone VEIL Curage, désamiantage et déplombage",
+   "nomacheteur": "Centre hospitalier d&#039;Argenteuil",
+   "code_departement": [
+    "95"
+   ],
+   "dateparution": "2026-09-22",
+   "datelimitereponse": "2026-10-26T13:00:00+00:00",
+   "descripteur_libelle": [
+    "Amiante (désamiantage)"
+   ],
+   "descripteur_code": [
+    "479"
+   ],
+   "nature_libelle": "Avis de marché",
+   "famille_libelle": "Marchés entre 90 k€ et seuils européens",
+   "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-91602",
+   "type_marche": [
+    "TRAVAUX"
+   ],
+   "procedure_libelle": "Procédure Ouverte",
+   "annonce_lie": null,
+   "nature": "APPEL_OFFRE",
+   "etat": "INITIAL",
+   "contractfolderid": null
+  },
+  {
+   "idweb": "26-91526",
+   "objet": "ACCORD-CADRE MISSIONS DE MAÎTRISE D'OeUVRE ET DE CONSEIL POUR DES OPÉRATIONS DE VOIRIE ET DE RÉSEAUX DIVERS (VRD)",
+   "nomacheteur": "Mairie de Noisiel",
+   "code_departement": [
+    "77"
+   ],
+   "dateparution": "2026-09-23",
+   "datelimitereponse": "2026-10-26T11:00:00+00:00",
+   "descripteur_libelle": [
+    "Maîtrise d'oeuvre",
+    "Voirie"
+   ],
+   "descripteur_code": [
+    "197",
+    "365"
+   ],
+   "nature_libelle": "Avis de marché",
+   "famille_libelle": "Marchés européens",
+   "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-91526",
+   "type_marche": [
+    "SERVICES"
+   ],
+   "procedure_libelle": "Procédure Ouverte",
+   "annonce_lie": null,
+   "nature": "APPEL_OFFRE",
+   "etat": "INITIAL",
+   "contractfolderid": "93b869a9-0f58-4a09-a08d-5227dd669cb1"
+  },
+  {
+   "idweb": "26-90336",
+   "objet": "MCH26_018_2151COMPS_Marché de maîtrise d'oeuvre - Travaux de mise à niveau du système d'endiguement de Comps",
+   "nomacheteur": "EPTB GARDONS",
+   "code_departement": [
+    "30",
+    "34",
+    "12",
+    "48",
+    "84",
+    "13",
+    "26",
+    "7"
+   ],
+   "dateparution": "2026-09-18",
+   "datelimitereponse": "2026-10-16T15:00:00+00:00",
+   "descripteur_libelle": [
+    "Rivières/ruisseaux",
+    "Digue",
+    "Maîtrise d'oeuvre"
+   ],
+   "descripteur_code": [
+    "310",
+    "91",
+    "197"
+   ],
+   "nature_libelle": "Avis de marché",
+   "famille_libelle": "Marchés <90 k€ (MAPA)",
+   "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-90336",
+   "type_marche": [
+    "SERVICES"
+   ],
+   "procedure_libelle": "Procédure Adaptée",
+   "annonce_lie": null,
+   "nature": "APPEL_OFFRE",
+   "etat": "INITIAL",
+   "contractfolderid": null
+  },
+  {
+   "idweb": "26-101544",
+   "objet": "FOURNITURE DE CARBURANT EN STATION PAR CARTES ACCREDITIVES",
+   "nomacheteur": "Ville de Châlette-sur-Loing",
+   "code_departement": [
+    "45"
+   ],
+   "dateparution": "2026-10-21",
+   "datelimitereponse": "2026-11-18T08:00:00+00:00",
+   "descripteur_libelle": [
+    "Carburant, hydrocarbure"
+   ],
+   "descripteur_code": [
+    "52"
+   ],
+   "nature_libelle": "Avis de marché",
+   "famille_libelle": "Marchés européens",
+   "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-101544",
+   "type_marche": [
+    "FOURNITURES"
+   ],
+   "procedure_libelle": "Procédure Ouverte",
+   "annonce_lie": [
+    "26-93829"
+   ],
+   "nature": "APPEL_OFFRE",
+   "etat": "RECTIFICATIF",
+   "contractfolderid": "092ae047-596f-44ad-b29c-1a81802ecccd"
+  },
+  {
+   "idweb": "26-101475",
+   "objet": "Entretien des espaces verts",
+   "nomacheteur": "FLERS AGGLO",
+   "code_departement": [
+    "61"
+   ],
+   "dateparution": "2026-10-21",
+   "datelimitereponse": "2026-11-03T11:00:00+00:00",
+   "descripteur_libelle": [
+    "Espaces verts",
+    "Prestations de services"
+   ],
+   "descripteur_code": [
+    "116",
+    "274"
+   ],
+   "nature_libelle": "Avis de marché",
+   "famille_libelle": "Marchés européens",
+   "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-101475",
+   "type_marche": [
+    "SERVICES"
+   ],
+   "procedure_libelle": "Procédure Ouverte",
+   "annonce_lie": [
+    "26-95098"
+   ],
+   "nature": "APPEL_OFFRE",
+   "etat": "RECTIFICATIF",
+   "contractfolderid": "bb7d9a5a-9d54-420c-81ec-352f1cef5d01"
+  },
+  {
+   "idweb": "26-101778",
+   "objet": "ACCORD-CADRE MISSIONS DE MAÎTRISE D'OeUVRE ET DE CONSEIL POUR DES OPÉRATIONS DE VOIRIE ET DE RÉSEAUX DIVERS (VRD)",
+   "nomacheteur": "Mairie de Noisiel",
+   "code_departement": [
+    "77"
+   ],
+   "dateparution": "2026-10-21",
+   "datelimitereponse": "2026-10-26T11:00:00+00:00",
+   "descripteur_libelle": [
+    "Maîtrise d'oeuvre",
+    "Voirie"
+   ],
+   "descripteur_code": [
+    "197",
+    "365"
+   ],
+   "nature_libelle": "Avis de marché",
+   "famille_libelle": "Marchés européens",
+   "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-101778",
+   "type_marche": [
+    "SERVICES"
+   ],
+   "procedure_libelle": "Procédure Ouverte",
+   "annonce_lie": [
+    "26-91526"
+   ],
+   "nature": "APPEL_OFFRE",
+   "etat": "ANNULATION",
+   "contractfolderid": "93b869a9-0f58-4a09-a08d-5227dd669cb1"
+  },
+  {
+   "idweb": "26-94254",
+   "objet": "Marché pour la gestion et l'exploitation des structures d'accueil périscolaire, des mercredis éducatifs et des centres de loisirs-.",
+   "nomacheteur": "Communauté de Communes COEUR DU PAYS-HAUT",
+   "code_departement": [
+    "54"
+   ],
+   "dateparution": "2026-10-01",
+   "datelimitereponse": "2026-10-19T11:00:00+00:00",
+   "descripteur_libelle": [
+    "Prestations de services"
+   ],
+   "descripteur_code": [
+    "274"
+   ],
+   "nature_libelle": "Avis de marché",
+   "famille_libelle": "Marchés européens",
+   "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-94254",
+   "type_marche": [
+    "SERVICES"
+   ],
+   "procedure_libelle": "Procédure Ouverte",
+   "annonce_lie": null,
+   "nature": "APPEL_OFFRE",
+   "etat": "ANNULATION",
+   "contractfolderid": "013042e7-2aeb-4515-8257-095b98f25b72"
+  }
+ ],
+ "suites": [
+  {
+   "idweb": "26-96286",
+   "annonce_lie": [
+    "26-90336"
+   ],
+   "nature": "RECTIFICATIF",
+   "etat": "RECTIFICATIF",
+   "famille": "MAPA",
+   "dateparution": "2026-10-06",
+   "datelimitereponse": null,
+   "contractfolderid": null,
+   "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-96286",
+   "donnees": "{\"MAPA\": {\"rectificatif\": {\"avisInitial\": {\"idWeb\": \"26-90336\", \"datePublication\": \"2026-09-18\"}, \"description\": {\"objet\": \"MCH26_018_251COMPS_Marché de maîtrise d'oeuvre - Travaux de mise à niveau du système d'endiguement de Comps\"}, \"procedure\": {\"procedureAdaptee\": \"\"}, \"infosRectif\": {\"rubDelais\": \"ReceptionOffres\", \"auLieuDeDate\": \"2026-10-16T15:00:00Z\", \"lireDate\": \"2026-11-06T15:00:00Z\"}}}}",
+   "objet": "MCH26_018_2151COMPS_Marché de maîtrise d'oeuvre - Travaux de mise à niveau du système d'endiguement de Comps",
+   "nomacheteur": "EPTB GARDONS",
+   "code_departement": [
+    "30",
+    "34",
+    "12",
+    "84",
+    "26",
+    "7",
+    "13",
+    "48"
+   ],
+   "descripteur_libelle": [
+    "Rivières/ruisseaux",
+    "Digue",
+    "Maîtrise d'oeuvre"
+   ]
+  },
+  {
+   "idweb": "26-95892",
+   "annonce_lie": [
+    "26-95755"
+   ],
+   "nature": "ANNULATION",
+   "etat": "INITIAL",
+   "famille": "FNS",
+   "dateparution": "2026-10-05",
+   "datelimitereponse": null,
+   "contractfolderid": null,
+   "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-95892",
+   "donnees": "{\"FNSimple\": {\"annulation\": {\"avisInitial\": {\"idWeb\": \"26-95755\", \"datePublication\": \"2026-10-05\"}, \"natureMarche\": {\"intitule\": \"Orange (84) - BA 115 - Capitaine de Seynes - Création d'une aire de jeux de type PADEL (SID-SE 26 291 ; 469269)\", \"codeCPV\": {\"objetPrincipal\": {\"classPrincipale\": \"45212210\"}}, \"natureMarche\": {\"travaux\": \"\"}, \"description\": \"Le présent marché a pour objet la construction d’un terrain de padel en extérieur pour un jeu en double conforme aux recommandations du cahier des charges de la Fédération Française de Tennis (FFT) sur la Base Aérienne 115 d’Orange situé dans le département du Vaucluse (84).(SID-SE 26 291 ; 469269)\"}, \"infosAnnulation\": \"erreur de manipulation \"}}}",
+   "objet": "Orange (84) - Base Aérienne 115 - Capitaine de Seynes - Création d'une aire de jeux de type PADEL",
+   "nomacheteur": "SID Sud-Est",
+   "code_departement": [
+    "84",
+    "13",
+    "30",
+    "26",
+    "4"
+   ],
+   "descripteur_libelle": [
+    "Terrassement",
+    "Terrain de sport"
+   ]
+  },
+  {
+   "idweb": "26-102300",
+   "annonce_lie": [
+    "26-90521"
+   ],
+   "nature": "RECTIFICATIF",
+   "etat": "RECTIFICATIF",
+   "famille": "FNS",
+   "dateparution": "2026-10-21",
+   "datelimitereponse": null,
+   "contractfolderid": null,
+   "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-102300",
+   "donnees": "{\"FNSimple\": {\"rectificatif\": {\"avisInitial\": {\"idWeb\": \"26-90521\"}, \"natureMarche\": {\"intitule\": \"Fourniture et installation de vestiaires et stockages avec éléments modulaires ou conteneurs pour une base kayak\", \"codeCPV\": {\"objetPrincipal\": {\"classPrincipale\": \"44211100\"}}, \"natureMarche\": {\"fournitures\": \"\"}, \"description\": \"Les prestations sont réglées par des prix forfaitaires.\\nDans le cadre de sa stratégie de développement par l'économie du sport, Vichy Communauté souhaite créer une base kayak et rafting sur son stade d'eau vive en remplacement d'un bâtiment existant amené à être démoli pour un projet de microcentrale électrique sur le barrage de l'Allier\", \"criteresAttrib\": \"Valeur technique, appréciée au vue du mémoire technique fourni par le candidat : 30%\\nPerformances en matière de développement durable (environnemental et social) : 10%\\nPrix des prestations : 60%\"}, \"infosRectif\": \"Rubrique : Date et heure limites de réception des plis, Au lieu de 21/10/2026 à 12h00, lire 05/11/2026 à 12h00\"}}}",
+   "objet": "Fourniture et installation de vestiaires et stockages avec éléments modulaires ou conteneurs pour une base kayak",
+   "nomacheteur": "Communauté d'Agglomération Vichy Communauté",
+   "code_departement": [
+    "3",
+    "63"
+   ],
+   "descripteur_libelle": [
+    "Bâtiments modulaires"
+   ]
+  },
+  {
+   "idweb": "26-102338",
+   "annonce_lie": [
+    "26-94570"
+   ],
+   "nature": "RECTIFICATIF",
+   "etat": "RECTIFICATIF",
+   "famille": "FNS",
+   "dateparution": "2026-10-21",
+   "datelimitereponse": null,
+   "contractfolderid": null,
+   "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-102338",
+   "donnees": "{\"FNSimple\": {\"rectificatif\": {\"avisInitial\": {\"idWeb\": \"26-94570\", \"datePublication\": \"2026-09-30\"}, \"natureMarche\": {\"intitule\": \"Le présent marché de travaux porte sur le projet de sécurisation électrique du site du Service National de Police Scientifique à Écully (69). \", \"codeCPV\": {\"objetPrincipal\": {\"classPrincipale\": \"45311200\"}}, \"natureMarche\": {\"travaux\": \"\"}, \"description\": \"Le présent marché de travaux porte sur le projet de sécurisation électrique du site du Service National de Police Scientifique à Écully (69). \", \"criteresAttrib\": \"Critère prix (60 points) - Valeur technique (35 points) - Critère environnemental (5 points)\"}, \"infosRectif\": \"La Date de Limite de Remise des Offres est modifiée au 03/11/2026 à 12h00.\"}}}",
+   "objet": "Marché de travaux pour la sécurisation électrique du Service National de Police Scientifique (SNPS) à Écully (69)",
+   "nomacheteur": "SGAMI SUD-EST",
+   "code_departement": [
+    "69"
+   ],
+   "descripteur_libelle": [
+    "Electricité (travaux)"
+   ]
+  },
+  {
+   "idweb": "26-102254",
+   "annonce_lie": [
+    "26-91602"
+   ],
+   "nature": "RECTIFICATIF",
+   "etat": "RECTIFICATIF",
+   "famille": "FNS",
+   "dateparution": "2026-10-21",
+   "datelimitereponse": null,
+   "contractfolderid": null,
+   "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-102254",
+   "donnees": "{\"FNSimple\": {\"rectificatif\": {\"avisInitial\": {\"idWeb\": \"26-91602\"}, \"natureMarche\": {\"intitule\": \"Restructuration du Bâtiment Émile ROUX pour les besoins de l’Hôpital Simone VEIL Curage, désamiantage et déplombage \", \"codeCPV\": {\"objetPrincipal\": {\"classPrincipale\": \"45262660\"}}, \"natureMarche\": {\"travaux\": \"\"}, \"description\": \"Restructuration du Bâtiment Émile ROUX pour les besoins de l’Hôpital Simone VEIL Curage, désamiantage et déplombage – Lot 1B\", \"criteresAttrib\": \"Critères énoncés dans les documents de la consultation\"}, \"infosRectif\": \"Report de la date limite de remise des offres.\\nLa nouvelle date limite de remise des offres est le lundi 09 novembre 2026 à 13h.\"}}}",
+   "objet": "Restructuration du Bâtiment Émile ROUX pour les besoins de l’Hôpital Simone VEIL Curage, désamiantage et déplombage",
+   "nomacheteur": "Centre hospitalier d&#039;Argenteuil",
+   "code_departement": [
+    "95"
+   ],
+   "descripteur_libelle": [
+    "Amiante (désamiantage)"
+   ]
+  },
+  {
+   "idweb": "26-102209",
+   "annonce_lie": [
+    "26-93044"
+   ],
+   "nature": "RECTIFICATIF",
+   "etat": "RECTIFICATIF",
+   "famille": "MAPA",
+   "dateparution": "2026-10-21",
+   "datelimitereponse": null,
+   "contractfolderid": null,
+   "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-102209",
+   "donnees": "{\"MAPA\": {\"rectificatif\": {\"avisInitial\": {\"idWeb\": \"26-93044\"}, \"description\": {\"objet\": \"Travaux de rénovation des grilles métalliques extérieures de l’Hôtel de Courcy à Rennes (35)\", \"lieuExecutionLivraison\": {\"voie\": {\"nomvoie\": \"283 avenue Général Patton\"}, \"cp\": \"35711\", \"ville\": \"Rennes\"}}, \"procedure\": {\"procedureAdaptee\": \"\"}, \"infosRectif\": {\"ajouter\": \"La date de remise des offres est reportée au lundi 9 novembre à 12:00.\"}}}}",
+   "objet": "Travaux de rénovation des grilles métalliques extérieures de l’Hôtel de Courcy à Rennes (35)",
+   "nomacheteur": "Région Bretagne",
+   "code_departement": [
+    "35"
+   ],
+   "descripteur_libelle": [
+    "Peinture (travaux)",
+    "Métallerie"
+   ]
+  },
+  {
+   "idweb": "26-102497",
+   "annonce_lie": [
+    "26-94443"
+   ],
+   "nature": "RECTIFICATIF",
+   "etat": "RECTIFICATIF",
+   "famille": "MAPA",
+   "dateparution": "2026-10-21",
+   "datelimitereponse": null,
+   "contractfolderid": null,
+   "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-102497",
+   "donnees": "{\"MAPA\": {\"rectificatif\": {\"avisInitial\": {\"idWeb\": \"26-94443\", \"datePublication\": \"2026-09-30\"}, \"description\": {\"objet\": \"SIGNALÉTIQUE PATRIMONIALE ET PLANS D'ORIENTATION ET D'INFORMATION\\nLe présent accord-cadre porte sur la conception, la fabrication, la fourniture et la pose des équipements de signalétique composant l'opération \\\" Parcours patrimonial - Complément 2026-2027 \\\"\"}, \"procedure\": {\"procedureAdaptee\": \"\"}, \"infosRectif\": {\"rubDelais\": \"ReceptionOffres\", \"auLieuDeDate\": \"2026-10-23T12:00:00\", \"lireDate\": \"2026-11-09T12:00:00\"}}}}",
+   "objet": "SIGNALÉTIQUE PATRIMONIALE ET PLANS D'ORIENTATION ET D'INFORMATION\nLe présent accord-cadre porte sur la conception, la fabrication, la fourniture et la pose des équipements de signalétique composant...",
+   "nomacheteur": "Ville de Vittel",
+   "code_departement": [
+    "88"
+   ],
+   "descripteur_libelle": [
+    "Signalétique"
+   ]
+  },
+  {
+   "idweb": "26-101444",
+   "annonce_lie": [
+    "26-92492"
+   ],
+   "nature": "RECTIFICATIF",
+   "etat": "RECTIFICATIF",
+   "famille": "MAPA",
+   "dateparution": "2026-10-19",
+   "datelimitereponse": null,
+   "contractfolderid": null,
+   "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-101444",
+   "donnees": "{\"MAPA\": {\"rectificatif\": {\"avisInitial\": {\"idWeb\": \"26-92492\"}, \"description\": {\"objet\": \"Campagne de photographies des réserves naturelles régionales bretonnes \", \"lieuExecutionLivraison\": {\"voie\": {\"nomvoie\": \"283 avenue du General Patton\"}, \"cp\": \"35711\", \"ville\": \"RENNES\"}}, \"procedure\": {\"procedureAdaptee\": \"\"}, \"infosRectif\": {\"ajouter\": \"Modification de la date limite de réception des offres. \\nDLRO initiale : 26 octobre 2026 à 14H00\\nDLRO mise à jour : 2 novembre 2026 à 14H00\"}}}}",
+   "objet": "Campagne de photographies des réserves naturelles régionales bretonnes",
+   "nomacheteur": "REGION BRETAGNE",
+   "code_departement": [
+    "35",
+    "22",
+    "29",
+    "56"
+   ],
+   "descripteur_libelle": [
+    "Matériel photographique et cinématographique",
+    "Prestations de services"
+   ]
+  },
+  {
+   "idweb": "26-100570",
+   "annonce_lie": [
+    "26-95462"
+   ],
+   "nature": "RECTIFICATIF",
+   "etat": "RECTIFICATIF",
+   "famille": "MAPA",
+   "dateparution": "2026-10-16",
+   "datelimitereponse": null,
+   "contractfolderid": null,
+   "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-100570",
+   "donnees": "{\"MAPA\": {\"rectificatif\": {\"avisInitial\": {\"idWeb\": \"26-95462\", \"datePublication\": \"2026-10-02\"}, \"description\": {\"objet\": \"Réservation de berceaux au sein d’établissements d’accueil de jeunes enfants (EAJE), agréés par la Protection maternelle et infantile (PMI) et conventionnés auprès de la Caisse d’allocations familiales (CAF) du département concerné pour les enfants d’agents des MEF travaillant etou habitant en région Ile-de-France.\", \"marcheFournitures\": \"\", \"CPV\": {\"objetPrincipal\": {\"classPrincipale\": \"85312110\"}}, \"lieuExecution\": {\"voie\": {\"num\": \"5\", \"typevoie\": \"place\", \"nomvoie\": \"des vins de France\"}, \"cp\": \"75012\", \"ville\": \"Paris\"}, \"lieuLivraison\": {\"voie\": {\"num\": \"5\", \"typevoie\": \"place\", \"nomvoie\": \"des vins de France\"}, \"cp\": \"75012\", \"ville\": \"Paris\"}}, \"procedure\": {\"procedureAdaptee\": \"\"}, \"infosRectif\": {\"rubrique\": \"6.3 Critères d'attribution\", \"lire\": \"Critère : Valeur\"}}}}",
+   "objet": "Réservation de berceaux pour les enfants des agents des ministères économiques et financiers en Ile-de-France",
+   "nomacheteur": "Ministères économiques et financiers",
+   "code_departement": [
+    "75",
+    "77",
+    "78",
+    "91",
+    "92",
+    "93",
+    "94",
+    "95"
+   ],
+   "descripteur_libelle": [
+    "Prestations de services"
+   ]
+  },
+  {
+   "idweb": "26-102412",
+   "annonce_lie": [
+    "26-92823"
+   ],
+   "nature": "RECTIFICATIF",
+   "etat": "RECTIFICATIF",
+   "famille": "FNS",
+   "dateparution": "2026-10-21",
+   "datelimitereponse": null,
+   "contractfolderid": null,
+   "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-102412",
+   "donnees": "{\"FNSimple\": {\"rectificatif\": {\"avisInitial\": {\"idWeb\": \"26-92823\"}, \"natureMarche\": {\"intitule\": \"Travaux de peinture et de revêtement de sols souples\", \"codeCPV\": {\"objetPrincipal\": {\"classPrincipale\": \"45261220\"}}, \"natureMarche\": {\"travaux\": \"\"}, \"description\": \"La présente consultation a pour objet la réalisation de travaux de peinture et de revêtements de sols dans les locaux de CY Cergy Paris Université, en privilégiant l’utilisation de matériaux écologiques. Les prestations s’inscrivent dans le cadre de réparations, de rénovations et/ou d’aménagements de locaux au sein de l’ensemble des bâtiments de CY Cergy Paris Université situés en Ile-de-France.\\n\\nLes modalités techniques et d’exécution du marché sont définies au sein du cahier des clauses techniques particulières (CCTP) commun aux deux (02) lots, ainsi que dans le CCTP propre à chaque lot.\"}, \"infosRectif\": \"La date limite de remise des offres est reportée au vendredi 30 octobre à 17h00.\"}}}",
+   "objet": "Travaux de peinture et de revêtement de sols souples",
+   "nomacheteur": "CY Cergy Paris Université",
+   "code_departement": [
+    "75",
+    "78",
+    "92",
+    "95"
+   ],
+   "descripteur_libelle": [
+    "Peinture (travaux)",
+    "Revêtements de sols"
+   ]
+  },
+  {
+   "idweb": "26-102445",
+   "annonce_lie": [
+    "26-100611"
+   ],
+   "nature": "RECTIFICATIF",
+   "etat": "RECTIFICATIF",
+   "famille": "FNS",
+   "dateparution": "2026-10-21",
+   "datelimitereponse": null,
+   "contractfolderid": null,
+   "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-102445",
+   "donnees": "{\"FNSimple\": {\"rectificatif\": {\"avisInitial\": {\"idWeb\": \"26-100611\"}, \"natureMarche\": {\"intitule\": \"RELANCE APRES DECLARATION SANS SUITE - Fourniture de matériel de puériculture pour les besoins des services du Conseil Départemental du Var - 7 Lots\", \"codeCPV\": {\"objetPrincipal\": {\"classPrincipale\": \"39161000\"}}, \"natureMarche\": {\"fournitures\": \"\"}, \"description\": \"Le Conseil Départemental du Var relance la consultation suite à une déclaration sans suite pour motif d'infructuosité. (art. R.2185-1 et R.2185-2 du Code de la Commande Publique)\\nLe LOT 7 sera lancé ultérieurement, conformément aux articles R.2123-4  et R.2122-8 du CCP (procédure mini petit lot dont le montant maximum annuel n'excède pas 15 000 euro(s)  HT).\\nChaque marché est conclu sous la forme d'un accord-cadre mono-attributaire à bons de commande, conformément aux articles R. 2162-1. à R. 2162-6. R. 2162-13. et R. 2162-14. du CCP. pour une durée d'un an, à compter de la date de notification. Il est renouvelable 1 fois par période d'un an, par reconduction tacite, la durée totale du marché ne pouvant excéder 2 ans.\\nLe marché sera attribué à une entreprise individuelle ou à un groupement momentané d'opérateurs économiques.\\nEn cas de groupement d'opérateurs économiques, la composition du groupement et son mandataire devront être présentés lors de la remise de l'offre\", \"criteresAttrib\": \"Critère Valeur Technique : 30%\\nCritère Environnemental : 10%\\nCritère Prix : 60%\"}, \"infosRectif\": [\"Rubrique : Lot 1, Au lieu de N°2026090, lire N°20262090\", \"Rubrique : Lot 2, Au lieu de N°2026091, lire N°20262091\", \"Rubrique : Lot 3, Au lieu de N°2026092, lire N°20262092\", \"Rubrique : Lot 4, Au lieu de N°2026093, lire N°20262093\", \"Rubrique : Lot 5, Au lieu de N°2026094, lire N°20262094\", \"Rubrique : Lot 6, Au lieu de N°2026096, lire N°20262096\"]}}}",
+   "objet": "Relance Apres Declaration Sans Suite - Fourniture de matériel de puériculture pour les besoins des services du Conseil Départemental du Var - 7 Lots",
+   "nomacheteur": "Departement Du Var",
+   "code_departement": [
+    "83"
+   ],
+   "descripteur_libelle": [
+    "Matériel de puériculture"
+   ]
+  },
+  {
+   "idweb": "26-102230",
+   "annonce_lie": [
+    "26-98203"
+   ],
+   "nature": "RECTIFICATIF",
+   "etat": "RECTIFICATIF",
+   "famille": "FNS",
+   "dateparution": "2026-10-21",
+   "datelimitereponse": null,
+   "contractfolderid": null,
+   "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-102230",
+   "donnees": "{\"FNSimple\": {\"rectificatif\": {\"avisInitial\": {\"idWeb\": \"26-98203\"}, \"natureMarche\": {\"intitule\": \"MARCHE POUR L'EXPLOITATION ET LA MAINTENANCE DES INSTALLATIONS DE CHAUFFAGE, VENTILATIONS ET CLIMATISATIONS AVEC INTERESSEMENT DES COMMUNES DU PAYS DU GIER (type de marché : PFI)\", \"codeCPV\": {\"objetPrincipal\": {\"classPrincipale\": \"50700000\"}}, \"natureMarche\": {\"services\": \"\"}, \"description\": \"Le présent marché a pour objet de confier à un opérateur économique les prestations nécessaires à l'entretien, la maintenance (P2 + intéressement sur une partie des bâtiments), le dépannage des installations de chauffage ventilation et de conditionnement d'air (CVC) des bâtiments communaux des communes de la vallée du Gier.\\nIl est passé dans le cadre d'un groupement de commandes coordonné par le Syndicat Intercommunal du Pays du Gier.\\nIl s'agit d'une procédure adaptée en application de l'article R2123-1 du Code de la commande publique.\\nLe présent marché est conclu pour une première période allant de sa date de notification au 31 août 2027, reconductible tacitement pour deux autres périodes du 1er septembre 2027 au 31 août 2028 et du 1er septembre 2028 au 31 août 2029\", \"criteresAttrib\": \"Valeur technique  : 50%\\nValeur environnementale : 10%\\nPrix des prestations : 40%\"}, \"infosRectif\": [\"Rubrique : Date et heure limites de réception des plis, Au lieu de 06/11/2026 à 16h00, lire 27/11/2026 à 16h00\", \"Rubrique : 2.7 - Visite des lieux d'exécution du marché, Au lieu de Pour effectuer une visite, les candidats doivent contacter chaque commune / intercommunalité du groupement de commande et définir une date sur la période du mercredi 14 octobre 2026 au mercredi 21 octobre 2026., lire Pour effectuer une visite, les candidats doivent contacter chaque commune / intercommunalité du groupement de commande et définir une date au plus tard le lundi 16 novembre 2026 inclus\"]}}}",
+   "objet": "Marche Pour L'Exploitation Et La Maintenance Des Installations De Chauffage, Ventilations Et Climatisations Avec Interessement Des Communes Du Pays Du Gier (type de marché : Pfi)",
+   "nomacheteur": "Syndicat Intercommunal Du Pays Du Gier",
+   "code_departement": [
+    "42"
+   ],
+   "descripteur_libelle": [
+    "Maintenance",
+    "Chauffage (exploitation, entretien)"
+   ]
+  },
+  {
+   "idweb": "26-102494",
+   "annonce_lie": [
+    "26-101007"
+   ],
+   "nature": "RECTIFICATIF",
+   "etat": "RECTIFICATIF",
+   "famille": "FNS",
+   "dateparution": "2026-10-21",
+   "datelimitereponse": null,
+   "contractfolderid": null,
+   "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-102494",
+   "donnees": "{\"FNSimple\": {\"rectificatif\": {\"avisInitial\": {\"idWeb\": \"26-101007\", \"datePublication\": \"2026-10-16\"}, \"natureMarche\": {\"intitule\": \"Construction d'une école maternelle lot 11 Electricité (RELANCE)\", \"codeCPV\": {\"objetPrincipal\": {\"classPrincipale\": \"45000000\"}}, \"natureMarche\": {\"travaux\": \"\"}, \"description\": \"Construction d'une école maternelle sur la commune de Saint Alban de Roche (38)  relance du lot N°11 Electricité\"}, \"infosRectif\": \"Date et heure limite de réception des plis : 02 novembre 2026 à 12h00\"}}}",
+   "objet": "Construction d'une école maternelle lot 11 Electricité (RELANCE)",
+   "nomacheteur": "SARA Aménagement mandataire de la commune de Saint-Alban-de-Roche",
+   "code_departement": [
+    "38",
+    "1",
+    "69"
+   ],
+   "descripteur_libelle": [
+    "Electricité (travaux)"
+   ]
+  },
+  {
+   "idweb": "26-102325",
+   "annonce_lie": [
+    "26-94590"
+   ],
+   "nature": "RECTIFICATIF",
+   "etat": "RECTIFICATIF",
+   "famille": "FNS",
+   "dateparution": "2026-10-21",
+   "datelimitereponse": null,
+   "contractfolderid": null,
+   "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-102325",
+   "donnees": "{\"FNSimple\": {\"rectificatif\": {\"avisInitial\": {\"idWeb\": \"26-94590\"}, \"natureMarche\": {\"intitule\": \"Travaux d'aménagement d'un parking desservant le futur bâtiment administratif du Centre Hospitalier d'Avignon\", \"codeCPV\": {\"objetPrincipal\": {\"classPrincipale\": \"45223300\"}}, \"natureMarche\": {\"travaux\": \"\"}, \"description\": \"Travaux d'aménagement d'un parking desservant le futur bâtiment administratif du Centre Hospitalier d'Avignon\", \"criteresAttrib\": \"Voir article 5.6 du Règlement de la consultation\"}, \"infosRectif\": \"La date limite de remise des offres est reportée au jeudi 29 octobre 2026 à 14 heures.\"}}}",
+   "objet": "Travaux d'aménagement d'un parking desservant le futur bâtiment administratif du Centre Hospitalier d'Avignon",
+   "nomacheteur": "Centre Hospitalier d'Avignon",
+   "code_departement": [
+    "84"
+   ],
+   "descripteur_libelle": [
+    "Terrassement",
+    "Voirie"
+   ]
+  },
+  {
+   "idweb": "26-102361",
+   "annonce_lie": [
+    "26-99021"
+   ],
+   "nature": "RECTIFICATIF",
+   "etat": "RECTIFICATIF",
+   "famille": "FNS",
+   "dateparution": "2026-10-21",
+   "datelimitereponse": null,
+   "contractfolderid": null,
+   "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-102361",
+   "donnees": "{\"FNSimple\": {\"rectificatif\": {\"avisInitial\": {\"idWeb\": \"26-99021\"}, \"natureMarche\": {\"intitule\": \"Pôle d'Animation Sociale et Vie Associative_CHAUFFAGE VENTILATION PLOMBERIE (RELANCE)\", \"codeCPV\": {\"objetPrincipal\": {\"classPrincipale\": \"45212000\"}}, \"natureMarche\": {\"travaux\": \"\"}, \"description\": \"Les prestations sont réglées par des prix forfaitaires.\\nConstruction d'un Pôle d'Animation Sociale et Vie Associative\", \"criteresAttrib\": \"énoncé dans le Rc\"}, \"infosRectif\": \"Rubrique : Date et heure limites de réception des plis, Au lieu de 03/11/2026 à 12h00, lire 17/11/2026 à 12h00\"}}}",
+   "objet": "Pôle d'Animation Sociale et Vie Associative_chauffage Ventilation Plomberie (Relance)",
+   "nomacheteur": "Ville Bourges",
+   "code_departement": [
+    "18"
+   ],
+   "descripteur_libelle": [
+    "Electricité (travaux)",
+    "Gros oeuvre",
+    "Menuiserie",
+    "Plomberie (travaux)"
+   ]
+  },
+  {
+   "idweb": "26-102090",
+   "annonce_lie": [
+    "26-94290"
+   ],
+   "nature": "RECTIFICATIF",
+   "etat": "RECTIFICATIF",
+   "famille": "MAPA",
+   "dateparution": "2026-10-20",
+   "datelimitereponse": null,
+   "contractfolderid": null,
+   "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-102090",
+   "donnees": "{\"MAPA\": {\"rectificatif\": {\"avisInitial\": {\"idWeb\": \"26-94290\"}, \"description\": {\"objet\": \"Location, pose et maintenance de décors et d'illuminations festifs éphémères\", \"lieuExecutionLivraison\": {\"voie\": {\"nomvoie\": \"Hôtel de ville - quai du port\"}, \"cp\": \"13233\", \"ville\": \"Marseille cedex \"}}, \"procedure\": {\"procedureAdaptee\": \"\"}, \"infosRectif\": {\"ajouter\": \"Prolongation de date limite de réception des offres au 28/10/2026 - 12h00.\"}}}}",
+   "objet": "Location, pose et maintenance de décors et d'illuminations festifs éphémères",
+   "nomacheteur": "Ville de Marseille",
+   "code_departement": [
+    "13"
+   ],
+   "descripteur_libelle": [
+    "Illumination"
+   ]
+  },
+  {
+   "idweb": "26-102146",
+   "annonce_lie": [
+    "26-89940"
+   ],
+   "nature": "RECTIFICATIF",
+   "etat": "RECTIFICATIF",
+   "famille": "MAPA",
+   "dateparution": "2026-10-20",
+   "datelimitereponse": null,
+   "contractfolderid": null,
+   "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-102146",
+   "donnees": "{\"MAPA\": {\"rectificatif\": {\"avisInitial\": {\"idWeb\": \"26-89940\", \"datePublication\": \"2026-09-17\"}, \"description\": {\"objet\": \"Travaux de réparation des quais 5 et 6 sur les Chantiers Navals de La Ciotat\", \"CPV\": {\"objetPrincipal\": {\"classPrincipale\": \"45200000\"}, \"objetComplementaire\": {\"classPrincipale\": \"45241100\"}}, \"lieuExecutionLivraison\": {\"voie\": {\"nomvoie\": \"46 Quai François Mitterrand\"}, \"cp\": \"13600\", \"ville\": \"La Ciotat\"}}, \"procedure\": {\"procedureAdaptee\": \"\"}, \"infosRectif\": {\"rubDelais\": \"ReceptionOffres\", \"auLieuDeDate\": \"2026-10-23T12:00:00\", \"lireDate\": \"2026-10-30T12:00:00\"}}}}",
+   "objet": "Travaux de réparation des quais 5 et 6 sur les Chantiers Navals de La Ciotat",
+   "nomacheteur": "LA CIOTAT SHIPYARDS",
+   "code_departement": [
+    "13"
+   ],
+   "descripteur_libelle": [
+    "Installation portuaire"
+   ]
+  },
+  {
+   "idweb": "26-102403",
+   "annonce_lie": [
+    "26-90456"
+   ],
+   "nature": "RECTIFICATIF",
+   "etat": "RECTIFICATIF",
+   "famille": "FNS",
+   "dateparution": "2026-10-21",
+   "datelimitereponse": null,
+   "contractfolderid": null,
+   "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-102403",
+   "donnees": "{\"FNSimple\": {\"rectificatif\": {\"avisInitial\": {\"idWeb\": \"26-90456\"}, \"natureMarche\": {\"intitule\": \"Remplacement de deux pompes à chaleur au Centre Mémoires et Société - Le Rize\", \"codeCPV\": {\"objetPrincipal\": {\"classPrincipale\": \"45331100\"}}, \"natureMarche\": {\"travaux\": \"\"}, \"description\": \"La présente consultation concerne les travaux de remplacement de deux pompes à chaleur du Centre Mémoire et Société (Le Rize)\", \"criteresAttrib\": \"Valeur technique : 50%\\nPerformance en matière de protection de l'environnement : 10%\\nPrix : 40%\"}, \"infosRectif\": \"Rubrique : Date et heure limites de réception des plis, Au lieu de 23/10/2026 à 12h00, lire 27/10/2026 à 12h00\"}}}",
+   "objet": "Remplacement de deux pompes à chaleur au Centre Mémoires et Société - Le Rize",
+   "nomacheteur": "Ville de Villeurbanne",
+   "code_departement": [
+    "69"
+   ],
+   "descripteur_libelle": [
+    "Chauffage (travaux)"
+   ]
+  }
+ ]
+}

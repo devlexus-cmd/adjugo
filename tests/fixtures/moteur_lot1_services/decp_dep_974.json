@@ -1,0 +1,72 @@
+{
+ "_requete": {
+  "url": "https://data.economie.gouv.fr/api/explore/v2.1/catalog/datasets/decp-2022-marches-valides/records",
+  "params": {
+   "limit": 4,
+   "order_by": "-datenotification",
+   "select": "objet,montant,datenotification,dureemois,nature,procedure,acheteur_id,lieuexecution_code,lieuexecution_typecode,codecpv,source,titulaire_id_1",
+   "where": "objet like \"travaux\" AND dureemois > 0 AND datenotification >= date'2022-10-01' AND datenotification <= date'2026-04-01' AND startswith(lieuexecution_code, \"974\")"
+  },
+  "lu_le": "2026-10-21"
+ },
+ "total_count": 1198,
+ "results": [
+  {
+   "objet": "Marché de travaux de gros entretien sur les opérations 20 LLTS MAISON RELAIS et 25 LHSS CENTRE D'HEBERGEMENT ET DE REINSERTION SOCIALE BOIS D'OLIVE",
+   "montant": 60991.0,
+   "datenotification": "2026-03-31",
+   "dureemois": 6,
+   "nature": "Marché",
+   "procedure": "Procédure adaptée",
+   "acheteur_id": "31086337800025",
+   "lieuexecution_code": "97432",
+   "lieuexecution_typecode": "Code postal",
+   "codecpv": "45210000-2",
+   "source": "AWS",
+   "titulaire_id_1": "90000001600019"
+  },
+  {
+   "objet": "Marché de travaux de gros entretien sur les opérations 20 LLTS MAISON RELAIS et 25 LHSS CENTRE D'HEBERGEMENT ET DE REINSERTION SOCIALE BOIS D'OLIVE",
+   "montant": 80539.0,
+   "datenotification": "2026-03-31",
+   "dureemois": 6,
+   "nature": "Marché",
+   "procedure": "Procédure adaptée",
+   "acheteur_id": "31086337800025",
+   "lieuexecution_code": "97432",
+   "lieuexecution_typecode": "Code postal",
+   "codecpv": "45210000-2",
+   "source": "AWS",
+   "titulaire_id_1": "90000001700017"
+  },
+  {
+   "objet": "Marché de travaux de gros entretien sur les opérations 20 LLTS MAISON RELAIS et 25 LHSS CENTRE D'HEBERGEMENT ET DE REINSERTION SOCIALE BOIS D'OLIVE",
+   "montant": 44332.0,
+   "datenotification": "2026-03-31",
+   "dureemois": 6,
+   "nature": "Marché",
+   "procedure": "Procédure adaptée",
+   "acheteur_id": "31086337800025",
+   "lieuexecution_code": "97432",
+   "lieuexecution_typecode": "Code postal",
+   "codecpv": "45210000-2",
+   "source": "AWS",
+   "titulaire_id_1": "90000001800017"
+  },
+  {
+   "objet": "Marché de travaux pour la réalisation d'un giratoire - Phase 1 de la ZAC Renaissance III",
+   "montant": 112105.0,
+   "datenotification": "2026-03-27",
+   "dureemois": 7,
+   "nature": "Marché",
+   "procedure": "Procédure adaptée",
+   "acheteur_id": "31086337800025",
+   "lieuexecution_code": "97460",
+   "lieuexecution_typecode": "Code postal",
+   "codecpv": "45233128-2",
+   "source": "AWS",
+   "titulaire_id_1": "90000001900021"
+  }
+ ],
+ "_note": "Réponse publique lue le 2026-10-21 (GET, en-tête AdjugoBot). Numéros des titulaires remplacés par des numéros fictifs ; le reste est tel que lu."
+}

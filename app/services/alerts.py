@@ -390,9 +390,68 @@ def run_document_expiry_alerts(db: Session) -> dict:
 
 # ── Veille AO : alertes sur recherches sauvegardées ──────────────────────────────
 
+# Mémoire des marchés déjà vus, par alerte (last_seen_refs) : UNE entrée par marché, ses références jointes par
+# _SEP_REFS ; ordre gardé, du plus ancien au plus récent ; 500 marchés au plus, comme avant le lot 1.
+_REFS_GARDEES = 500
+_SEP_REFS = " + "            # absent des références (chiffres, tirets), des clés de fusion et des noms de source
+# Courriel : 10 marchés au plus par alerte (décision 11 : « comme aujourd'hui »), le reste est compté.
+_MARCHES_PAR_ALERTE = 10
+
+
+def _jetons(entree) -> list:
+    """Les références d'une entrée de la mémoire (une entrée ancienne n'en a qu'une, nue)."""
+    return [j for j in str(entree or "").split(_SEP_REFS) if j]
+
+
+def _memoriser(deja: list, vus: list) -> list:
+    """Nouvelle mémoire : chaque marché vu à ce passage passe en fin de liste, avec toutes ses références (celles
+    d'aujourd'hui et celles de son entrée précédente, forme ancienne comprise) ; les autres entrées gardent leur
+    ordre. `vus` : [(références nouvelles, toutes ses clés)] dans l'ordre de la recherche."""
+    entrees = list(deja)
+    for nouvelles, cles in vus:
+        gardees, jetons = [], list(nouvelles)
+        for e in entrees:
+            je = _jetons(e)
+            if cles.intersection(je):
+                jetons += je            # la même entrée : fusionnée, jamais comptée deux fois
+            else:
+                gardees.append(e)
+        entrees = gardees + [_SEP_REFS.join(dict.fromkeys(jetons))]
+    return entrees
+
+
+def _refs_du_marche(t) -> tuple:
+    """(références nouvelles, références anciennes) d'un marché trouvé (lot 1, point 6).
+
+    Nouvelle forme : « SOURCE|référence », pour l'avis lui-même ET pour chaque source où le même marché a été vu
+    (also_seen_in) : un marché fusionné BOAMP + Mégalis n'est pas renvoyé le jour où l'ordre des sources change,
+    et un numéro de consultation Mégalis égal à un numéro d'avis BOAMP ne masque plus un autre marché. Sans
+    référence officielle, la clé de fusion (objet, acheteur, date limite) préfixée par la source.
+    Rectificatifs du BOAMP rattachés à l'avis (chantier Sources) : leurs références sont celles du même marché.
+    Avant le lot 1, un rectificatif au format européen était une carte à part, sous sa propre référence ; une
+    alerte qui l'a déjà envoyé ne renvoie donc pas l'avis qui le porte maintenant (réunion des chantiers).
+    Forme ancienne (avant le lot 1, gardée en mémoire par les alertes en service) : la référence nue, ou la clé
+    nue ; elle reste reconnue pour ne rien renvoyer deux fois."""
+    nouvelles, anciennes = [], []
+    for prov in ([t.provenance] + list(getattr(t, "also_seen_in", None) or [])
+                 + list(getattr(t, "rectificatifs", None) or [])):
+        ref = (getattr(prov, "official_ref", "") or "").strip()
+        src = (getattr(prov, "source", "") or "").strip() or "?"
+        if ref:
+            nouvelles.append(f"{src}|{ref}")
+            anciennes.append(ref)
+        elif t.dedup_key:
+            nouvelles.append(f"{src}|{t.dedup_key}")
+    if t.dedup_key:
+        anciennes.append(t.dedup_key)
+    return list(dict.fromkeys(nouvelles)), list(dict.fromkeys(anciennes))
+
+
 def run_one_saved_search(s: SavedSearch, db: Session, mark: bool = True) -> list:
-    """Rejoue UNE recherche sauvegardée, renvoie les NOUVEAUX AO pertinents
-    (non déjà notifiés, score ≥ seuil). Met à jour last_run / last_seen_refs si mark."""
+    """Rejoue UNE recherche sauvegardée, renvoie les NOUVEAUX marchés (non déjà notifiés), dans l'ordre de
+    la recherche. Décision 11 (lot 1) : plus AUCUN marché écarté à cause de sa note calculée avant le dossier
+    (le seuil reviendra réglable et annoncé, avec le barème corrigé). Met à jour last_run / last_seen_refs
+    si mark."""
     from app.sourcing.base import TenderCriteria
     from app.sourcing.search import TenderSearchService
     from app.routers.sourcing import _tender_sources
@@ -412,28 +471,57 @@ def run_one_saved_search(s: SavedSearch, db: Session, mark: bool = True) -> list
         logger.warning("veille : recherche %s en échec : %s", s.id, e)
         return []
 
-    seen = set(s.last_seen_refs or [])
-    threshold = s.min_score if s.min_score is not None else (gonogo.get("go_threshold") or 0)
-    fresh = []
+    deja = [e for e in (s.last_seen_refs or []) if isinstance(e, str) and e]
+    seen = {j for e in deja for j in _jetons(e)}
+    fresh, vus = [], []
     for t in result["tenders"]:
-        ref = t.provenance.official_ref or t.dedup_key
-        if not ref or ref in seen:
+        nouvelles, anciennes = _refs_du_marche(t)
+        if not nouvelles:
             continue
-        score = t.score.total if t.score else 0
-        if score < threshold:
+        cles = set(nouvelles) | set(anciennes)
+        vus.append((nouvelles, cles))
+        if cles & seen:
             continue
+        seen |= cles                    # un même marché rendu deux fois par la recherche n'est listé qu'une fois
+        # « ref » : la référence de l'avis telle qu'avant le lot 1 (rendue par « Tester » une alerte, API
+        # inchangée) ; la forme « SOURCE|référence » ne sert qu'à la mémoire (last_seen_refs).
         fresh.append({
-            "objet": t.objet, "acheteur": t.acheteur, "score": score,
+            "objet": t.objet, "acheteur": t.acheteur, "score": t.score.total if t.score else 0,
             "date_limite": t.date_limite, "lieu": t.lieu,
-            "source": t.provenance.source, "url": t.provenance.source_url, "ref": ref,
+            "source": t.provenance.source, "url": t.provenance.source_url,
+            "ref": t.provenance.official_ref or t.dedup_key,
         })
 
     if mark:
-        # On mémorise TOUS les refs vus (même sous le seuil) pour ne pas re-notifier.
-        all_refs = [t.provenance.official_ref or t.dedup_key for t in result["tenders"]]
-        s.last_seen_refs = list(dict.fromkeys(list(seen) + [r for r in all_refs if r]))[-500:]
+        # Tous les marchés vus sont mémorisés, une entrée par marché. L'ordre est GARDÉ (plus ancien d'abord) et un
+        # marché encore présent repasse en fin de liste : seuls les marchés les plus anciens, que la recherche ne
+        # rend plus, sortent de la mémoire. Avant le lot 1, la liste repassait par un ensemble et la coupe à 500
+        # retirait des références au hasard, dont celles de marchés encore ouverts, renvoyés ensuite.
+        s.last_seen_refs = _memoriser(deja, vus)[-_REFS_GARDEES:]
         s.last_run = utcnow()
     return fresh
+
+
+def _jour_paris_de(moment):
+    """Jour de Paris d'un horodatage enregistré en UTC (naïf ou non)."""
+    from datetime import timezone
+    from app.services.pieces_fin import _tz_paris
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    tz = _tz_paris()
+    return moment.astimezone(tz).date() if tz is not None else moment.date()
+
+
+def _hebdomadaire_pas_encore_due(s: SavedSearch, aujourdhui) -> bool:
+    """« Hebdomadaire » réellement appliqué (lot 1, point 6) : une alerte hebdomadaire déjà servie repart
+    7 jours de Paris après son dernier passage, quelle que soit l'heure de l'appel programmé. Jamais servie :
+    elle part au premier passage."""
+    if (s.frequency or "") != "hebdomadaire" or not s.last_run:
+        return False
+    try:
+        return (aujourdhui - _jour_paris_de(s.last_run)).days < 7
+    except Exception:           # horodatage illisible : on sert l'alerte plutôt que de la taire
+        return False
 
 
 def run_tender_alerts(db: Session) -> dict:
@@ -441,11 +529,21 @@ def run_tender_alerts(db: Session) -> dict:
     searches = db.query(SavedSearch).filter(SavedSearch.active.is_(True)).all()
     # On ne marque « déjà vu » QUE pour les users joignables par email : sinon les marchés d'un
     # user sans email étaient marqués vus puis jamais notifiés (perdus quand il ajoute son email).
-    emailed = {uid for (uid,) in db.query(User.id).filter(User.email.isnot(None)).all()}
+    # Joignable = adresse CONFIRMÉE (relecture du lot 1) : une adresse jamais confirmée peut être celle d'un tiers,
+    # et la décision 11 (plus aucun marché écarté par sa note) multipliait les courriels vers elle. Rien n'est
+    # perdu : sans marquer « déjà vu », ces marchés partent au premier passage après la confirmation. Les comptes
+    # d'avant la vérification des adresses sont confirmés (migration j4k5l6m7n8o9).
+    emailed = {uid for (uid,) in db.query(User.id).filter(User.email.isnot(None),
+                                                          User.email_verified.is_(True)).all()}
     by_user = defaultdict(list)   # user_id -> [(search_name, [tenders])]
     demo_ids = _demo_user_ids(db)
+    from app.services.pieces_fin import jour_paris
+    aujourdhui, en_attente = jour_paris(), 0
     for s in searches:
         if s.frequency == "manuelle" or s.user_id in demo_ids:
+            continue
+        if _hebdomadaire_pas_encore_due(s, aujourdhui):
+            en_attente += 1
             continue
         has_email = s.user_id in emailed
         fresh = run_one_saved_search(s, db, mark=has_email)
@@ -455,22 +553,28 @@ def run_tender_alerts(db: Session) -> dict:
     notified, total = 0, 0
     for user_id, blocks in by_user.items():
         user = db.query(User).filter(User.id == user_id).first()
-        if not user or not user.email:
+        if not user or not user.email or not user.email_verified:
             continue
         lines = ["Bonjour,\n\nVotre veille Adjugo a repéré de nouveaux appels d'offres :\n"]
         for name, tenders in blocks:
             lines.append(f"\n● {name} ({len(tenders)} nouveau(x)) :")
-            for t in tenders[:10]:
+            for t in tenders[:_MARCHES_PAR_ALERTE]:
                 ech = f" — clôture {t['date_limite']}" if t.get("date_limite") else ""
                 # Décision 8 (réorganisation) : pas de note sur 100 avant le dossier du marché ; l'ordre de la
                 # liste (le plus adapté d'abord) suffit. Ce que promet la vitrine : objet, acheteur, date limite, lien.
                 lines.append(f"   • {t['objet'][:90]} — {t.get('acheteur') or 'acheteur n/d'}{ech}\n     {t['url']}")
+            reste = len(tenders) - _MARCHES_PAR_ALERTE
+            if reste > 0:
+                # Rien n'est caché en silence (moteur § 7, règle 8) : les marchés au-delà des 10 premiers sont comptés.
+                lines.append(f"   … et {reste} {'autre marché' if reste == 1 else 'autres marchés'} : relancez cette "
+                             "recherche dans Adjugo pour les voir tous.")
             total += len(tenders)
         lines.append("\n\nConnectez-vous à Adjugo pour les analyser.\n\n— Adjugo")
         if send_email(user.email, f"Adjugo — {sum(len(t) for _, t in blocks)} nouvel(s) appel(s) d'offres", "\n".join(lines)):
             notified += 1
     db.commit()
-    result = {"searches_run": len(searches), "users_notified": notified, "new_matches": total}
+    result = {"searches_run": len(searches), "users_notified": notified, "new_matches": total,
+              "weekly_not_due": en_attente}
     # Rédaction, vague 6 (F) : rappel « Demandez vos notes » 2 jours après le passage à « Perdu », par courriel
     # seulement aux utilisateurs qui ont des alertes actives (une fois par marché, jamais à l'acheteur).
     try:

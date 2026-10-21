@@ -84,6 +84,14 @@ class NormalizedTender(BaseModel):
     score: Optional[Score] = None
     dedup_key: str = ""                        # clé de déduplication
     also_seen_in: list[Provenance] = []        # mêmes AO trouvés sur d'autres sources
+    # Rectificatifs du BOAMP rattachés à cet avis par `annonce_lie` (lot 1 « Dire juste », docs/MOTEUR_LOT1.md) :
+    # la fiche reste celle de l'avis initial (même référence, même lien) ; chaque rectificatif garde son lien.
+    rectificatifs: list[Provenance] = []
+    rectifie_le: Optional[str] = None          # date de parution du dernier rectificatif rattaché (ISO)
+    date_limite_initiale: Optional[str] = None # date limite de l'avis initial, quand un rectificatif l'a changée
+    # True : un rectificatif change la date limite mais sa nouvelle date n'a pas pu être lue sans doute
+    # possible → date_limite reste vide (« non précisée »), jamais l'ancienne date ni une date devinée.
+    date_limite_rectifiee_non_lue: bool = False
     raw: dict[str, Any] = {}                   # payload brut (traçabilité)
 
     @field_validator("dce_url", mode="before")
@@ -124,8 +132,9 @@ class NormalizedCompany(BaseModel):
     resultat_net: Optional[float] = None
 
     # Historique des marchés publics attribués (DECP, titulaire 1, 2 ou 3) —
-    # signal de capacité déterministe : « cette entreprise a déjà gagné ce type de marché »
-    past_wins: int = 0
+    # signal de capacité déterministe : « cette entreprise a déjà gagné ce type de marché ».
+    # None = NON VÉRIFIÉ (DECP en panne, ou entreprise non consultée) : jamais lu « 0 marché » (lot 1, point 5).
+    past_wins: Optional[int] = None
     last_win_date: Optional[str] = None
     win_domains: list[str] = []                 # familles CPV (2 chiffres) déjà gagnées
 

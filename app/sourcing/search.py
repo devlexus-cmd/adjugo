@@ -11,7 +11,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError as
 from datetime import date, datetime
 from typing import Optional
 
-from app.sourcing.base import TenderSource, TenderCriteria, CompanySource, SourceIndisponible
+from app.sourcing.base import (TenderSource, TenderCriteria, CompanySource, SourceIndisponible,
+                               dans_departements, lignes_lues)
 from app.sourcing.schemas import NormalizedTender, NormalizedCompany, SourceError
 from app.sourcing.scoring import score_tender, score_company
 
@@ -60,6 +61,7 @@ class TenderSearchService:
                gonogo: Optional[dict] = None) -> dict:
         tenders: list[NormalizedTender] = []
         errors: list[SourceError] = []
+        brut = 0        # lignes reçues des sources pour cette page (avant rattachement, dédup et filtres)
 
         # Disjoncteur : on saute les sources en panne (fail-fast, pas de réattente).
         active = [s for s in self.sources if not _cb_open(s.name)]
@@ -75,7 +77,9 @@ class TenderSearchService:
                 src = futs[fut]
                 processed.add(fut)
                 try:
-                    tenders.extend(fut.result())
+                    res = fut.result()
+                    tenders.extend(res)
+                    brut += lignes_lues(res)
                     _cb_ok(src.name)
                 except SourceIndisponible as e:
                     errors.append(SourceError(source=src.name, message=str(e)[:200]))
@@ -91,7 +95,9 @@ class TenderSearchService:
                 # Terminée JUSTE après la deadline globale : on récupère son résultat valide
                 # au lieu de le jeter (sinon une source utile mais lente perdait tout).
                 try:
-                    tenders.extend(fut.result())
+                    res = fut.result()
+                    tenders.extend(res)
+                    brut += lignes_lues(res)
                     _cb_ok(src.name)
                 except SourceIndisponible as e:
                     errors.append(SourceError(source=src.name, message=str(e)[:200]))
@@ -108,7 +114,10 @@ class TenderSearchService:
         # « has_more » se calcule sur le BRUT récupéré (avant dédup/filtres) : si au moins
         # une source a rempli une page, il reste probablement des résultats — sinon le
         # filtrage serveur (date passée, montant) faisait croire à tort qu'on était au bout.
-        raw_more = len(tenders) >= max(1, getattr(criteria, "limit", 20))
+        # Brut = les LIGNES reçues des sources (base.lignes_lues), pas leurs fiches : une page du BOAMP dont un avis
+        # annulé est retiré, ou dont un rectificatif européen rejoint son avis, reste une page pleine (relecture du
+        # lot 1) ; et les avis repris par leur rectificatif ne font pas croire qu'une page de plus existe.
+        raw_more = brut >= max(1, getattr(criteria, "limit", 20))
 
         deduped = _dedup_tenders(tenders)
         # On n'affiche JAMAIS un AO dont la date limite de réponse est passée
@@ -120,11 +129,12 @@ class TenderSearchService:
         # Filtre DÉPARTEMENT (filet de sécurité, toutes sources confondues) : si l'utilisateur
         # a ciblé des départements, on retire les AO dont le département CONNU n'en fait pas
         # partie. Les AO sans département (nationaux / zone non précisée) sont conservés.
-        # Empêche « je saisis 29 → on me propose Arras (62) ».
-        wanted_deps = {str(d).strip()[:2] for d in getattr(criteria, "departements", []) if str(d).strip()}
+        # Empêche « je saisis 29 → on me propose Arras (62) ». Comparaison sur le code COMPLET (lot 1, point 4) :
+        # « 974 » ne laisse plus passer la Guadeloupe (971) ; la Corse « 2A »/« 2B » est comparée telle quelle.
+        wanted_deps = [d for d in getattr(criteria, "departements", []) if str(d).strip()]
         if wanted_deps:
             deduped = [t for t in deduped
-                       if (not t.departements) or any(str(d)[:2] in wanted_deps for d in t.departements)]
+                       if (not t.departements) or any(dans_departements(d, wanted_deps) for d in t.departements)]
 
         # Filtre montant DEMANDÉ par l'utilisateur : on n'écarte QUE les avis dont le
         # montant est CONNU et hors fourchette (les avis sans montant — le cas le plus
@@ -176,6 +186,11 @@ class TenderSearchService:
         }
 
 
+def _aujourdhui() -> date:
+    """« Aujourd'hui » du serveur (UTC en production) ; un seul point, que les tests figent."""
+    return date.today()
+
+
 def _is_closed(date_limite) -> bool:
     """True si la date limite de réponse est passée (AO clôturé)."""
     if not date_limite:
@@ -184,7 +199,7 @@ def _is_closed(date_limite) -> bool:
         d = datetime.strptime(str(date_limite)[:10], "%Y-%m-%d").date()
     except Exception:
         return False
-    return d < date.today()
+    return d < _aujourdhui()
 
 
 def _dedup_tenders(tenders: list[NormalizedTender]) -> list[NormalizedTender]:
@@ -205,10 +220,17 @@ def _dedup_tenders(tenders: list[NormalizedTender]) -> list[NormalizedTender]:
         if existing:
             existing.also_seen_in.append(t.provenance)
             existing.confidence = min(1.0, round(existing.confidence + 0.1, 2))  # concordance
-            # compléter les champs manquants à partir du doublon (jamais écraser)
-            for f in ("acheteur", "montant_estime", "date_limite", "dce_url", "procedure"):
+            # compléter les champs manquants à partir du doublon (jamais écraser). Une date que le rectificatif
+            # du BOAMP n'a pas permis de lire (date_limite_rectifiee_non_lue) n'est JAMAIS comblée par celle
+            # d'un doublon : elle pourrait être l'ancienne (lot 1, point 2).
+            for f in ("acheteur", "montant_estime", "date_limite", "dce_url", "procedure",
+                      "rectifie_le", "date_limite_initiale"):
+                if f == "date_limite" and existing.date_limite_rectifiee_non_lue:
+                    continue
                 if getattr(existing, f) in (None, "", []) and getattr(t, f) not in (None, "", []):
                     setattr(existing, f, getattr(t, f))
+            if t.rectificatifs and not existing.rectificatifs:
+                existing.rectificatifs = list(t.rectificatifs)
         else:
             out.append(t)
             if ref_key:

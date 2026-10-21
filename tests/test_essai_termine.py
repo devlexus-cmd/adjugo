@@ -104,6 +104,9 @@ def test_essai_termine_chaque_fonction_d_ia_refusee_avant_tout_appel_et_tout_deb
 
     monkeypatch.setattr(amont_router, "DeliberationSource", _Deliberations)
     monkeypatch.setattr(decp, "detect_renewals_decp", lambda *a, **k: {"renewals": []})
+    # La veille masquée refuse déjà tout appel tant que « Projets à venir » est éteint (moteur, lot 1, point 7 :
+    # tests/test_moteur_lot1_services.py) : on la rallume ici pour vérifier le refus propre à l'essai terminé.
+    monkeypatch.setenv("PROJETS_A_VENIR", "1")
 
     # Analyses : avis, import d'un dossier (refusé avant la lecture et le rangement du fichier), ré-analyse.
     _termine(client.post("/api/sourcing/analyze", headers=h, json={"tender": TENDER}))
@@ -312,6 +315,7 @@ def test_forfait_payant_apres_un_essai_termine_inchange(client, auth, monkeypatc
     _set_analysis(pid, ANALYSE)
     r = client.post("/api/sourcing/ask", headers=h, json={"project_id": pid, "question": "Date limite ?"})
     assert r.status_code == 200, r.text
+    monkeypatch.setenv("PROJETS_A_VENIR", "1")     # activer la veille : seulement quand « Projets à venir » est ouvert
     assert client.post("/api/amont/auto", headers=h, json={"enabled": True}).json()["enabled"] is True
     assert client.post("/api/amont/auto", headers=h, json={"enabled": False}).status_code == 200
     db = _db()

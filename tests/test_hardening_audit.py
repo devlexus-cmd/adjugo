@@ -17,10 +17,13 @@ from app.routers.invites import _classify_partner_pieces
 
 
 def _tender(**kw):
+    # Source TED, et non BOAMP (moteur, lot 1, point 3) : un avis portant de VRAIS codes CPV à 8 chiffres vient
+    # de TED ; le BOAMP n'en publie aucun dans les champs lus (son `descripteur_code` est un vocabulaire interne,
+    # que Adjugo ne range plus dans `cpv`). Les tests de barème ci-dessous sont inchangés.
     base = dict(objet="Travaux de toiture", acheteur="Mairie", cpv=["45261000"],
                 date_publication="2026-06-01", date_limite="2099-01-01", lieu="Quimper",
                 departements=["29"], procedure="Procédure adaptée", nature="travaux",
-                provenance=Provenance(source="BOAMP", source_url="x", official_ref="1"))
+                provenance=Provenance(source="TED", source_url="x", official_ref="1"))
     base.update(kw)
     return NormalizedTender(**base)
 
