@@ -90,11 +90,16 @@ reste est cherché comme avant. Des vérifications ont été ajoutées (points 1
    assertions.
 3. **Dépendance à l'ordre :
    `test_reseau_partenaires.py::test_cron_borne_et_jamais_de_depublication_sur_erreur`.** Le cron traite au plus
-   25 profils, du moins récemment regardé au plus récent. Au-delà d'environ 37 profils publiés par les tests
-   précédents, le profil du test sortait du lot dès le 3e passage, sur les deux moteurs. Le test le remet
-   maintenant en tête de file avant chaque passage, comme il le faisait déjà avant le 4e. Seule la clé de tri
-   (`last_check_at`) change. Le test vérifie aussi que chaque passage a bien porté sur ce profil : avant, une
-   absence de traitement passait pour un succès.
+   25 profils, du moins récemment regardé au plus récent (`last_check_at`, à défaut `verified_at`). Or
+   « Vérifier », lancé à la publication du profil du test, pose `last_check_at` à maintenant : ce profil était
+   donc le dernier de la file. Dès le 1er passage (panne réseau totale), il n'était traité que si au plus 24
+   autres profils publiés par les tests précédents avaient été regardés avant lui ; au-delà d'environ 37, il
+   sortait aussi du lot au 3e passage. Un passage qui ne le traitait pas réussissait sans rien vérifier : avec 27 profils publiés
+   (les 6 fichiers qui en publient, ce test en dernier), un cron qui efface la vérification précédente sur une
+   panne passait inaperçu, sur les deux moteurs. Le test remet maintenant ce profil en tête de file avant
+   chacun des 4 passages, le 1er compris (la date `verified_at` ancienne qu'il posait ne servait pas au tri).
+   Seule la clé de tri (`last_check_at`) change. Après chaque passage, le test vérifie aussi que ce passage a
+   bien porté sur ce profil : avant, une absence de traitement passait pour un succès.
 4. **Dépendance à la date, dans 3 tests.** Il s'agit de `test_compte_rendu_de_la_demonstration`,
    `test_compte_rendu_du_groupement_dit_juste` et `test_pdf_compte_rendu_balisage_voulu_rendu`. Ils vérifient
    l'absence de « 1/1 », « 1/2 » ou « 2/2 » dans le compte-rendu PDF. Or les dates imprimées en contiennent selon
@@ -143,7 +148,12 @@ Contrôles d'indépendance, suite complète, tous réussis (2 205 sur 2 205) :
 D'autres contrôles ont été faits sur une partie de la suite :
 
 - **Cron :** dans l'ordre de fichiers qui faisait échouer le test du cron, ce test échoue sur le code de production
-  (1 échec sur 295) et passe après correction (295 sur 295), sur SQLite comme sur PostgreSQL.
+  (1 échec sur 295) et passe après correction (295 sur 295), sur SQLite comme sur PostgreSQL. Le 1er passage
+  a été contrôlé par mutation (le cron efface `verified_sirene` sur une panne de SIRENE), sur les deux moteurs :
+  avant la remise en tête du 1er passage, la mutation passait inaperçue dans deux ordres (233 sur 233 pour les 6
+  fichiers qui publient des profils, ce test en dernier, 27 profils publiés ; 93 sur 93 pour un ordre de 46
+  profils publiés), alors que le test lancé seul la détectait. Après, elle est détectée dans les deux ordres
+  (1 échec, sur `verified_sirene`), et le code intact y passe (233 sur 233, 93 sur 93).
 - **Clés étrangères :** une fois la clé `audit_logs_owner_id_fkey` retirée de la base de test PostgreSQL, la
   fixture `fk_on` échoue (« DID NOT RAISE »). Son contrôle détecte donc bien des clés étrangères absentes.
 - **Dates :** les 3 tests du compte-rendu passent avec 7 dates d'édition simulées (21/10, 05/11, 05/12, 11/01,

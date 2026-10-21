@@ -836,10 +836,13 @@ def test_cron_borne_et_jamais_de_depublication_sur_erreur(client, reg, monkeypat
     _publish(client, reg, b)
 
     def _en_tete_de_file():
-        # Le cron traite au plus 25 profils, du moins récemment regardé au plus récent : chaque passage de ce test
-        # doit porter sur CE profil, quel que soit le nombre de profils publiés laissés par les tests précédents
-        # (au-delà d'environ 37, il sortait du lot dès le 3e passage, sur les deux moteurs). Seule la clé de tri
-        # change (last_check_at) : la vérification elle-même (verified_*) reste celle du passage précédent.
+        # Le cron traite au plus 25 profils, du moins récemment regardé au plus récent (last_check_at, à défaut
+        # verified_at). Or « Vérifier » (appelé par _publish) et chaque passage posent last_check_at = maintenant :
+        # sans cette remise en tête, ce profil, le dernier regardé, n'est traité que si au plus 24 autres profils
+        # publiés par les tests précédents ont été regardés avant lui, et un passage qui ne le traite pas réussit
+        # sans rien vérifier (dès le 1er passage, sur les deux moteurs). Chaque passage de ce test est donc
+        # précédé de cet appel et suivi de la vérification qu'il a porté sur CE profil. Seule la clé de tri change
+        # (last_check_at) : la vérification elle-même (verified_*) reste celle du passage précédent.
         db = _db()
         try:
             p = db.query(PartnerProfile).filter(PartnerProfile.user_id == b["id"]).first()
@@ -850,17 +853,19 @@ def test_cron_borne_et_jamais_de_depublication_sur_erreur(client, reg, monkeypat
     db = _db()
     try:
         p = db.query(PartnerProfile).filter(PartnerProfile.user_id == b["id"]).first()
-        p.verified_at = datetime(2000, 1, 1)       # le plus anciennement vérifié → traité en premier
+        p.verified_at = datetime(2000, 1, 1)       # vérification réussie très ancienne : une panne ne l'efface pas
         db.commit()
     finally:
         db.close()
     before = _profile_row(b["id"]).verified_sirene
     hdr = {"X-Cron-Secret": "secret-reseau"}
     reg.fail = {"sirene", "bodacc", "decp"}                      # panne réseau totale
+    _en_tete_de_file()
     r = client.post("/api/admin/run-partner-network", headers=hdr)
     assert r.status_code == 200, r.text
     assert r.json()["unpublished"] == 0 and r.json()["checked"] <= 25
     row = _profile_row(b["id"])
+    assert row.last_check_at > datetime(2000, 1, 1)                     # ce passage a bien porté sur lui
     assert row.visible is True and row.verified_sirene == before
     reg.fail = set()
     del reg.sirene[b["siren"]]                                   # SIREN introuvable ≠ cessé
