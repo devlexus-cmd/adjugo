@@ -838,11 +838,11 @@ def test_cron_borne_et_jamais_de_depublication_sur_erreur(client, reg, monkeypat
     def _en_tete_de_file():
         # Le cron traite au plus 25 profils, du moins récemment regardé au plus récent : chaque passage de ce test
         # doit porter sur CE profil, quel que soit le nombre de profils publiés laissés par les tests précédents
-        # (au-delà d'environ 37, il sortait du lot dès le 3e passage, sur les deux moteurs).
+        # (au-delà d'environ 37, il sortait du lot dès le 3e passage, sur les deux moteurs). Seule la clé de tri
+        # change (last_check_at) : la vérification elle-même (verified_*) reste celle du passage précédent.
         db = _db()
         try:
             p = db.query(PartnerProfile).filter(PartnerProfile.user_id == b["id"]).first()
-            p.verified_at = datetime(2000, 1, 1)
             p.last_check_at = datetime(2000, 1, 1)     # dernier passage du cron : le plus ancien
             db.commit()
         finally:
