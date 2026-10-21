@@ -154,7 +154,9 @@ def register(request: Request, data: UserCreate, db: Session = Depends(get_db)):
     # planifié de la part ni l'alerte d'attestations à ses partenaires : app/services/alerts.py,
     # _comptes_non_confirmes ; ni la relance planifiée des parties du dossier de présentation ni « Votre partie est à
     # valider » quand il écrit la partie d'un partenaire : app/services/atelier_groupement.py, relancer_parts et
-    # _notifier_partenaire). Seule exception, à la demande de qui ouvre le lien : le code qui vérifie l'adresse du
+    # _notifier_partenaire). Les alertes de marchés ne partent pas non plus vers une adresse non confirmée, qui peut être
+    # celle d'un tiers (alerts.run_tender_alerts, moteur lot 1 ; rien n'y est marqué « déjà vu » : elles partent après
+    # la confirmation). Seule exception, à la demande de qui ouvre le lien : le code qui vérifie l'adresse du
     # partenaire (sans le lien ; 8 par jour au plus pour une organisation non confirmée : invites._otp_cap_reached),
     # puis, une fois cette adresse vérifiée, l'accusé de sa part envoyée. Ne vérifient PAS
     # l'adresse : les appels qui passent seulement par exiger_ia (questions sur un marché déjà analysé, estimation du

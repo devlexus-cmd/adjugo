@@ -274,7 +274,16 @@ def test_s5_le_commentaire_d_auth_py_reste_vrai():
     c = re.sub(r"\s*\n\s*#\s*", " ", src[i:src.index("    _send_verification(user)", i)])
     assert "ni le rappel planifié de la part ni l'alerte d'attestations à ses partenaires" in c
     a = (ROOT / "app" / "services" / "alerts.py").read_text(encoding="utf-8")
-    assert a.count("_comptes_non_confirmes(db)") == 2
+    # Réunion du 22/10 : les alertes de marchés (moteur, lot 1) lisent la même fonction (une seule notion des comptes
+    # non confirmés) ; chaque appel est rattaché à sa tâche planifiée, les deux de la relecture comprises.
+    assert a.count("_comptes_non_confirmes(db)") == 3
+    import ast
+    appelants = sorted(f.name for f in ast.walk(ast.parse(a)) if isinstance(f, ast.FunctionDef)
+                       and f.name != "_comptes_non_confirmes"
+                       and any(isinstance(n, ast.Call) and getattr(n.func, "id", "") == "_comptes_non_confirmes"
+                               for n in ast.walk(f)))
+    assert appelants == ["_piece_alerts_due", "run_cotraitance_reminders", "run_tender_alerts"], appelants
+    assert "Les alertes de marchés ne partent pas non plus vers une adresse non confirmée" in c
 
 
 # ═══ S6. « Rien n'attend de réponse » seulement une fois tout lu ════════════════════════════════════════════════════
