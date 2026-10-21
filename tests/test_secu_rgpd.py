@@ -16,7 +16,7 @@ from datetime import date, datetime, timedelta, timezone
 
 import pytest
 from fastapi import HTTPException
-from sqlalchemy import event, insert, select, text
+from sqlalchemy import insert, select, text
 
 PDF = b"%PDF-1.4\n% fichier de test RGPD\n%%EOF"
 _SKIP_FILL = {"users", "organizations", "acheteurs", "acheteur_dces", "processed_stripe_events"}
@@ -49,24 +49,8 @@ def _delete(client, tok):
                        json={"password": "motdepasse123", "confirm": "SUPPRIMER"})
 
 
-@pytest.fixture
-def fk_on():
-    """Applique les clés étrangères comme PostgreSQL en production (SQLite les ignore par
-    défaut : c'est pourquoi la suite ne voyait pas l'effacement RGPD échouer)."""
-    from app.core.database import engine
-
-    def _on(dbapi_conn, _rec):
-        cur = dbapi_conn.cursor()
-        cur.execute("PRAGMA foreign_keys=ON")
-        cur.close()
-
-    event.listen(engine, "connect", _on)
-    engine.dispose()
-    with engine.connect() as c:
-        assert c.execute(text("PRAGMA foreign_keys")).scalar() == 1
-    yield
-    event.remove(engine, "connect", _on)
-    engine.dispose()
+# Clés étrangères appliquées comme en production : fixture « fk_on » de tests/conftest.py (SQLite : PRAGMA ;
+# PostgreSQL : contraintes réelles des migrations ; sur les deux, une ligne orpheline vérifiée refusée).
 
 
 # ─── Remplissage générique : une ligne dans CHAQUE table qui dépend d'un user/projet ───

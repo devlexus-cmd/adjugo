@@ -110,21 +110,8 @@ def _record(**kw):
         db.close()
 
 
-@pytest.fixture
-def fk_on():
-    """Clés étrangères appliquées comme sous PostgreSQL en production."""
-    from sqlalchemy import event
-    from app.core.database import engine
-
-    def _on(dbapi_conn, _rec):
-        cur = dbapi_conn.cursor()
-        cur.execute("PRAGMA foreign_keys=ON")
-        cur.close()
-    event.listen(engine, "connect", _on)
-    engine.dispose()
-    yield
-    event.remove(engine, "connect", _on)
-    engine.dispose()
+# Clés étrangères appliquées comme en production : fixture « fk_on » de tests/conftest.py (SQLite : PRAGMA ;
+# PostgreSQL : contraintes réelles des migrations ; sur les deux, une ligne orpheline vérifiée refusée).
 
 
 def _founder_with_history(client, tag):

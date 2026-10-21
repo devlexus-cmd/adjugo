@@ -12,7 +12,6 @@ import time
 import uuid
 
 import pytest
-from sqlalchemy import event, text
 
 
 def _db():
@@ -210,19 +209,8 @@ def test_pdf_texte_normal_inchange():
 
 
 # ── Effacement RGPD : chaîne d'une autre entreprise ───────────────────────────────────
-@pytest.fixture
-def fk_on():
-    from app.core.database import engine
-
-    def _on(dbapi_conn, _rec):
-        cur = dbapi_conn.cursor()
-        cur.execute("PRAGMA foreign_keys=ON")
-        cur.close()
-    event.listen(engine, "connect", _on)
-    engine.dispose()
-    yield
-    event.remove(engine, "connect", _on)
-    engine.dispose()
+# Clés étrangères appliquées comme en production : fixture « fk_on » de tests/conftest.py (SQLite : PRAGMA ;
+# PostgreSQL : contraintes réelles des migrations ; sur les deux, une ligne orpheline vérifiée refusée).
 
 
 def test_effacement_ne_casse_pas_la_chaine_d_une_autre_entreprise(client, fk_on):

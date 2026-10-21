@@ -34,8 +34,8 @@ from datetime import date, datetime, timedelta
 
 import pytest
 
-from tests.test_convention_groupement import (_db, _gen, _groupement, _invite, _part, _pdf_text,
-                                              _project, _put, _register, _set_company, _submit,
+from tests.test_convention_groupement import (_db, _gen, _groupement, _invite, _nombre_present, _part,
+                                              _pdf_text, _project, _put, _register, _set_company, _submit,
                                               _valider)
 
 PDF = b"%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF"
@@ -743,7 +743,7 @@ def test_doctrine_vague4_rien_ne_fuite(client, auth, mails, no_llm):
         assert "@" not in raw or name == "contribs_owner", name
     # Beta ne voit jamais le prix d'Alpha ni le nom de sa DPGF.
     raw_b = json.dumps(blobs["integrite_b"], ensure_ascii=False) + json.dumps(blobs["export_b"], ensure_ascii=False)
-    assert "40000" not in raw_b and "40 000" not in raw_b and "dpgf.csv" not in raw_b
+    assert not _nombre_present("40000", raw_b) and "40 000" not in raw_b and "dpgf.csv" not in raw_b
     # Le chef de file voit la DPGF (prix de vente), jamais l'enveloppe du détail chiffré.
     assert all("detail_chiffre" not in x for x in blobs["contribs_owner"])
     assert any(x.get("has_detail_chiffre") for x in blobs["contribs_owner"])
@@ -886,7 +886,7 @@ def test_sous_traitant_ne_voit_pas_le_total_dans_le_journal(client, auth, mails)
              client.get(f"/api/invite/{st['token']}/journal/export").json()]
     for b in blobs:
         raw = json.dumps(b, ensure_ascii=False)
-        assert "€ HT" not in raw and "100 000" not in raw and "100000" not in raw, raw[:400]
+        assert "€ HT" not in raw and "100 000" not in raw and not _nombre_present("100000", raw), raw[:400]
     assert "Le chef de file a figé l'offre commune" in [e["label"] for e in blobs[0]["entries"]]
     pdf = _pdf_text(client.get(f"/api/invite/{st['token']}/journal/export?format=pdf").content)
     assert "€ HT" not in pdf

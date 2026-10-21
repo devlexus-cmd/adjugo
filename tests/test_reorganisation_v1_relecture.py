@@ -60,6 +60,12 @@ def _pdf_text(pdf: bytes) -> str:
     return "\n".join(p.extract_text() or "" for p in PdfReader(io.BytesIO(pdf)).pages)
 
 
+def _sans_dates(txt: str) -> str:
+    """Le texte sans ses dates (« édité le 21/10/2026 », « figée le 21/10 ») : l'absence d'un « N/M » ne doit pas
+    dépendre du jour (« 21/10 » contient « 1/1 », « 05/11/2026 » contient « 1/2 ») ; tout autre « N/M » reste trouvé."""
+    return re.sub(r"\ble\s+\d{2}/\d{2}(?:/\d{4})?\b", "le ", txt)
+
+
 def _db():
     from app.core.database import SessionLocal
     return SessionLocal()
