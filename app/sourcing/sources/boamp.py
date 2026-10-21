@@ -381,18 +381,30 @@ class BoampSource(TenderSource):
         return None
 
 
+# La Corse au BOAMP : « 20A » (Corse-du-Sud) et « 20B » (Haute-Corse), jamais « 2A » / « 2B » ni « 20 » (valeurs
+# de code_departement relevées le 21/10/2026 sur les avis parus depuis le 01/09 : 142 « 20A », 112 « 20B », aucun
+# « 2A », « 2B » ou « 20 » ; docs/MOTEUR_LOT1.md, réunion des chantiers). Avant, une recherche « 2A » ne ramenait
+# aucun avis du BOAMP, et un avis corse portait « 20A », hors de toute zone.
+_CORSE_BOAMP = {"20A": "2A", "20B": "2B"}
+
+
 def dept_canonique(d) -> str:
     """Forme unique d'un département dans Adjugo : deux chiffres (« 6 » → « 06 »), Corse
-    « 2A »/« 2B », outre-mer sur trois chiffres (« 974 »). Une valeur inattendue est rendue
-    telle quelle (jamais devinée)."""
+    « 2A »/« 2B » (« 20A »/« 20B » du BOAMP compris), outre-mer sur trois chiffres (« 974 »). Une valeur
+    inattendue est rendue telle quelle (jamais devinée)."""
     s = str(d or "").strip().upper()
+    if s in _CORSE_BOAMP:
+        return _CORSE_BOAMP[s]
     return s.zfill(2) if (s.isdigit() and len(s) == 1) else s
 
 
 def formes_boamp(d) -> list:
     """Formes à demander au BOAMP pour un département : « 06 » ET « 6 » (le BOAMP écrit les
-    départements 01 à 09 sans zéro), sinon la forme demandée seule."""
+    départements 01 à 09 sans zéro) ; « 2A » ET « 20A », « 2B » ET « 20B » (le BOAMP écrit la Corse
+    « 20A » / « 20B ») ; sinon la forme demandée seule."""
     s = dept_canonique(d)
+    if s in ("2A", "2B"):
+        return [s, "20" + s[1]]
     return [s, s[1:]] if (len(s) == 2 and s.isdigit() and s.startswith("0")) else [s]
 
 

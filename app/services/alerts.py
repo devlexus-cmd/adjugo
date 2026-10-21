@@ -404,10 +404,14 @@ def _refs_du_marche(t) -> tuple:
     (also_seen_in) : un marché fusionné BOAMP + Mégalis n'est pas renvoyé le jour où l'ordre des sources change,
     et un numéro de consultation Mégalis égal à un numéro d'avis BOAMP ne masque plus un autre marché. Sans
     référence officielle, la clé de fusion (objet, acheteur, date limite) préfixée par la source.
+    Rectificatifs du BOAMP rattachés à l'avis (chantier Sources) : leurs références sont celles du même marché.
+    Avant le lot 1, un rectificatif au format européen était une carte à part, sous sa propre référence ; une
+    alerte qui l'a déjà envoyé ne renvoie donc pas l'avis qui le porte maintenant (réunion des chantiers).
     Forme ancienne (avant le lot 1, gardée en mémoire par les alertes en service) : la référence nue, ou la clé
     nue ; elle reste reconnue pour ne rien renvoyer deux fois."""
     nouvelles, anciennes = [], []
-    for prov in [t.provenance] + list(getattr(t, "also_seen_in", None) or []):
+    for prov in ([t.provenance] + list(getattr(t, "also_seen_in", None) or [])
+                 + list(getattr(t, "rectificatifs", None) or [])):
         ref = (getattr(prov, "official_ref", "") or "").strip()
         src = (getattr(prov, "source", "") or "").strip() or "?"
         if ref:

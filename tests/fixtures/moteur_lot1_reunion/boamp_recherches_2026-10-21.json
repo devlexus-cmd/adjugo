@@ -1,0 +1,2513 @@
+{
+ "lu_le": "2026-10-21",
+ "source": "API BOAMP (OpenDataSoft, https://www.boamp.fr/api/explore/v2.1/catalog/datasets/boamp/records), lue en GET le 21/10/2026 PAR LE CODE de la réunion (BoampSource.search), avec l'en-tête AdjugoBot : chaque requête est gardée telle que le code l'a envoyée (where, select, limit) avec les lignes reçues ; corps des suites réduit au bloc rectificatif/annulation (contacts retirés), corps européen (eForms) retiré",
+ "recherches": {
+  "voirie_29": {
+   "criteres": {
+    "query": "voirie",
+    "departements": [
+     "29"
+    ],
+    "limit": 25
+   },
+   "duree_s": 2.26,
+   "requetes": [
+    {
+     "params": {
+      "limit": 25,
+      "offset": 0,
+      "order_by": "-dateparution",
+      "where": "((((objet like \"voir*\" OR descripteur_libelle like \"voir*\"))) AND (code_departement like \"29\")) AND datelimitereponse >= date'2026-10-21'",
+      "select": "idweb,objet,nomacheteur,code_departement,dateparution,datelimitereponse,descripteur_libelle,descripteur_code,nature_libelle,famille_libelle,url_avis,type_marche,procedure_libelle,annonce_lie,nature,etat,contractfolderid"
+     },
+     "duree_s": 0.64,
+     "results": [
+      {
+       "idweb": "26-99804",
+       "objet": "VOIRIE COMMUNALE DE MELLAC : ACCORD-CADRE A BONS DE COMMANDE TRAVAUX NEUFS ET ENTRETIEN 2027-2030",
+       "nomacheteur": "Mairie de Mellac",
+       "code_departement": [
+        "29"
+       ],
+       "dateparution": "2026-10-14",
+       "datelimitereponse": "2026-11-13T12:00:00+00:00",
+       "descripteur_libelle": [
+        "Voirie"
+       ],
+       "descripteur_code": [
+        "365"
+       ],
+       "nature_libelle": "Avis de marché",
+       "famille_libelle": "Marchés <90 k€ (MAPA)",
+       "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-99804",
+       "type_marche": [
+        "TRAVAUX"
+       ],
+       "procedure_libelle": "Procédure Adaptée",
+       "annonce_lie": null,
+       "nature": "APPEL_OFFRE",
+       "etat": "INITIAL",
+       "contractfolderid": null
+      },
+      {
+       "idweb": "26-98864",
+       "objet": "Travaux d'aménagement de la Voie Romaine et de la rue du Fréau à Poullaouen",
+       "nomacheteur": "Mairie de Poullaouen",
+       "code_departement": [
+        "29"
+       ],
+       "dateparution": "2026-10-13",
+       "datelimitereponse": "2026-11-06T12:00:00+00:00",
+       "descripteur_libelle": [
+        "Voirie",
+        "Espaces verts"
+       ],
+       "descripteur_code": [
+        "365",
+        "116"
+       ],
+       "nature_libelle": "Avis de marché",
+       "famille_libelle": "Marchés entre 90 k€ et seuils européens",
+       "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-98864",
+       "type_marche": [
+        "TRAVAUX"
+       ],
+       "procedure_libelle": "Procédure Ouverte",
+       "annonce_lie": null,
+       "nature": "APPEL_OFFRE",
+       "etat": "INITIAL",
+       "contractfolderid": null
+      },
+      {
+       "idweb": "26-96920",
+       "objet": "Accord-cadre de travaux d'enrobés à l'Emulsion",
+       "nomacheteur": "Département du Finistère",
+       "code_departement": [
+        "29"
+       ],
+       "dateparution": "2026-10-08",
+       "datelimitereponse": "2026-11-12T10:00:00+00:00",
+       "descripteur_libelle": [
+        "Voirie"
+       ],
+       "descripteur_code": [
+        "365"
+       ],
+       "nature_libelle": "Avis de marché",
+       "famille_libelle": "Marchés européens",
+       "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-96920",
+       "type_marche": [
+        "TRAVAUX"
+       ],
+       "procedure_libelle": "Procédure Ouverte",
+       "annonce_lie": null,
+       "nature": "APPEL_OFFRE",
+       "etat": "INITIAL",
+       "contractfolderid": "6e3ad4e8-8aad-4667-ab40-24eafd958547"
+      },
+      {
+       "idweb": "26-95577",
+       "objet": "Construction du bâtiment du patronage laïque de Recouvrance à Brest.",
+       "nomacheteur": "Brest Métropole aménagement SPL, agissant au nom et pour le compte de la Ville de Brest",
+       "code_departement": [
+        "29"
+       ],
+       "dateparution": "2026-10-04",
+       "datelimitereponse": "2026-11-18T10:00:00+00:00",
+       "descripteur_libelle": [
+        "Terrassement",
+        "Gros oeuvre",
+        "Charpente",
+        "Menuiserie",
+        "Cloison, faux plafond",
+        "Carrelage",
+        "Peinture (travaux)",
+        "Chauffage (travaux)",
+        "Electricité (travaux)",
+        "Ascenseur",
+        "Voirie et réseaux divers",
+        "Espaces verts"
+       ],
+       "descripteur_code": [
+        "341",
+        "144",
+        "57",
+        "222",
+        "63",
+        "53",
+        "264",
+        "61",
+        "105",
+        "17",
+        "366",
+        "116"
+       ],
+       "nature_libelle": "Avis de marché",
+       "famille_libelle": "Marchés européens",
+       "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-95577",
+       "type_marche": [
+        "TRAVAUX"
+       ],
+       "procedure_libelle": "Procédure Ouverte",
+       "annonce_lie": null,
+       "nature": "APPEL_OFFRE",
+       "etat": "INITIAL",
+       "contractfolderid": "6ab7824c-e6f0-485d-b867-15e0d9525277"
+      },
+      {
+       "idweb": "26-93634",
+       "objet": "Aménagement du parking de la piscine municipale",
+       "nomacheteur": "Commune de Pléneuf-Val-André",
+       "code_departement": [
+        "22",
+        "29",
+        "35",
+        "56"
+       ],
+       "dateparution": "2026-09-29",
+       "datelimitereponse": "2026-10-29T12:00:00+00:00",
+       "descripteur_libelle": [
+        "Voirie et réseaux divers"
+       ],
+       "descripteur_code": [
+        "366"
+       ],
+       "nature_libelle": "Avis de marché",
+       "famille_libelle": "Marchés entre 90 k€ et seuils européens",
+       "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-93634",
+       "type_marche": [
+        "TRAVAUX"
+       ],
+       "procedure_libelle": "Procédure Ouverte",
+       "annonce_lie": null,
+       "nature": "APPEL_OFFRE",
+       "etat": "INITIAL",
+       "contractfolderid": null
+      }
+     ]
+    },
+    {
+     "params": {
+      "limit": 100,
+      "order_by": "-dateparution",
+      "where": "((nature=\"RECTIFICATIF\" OR nature=\"ANNULATION\" OR etat=\"RECTIFICATIF\" OR etat=\"ANNULATION\") AND annonce_lie in (\"26-99804\", \"26-98864\", \"26-96920\", \"26-95577\", \"26-93634\")) OR (nature=\"RECTIFICATIF\" AND dateparution >= date'2026-08-22' AND ((objet like \"voir*\" OR descripteur_libelle like \"voir*\")) AND (code_departement like \"29\"))",
+      "select": "idweb,annonce_lie,nature,etat,famille,dateparution,datelimitereponse,contractfolderid,url_avis,donnees"
+     },
+     "duree_s": 0.42,
+     "results": []
+    }
+   ]
+  },
+  "outremer_971_974": {
+   "criteres": {
+    "query": "",
+    "departements": [
+     "971",
+     "974"
+    ],
+    "limit": 50
+   },
+   "duree_s": 4.89,
+   "requetes": [
+    {
+     "params": {
+      "limit": 50,
+      "offset": 0,
+      "order_by": "-dateparution",
+      "where": "((((objet like \"trav*\" OR descripteur_libelle like \"trav*\"))) AND (code_departement like \"971\" OR code_departement like \"974\")) AND datelimitereponse >= date'2026-10-21'",
+      "select": "idweb,objet,nomacheteur,code_departement,dateparution,datelimitereponse,descripteur_libelle,descripteur_code,nature_libelle,famille_libelle,url_avis,type_marche,procedure_libelle,annonce_lie,nature,etat,contractfolderid"
+     },
+     "duree_s": 0.41,
+     "results": [
+      {
+       "idweb": "26-101957",
+       "objet": "Travaux d'extension du TGBT et mise aux normes électriques du collège BOUENI MTITI de Labattoir",
+       "nomacheteur": "RECT- 976",
+       "code_departement": [
+        "976",
+        "974"
+       ],
+       "dateparution": "2026-10-20",
+       "datelimitereponse": "2026-11-06T10:00:00+00:00",
+       "descripteur_libelle": [
+        "Bâtiment",
+        "Electricité (travaux)"
+       ],
+       "descripteur_code": [
+        "33",
+        "105"
+       ],
+       "nature_libelle": "Avis de marché",
+       "famille_libelle": "Marchés entre 90 k€ et seuils européens",
+       "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-101957",
+       "type_marche": [
+        "TRAVAUX"
+       ],
+       "procedure_libelle": "Procédure Ouverte",
+       "annonce_lie": null,
+       "nature": "APPEL_OFFRE",
+       "etat": "INITIAL",
+       "contractfolderid": null
+      },
+      {
+       "idweb": "26-101170",
+       "objet": "Travaux de remise aux normes accessibilité des Erp-6 sites - Adap",
+       "nomacheteur": "Commune de Petite-Ile",
+       "code_departement": [
+        "974"
+       ],
+       "dateparution": "2026-10-19",
+       "datelimitereponse": "2026-11-16T12:00:00+00:00",
+       "descripteur_libelle": [
+        "Maçonnerie",
+        "Electricité (travaux)",
+        "Plomberie (travaux)",
+        "Menuiserie"
+       ],
+       "descripteur_code": [
+        "195",
+        "105",
+        "270",
+        "222"
+       ],
+       "nature_libelle": "Avis de marché",
+       "famille_libelle": "Marchés entre 90 k€ et seuils européens",
+       "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-101170",
+       "type_marche": [
+        "TRAVAUX"
+       ],
+       "procedure_libelle": "Procédure Ouverte",
+       "annonce_lie": null,
+       "nature": "APPEL_OFFRE",
+       "etat": "INITIAL",
+       "contractfolderid": null
+      },
+      {
+       "idweb": "26-101682",
+       "objet": "La présente consultation a pour objet la réalisation de travaux de courants forts et de courants faibles dans le cadre de la réhabilitation du hall des sports de Bouillante – Phase 1.",
+       "nomacheteur": "COMMUNE DE BOUILLANTE",
+       "code_departement": [
+        "971"
+       ],
+       "dateparution": "2026-10-19",
+       "datelimitereponse": "2026-11-04T12:00:00+00:00",
+       "descripteur_libelle": [
+        "Câblage",
+        "Electricité (travaux)",
+        "Equipement sportif",
+        "Matériel électrique"
+       ],
+       "descripteur_code": [
+        "47",
+        "105",
+        "113",
+        "203"
+       ],
+       "nature_libelle": "Avis de marché",
+       "famille_libelle": "Marchés entre 90 k€ et seuils européens",
+       "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-101682",
+       "type_marche": [
+        "TRAVAUX"
+       ],
+       "procedure_libelle": "Procédure Ouverte",
+       "annonce_lie": null,
+       "nature": "APPEL_OFFRE",
+       "etat": "INITIAL",
+       "contractfolderid": null
+      },
+      {
+       "idweb": "26-101552",
+       "objet": "Travaux de réhabilitation post chido du bâtiment B et des clôtures du Rectorat de Mayotte",
+       "nomacheteur": "RECTORAT DE MAYOTTE",
+       "code_departement": [
+        "976",
+        "974"
+       ],
+       "dateparution": "2026-10-19",
+       "datelimitereponse": "2026-11-04T10:00:00+00:00",
+       "descripteur_libelle": [
+        "Bâtiment",
+        "Cloison, faux plafond",
+        "Electricité (travaux)"
+       ],
+       "descripteur_code": [
+        "33",
+        "63",
+        "105"
+       ],
+       "nature_libelle": "Avis de marché",
+       "famille_libelle": "Marchés entre 90 k€ et seuils européens",
+       "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-101552",
+       "type_marche": [
+        "TRAVAUX"
+       ],
+       "procedure_libelle": "Procédure Ouverte",
+       "annonce_lie": null,
+       "nature": "APPEL_OFFRE",
+       "etat": "INITIAL",
+       "contractfolderid": null
+      },
+      {
+       "idweb": "26-101687",
+       "objet": "TRAVAUX DE RÉHABILITATION DE LA RÉSIDENCE LES IMMORTELS – SAINT CHARLES, GOURBEYRE",
+       "nomacheteur": "SEMSAMAR (971)",
+       "code_departement": [
+        "971"
+       ],
+       "dateparution": "2026-10-19",
+       "datelimitereponse": "2026-11-13T12:00:00+00:00",
+       "descripteur_libelle": [
+        "Couverture",
+        "Peinture (travaux)",
+        "Sanitaire",
+        "Electricité (travaux)",
+        "Plomberie (travaux)"
+       ],
+       "descripteur_code": [
+        "74",
+        "264",
+        "319",
+        "105",
+        "270"
+       ],
+       "nature_libelle": "Avis de marché",
+       "famille_libelle": "Marchés entre 90 k€ et seuils européens",
+       "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-101687",
+       "type_marche": [
+        "TRAVAUX"
+       ],
+       "procedure_libelle": "Procédure Ouverte",
+       "annonce_lie": null,
+       "nature": "APPEL_OFFRE",
+       "etat": "INITIAL",
+       "contractfolderid": null
+      },
+      {
+       "idweb": "26-100385",
+       "objet": "MAITRISE D'OEUVRE ET ETUDES RELATIF AUX TRAVAUX DE RENOUVELLEMENT, REHABILITATION ET/OU CREATION D'OUVRAGES EN EAU POTABLE ET ASSAINISSEMENT DES EAUX USEES SUR LE DEPARTEMENT DE LA GUADELOUPE",
+       "nomacheteur": "Syndicat Mixte de Gestion de l'Eau et de l'Assainissement de Guadeloupe",
+       "code_departement": [
+        "971"
+       ],
+       "dateparution": "2026-10-17",
+       "datelimitereponse": "2026-11-17T11:00:00+00:00",
+       "descripteur_libelle": [
+        "Maîtrise d'oeuvre"
+       ],
+       "descripteur_code": [
+        "197"
+       ],
+       "nature_libelle": "Avis de marché",
+       "famille_libelle": "Marchés européens",
+       "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-100385",
+       "type_marche": [
+        "SERVICES"
+       ],
+       "procedure_libelle": "Procédure Ouverte",
+       "annonce_lie": null,
+       "nature": "APPEL_OFFRE",
+       "etat": "INITIAL",
+       "contractfolderid": "6b969355-b029-4f89-a52e-cd4bd88b4c13"
+      },
+      {
+       "idweb": "26-101138",
+       "objet": "Travaux de Construction du Groupe Scolaire de GISSAC",
+       "nomacheteur": "Ville de Sainte-Anne",
+       "code_departement": [
+        "971"
+       ],
+       "dateparution": "2026-10-16",
+       "datelimitereponse": "2026-10-30T12:00:00+00:00",
+       "descripteur_libelle": [
+        "Prestations de services"
+       ],
+       "descripteur_code": [
+        "274"
+       ],
+       "nature_libelle": "Avis de marché",
+       "famille_libelle": "Marchés <90 k€ (MAPA)",
+       "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-101138",
+       "type_marche": [
+        "SERVICES"
+       ],
+       "procedure_libelle": "Procédure Adaptée",
+       "annonce_lie": null,
+       "nature": "APPEL_OFFRE",
+       "etat": "INITIAL",
+       "contractfolderid": null
+      },
+      {
+       "idweb": "26-101113",
+       "objet": "Travaux de réaménagement de l?hélisurface pour le compte du Centre Hospitalier de BASSE-TERRE\nRELANCE LOT N°1 ET LOT N° 3",
+       "nomacheteur": "GHT DE LA GUADELOUPE, Direction des achats (Cellule des marches)",
+       "code_departement": [
+        "971"
+       ],
+       "dateparution": "2026-10-16",
+       "datelimitereponse": "2026-11-19T12:00:00+00:00",
+       "descripteur_libelle": [
+        "Peinture (travaux)",
+        "Voirie et réseaux divers"
+       ],
+       "descripteur_code": [
+        "264",
+        "366"
+       ],
+       "nature_libelle": "Avis de marché",
+       "famille_libelle": "Marchés entre 90 k€ et seuils européens",
+       "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-101113",
+       "type_marche": [
+        "TRAVAUX"
+       ],
+       "procedure_libelle": "Procédure Ouverte",
+       "annonce_lie": null,
+       "nature": "APPEL_OFFRE",
+       "etat": "INITIAL",
+       "contractfolderid": null
+      },
+      {
+       "idweb": "26-101137",
+       "objet": "Marche de Travaux - Réhabilitation de la STEU de Résidence Aigrette située à Morne à l'Eau",
+       "nomacheteur": "SEMSAMAR (971)",
+       "code_departement": [
+        "971"
+       ],
+       "dateparution": "2026-10-16",
+       "datelimitereponse": "2026-11-30T12:00:00+00:00",
+       "descripteur_libelle": [
+        "Station d'épuration (travaux)"
+       ],
+       "descripteur_code": [
+        "328"
+       ],
+       "nature_libelle": "Avis de marché",
+       "famille_libelle": "Marchés entre 90 k€ et seuils européens",
+       "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-101137",
+       "type_marche": [
+        "TRAVAUX"
+       ],
+       "procedure_libelle": "Procédure Ouverte",
+       "annonce_lie": null,
+       "nature": "APPEL_OFFRE",
+       "etat": "INITIAL",
+       "contractfolderid": null
+      },
+      {
+       "idweb": "26-100039",
+       "objet": "Réhabilitation des réseaux CFo et CFa - Lycée de la Cité du Nord",
+       "nomacheteur": "RECT- 976",
+       "code_departement": [
+        "976",
+        "974"
+       ],
+       "dateparution": "2026-10-15",
+       "datelimitereponse": "2026-11-02T10:00:00+00:00",
+       "descripteur_libelle": [
+        "Bâtiment",
+        "Electricité (travaux)",
+        "Ouvrage d'infrastructure"
+       ],
+       "descripteur_code": [
+        "33",
+        "105",
+        "253"
+       ],
+       "nature_libelle": "Avis de marché",
+       "famille_libelle": "Marchés entre 90 k€ et seuils européens",
+       "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-100039",
+       "type_marche": [
+        "TRAVAUX"
+       ],
+       "procedure_libelle": "Procédure Ouverte",
+       "annonce_lie": null,
+       "nature": "APPEL_OFFRE",
+       "etat": "INITIAL",
+       "contractfolderid": null
+      },
+      {
+       "idweb": "26-99414",
+       "objet": "Iles Eparses – Europa (984) - Création d’un mouillage sécurisé - Marché d’assistance à maîtrise d’ouvrage (AMOA) pour des travaux d’infrastructures maritimes",
+       "nomacheteur": "DID SDS",
+       "code_departement": [
+        "974"
+       ],
+       "dateparution": "2026-10-15",
+       "datelimitereponse": "2026-11-16T12:00:00+00:00",
+       "descripteur_libelle": [
+        "Prestations de services"
+       ],
+       "descripteur_code": [
+        "274"
+       ],
+       "nature_libelle": "Avis de marché",
+       "famille_libelle": "Marchés européens",
+       "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-99414",
+       "type_marche": [
+        "SERVICES"
+       ],
+       "procedure_libelle": "Procédure Ouverte",
+       "annonce_lie": null,
+       "nature": "APPEL_OFFRE",
+       "etat": "INITIAL",
+       "contractfolderid": "b64989d1-3e74-4bce-bc91-52eedc4416d5"
+      },
+      {
+       "idweb": "26-100178",
+       "objet": "P26-030 GUYANE – BA 367 – Remise à niveau de l’architecture électrique dans le cadre de l’amélioration thermique du hangar 0010",
+       "nomacheteur": "DID Cayenne",
+       "code_departement": [
+        "973",
+        "972",
+        "971"
+       ],
+       "dateparution": "2026-10-15",
+       "datelimitereponse": "2026-11-05T16:00:00+00:00",
+       "descripteur_libelle": [
+        "Electricité (travaux)",
+        "Câblage"
+       ],
+       "descripteur_code": [
+        "105",
+        "47"
+       ],
+       "nature_libelle": "Avis de marché",
+       "famille_libelle": "Marchés entre 90 k€ et seuils européens",
+       "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-100178",
+       "type_marche": [
+        "TRAVAUX"
+       ],
+       "procedure_libelle": "Procédure Ouverte",
+       "annonce_lie": null,
+       "nature": "APPEL_OFFRE",
+       "etat": "INITIAL",
+       "contractfolderid": null
+      },
+      {
+       "idweb": "26-99980",
+       "objet": "Travaux de construction du satellite de restauration de la cité scolaire de Bandrélé",
+       "nomacheteur": "Rectorat de Mayotte",
+       "code_departement": [
+        "974",
+        "976"
+       ],
+       "dateparution": "2026-10-15",
+       "datelimitereponse": "2026-11-06T12:00:00+00:00",
+       "descripteur_libelle": [
+        "Cuisine (équipement)"
+       ],
+       "descripteur_code": [
+        "77"
+       ],
+       "nature_libelle": "Avis de marché",
+       "famille_libelle": "Marchés entre 90 k€ et seuils européens",
+       "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-99980",
+       "type_marche": [
+        "TRAVAUX"
+       ],
+       "procedure_libelle": "Procédure Ouverte",
+       "annonce_lie": null,
+       "nature": "APPEL_OFFRE",
+       "etat": "INITIAL",
+       "contractfolderid": null
+      },
+      {
+       "idweb": "26-99878",
+       "objet": "Relance lot 3, 5 et 8\n« Rénovation de l’école Jules Annerose » pour le compte de la Commune de DESHAIES",
+       "nomacheteur": "Commune de Deshaies",
+       "code_departement": [
+        "971"
+       ],
+       "dateparution": "2026-10-14",
+       "datelimitereponse": "2026-11-16T12:00:00+00:00",
+       "descripteur_libelle": [
+        "Menuiserie",
+        "Cloison, faux plafond",
+        "Revêtements de sols",
+        "Peinture (travaux)",
+        "Ravalement"
+       ],
+       "descripteur_code": [
+        "222",
+        "63",
+        "308",
+        "264",
+        "299"
+       ],
+       "nature_libelle": "Avis de marché",
+       "famille_libelle": "Marchés entre 90 k€ et seuils européens",
+       "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-99878",
+       "type_marche": [
+        "TRAVAUX"
+       ],
+       "procedure_libelle": "Procédure Ouverte",
+       "annonce_lie": null,
+       "nature": "APPEL_OFFRE",
+       "etat": "INITIAL",
+       "contractfolderid": null
+      },
+      {
+       "idweb": "26-98982",
+       "objet": "Construction d'amphithéâtres bioclimatiques sur le campus de Terre Sainte à Saint-Pierre",
+       "nomacheteur": "Université de la Réunion",
+       "code_departement": [
+        "974"
+       ],
+       "dateparution": "2026-10-14",
+       "datelimitereponse": "2026-11-12T12:00:00+00:00",
+       "descripteur_libelle": [
+        "Terrassement",
+        "Espaces verts",
+        "Gros oeuvre",
+        "Charpente",
+        "Serrurerie",
+        "Menuiserie",
+        "Cloison, faux plafond",
+        "Peinture (travaux)",
+        "Electricité (travaux)",
+        "Plomberie (travaux)",
+        "Climatisation",
+        "Ascenseur",
+        "Audiovisuel",
+        "Photovoltaïque"
+       ],
+       "descripteur_code": [
+        "341",
+        "116",
+        "144",
+        "57",
+        "321",
+        "222",
+        "63",
+        "264",
+        "105",
+        "270",
+        "62",
+        "17",
+        "22",
+        "476"
+       ],
+       "nature_libelle": "Avis de marché",
+       "famille_libelle": "Marchés européens",
+       "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-98982",
+       "type_marche": [
+        "TRAVAUX"
+       ],
+       "procedure_libelle": "Procédure Ouverte",
+       "annonce_lie": null,
+       "nature": "APPEL_OFFRE",
+       "etat": "INITIAL",
+       "contractfolderid": "7cb85e91-2032-46df-b2d9-9c62d06a5c64"
+      },
+      {
+       "idweb": "26-98506",
+       "objet": "Ce marché a pour objet la réalisation de travaux dans le cadre de la modernisation de la ZA Victorine Taïlou",
+       "nomacheteur": "SPL Grand Ouest (974)",
+       "code_departement": [
+        "974"
+       ],
+       "dateparution": "2026-10-13",
+       "datelimitereponse": "2026-11-12T08:00:00+00:00",
+       "descripteur_libelle": [
+        "Voirie et réseaux divers",
+        "Signalisation",
+        "Eclairage public",
+        "Mobilier urbain"
+       ],
+       "descripteur_code": [
+        "366",
+        "322",
+        "102",
+        "231"
+       ],
+       "nature_libelle": "Avis de marché",
+       "famille_libelle": "Marchés européens",
+       "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-98506",
+       "type_marche": [
+        "TRAVAUX"
+       ],
+       "procedure_libelle": "Procédure Ouverte",
+       "annonce_lie": null,
+       "nature": "APPEL_OFFRE",
+       "etat": "INITIAL",
+       "contractfolderid": "d86c9b8a-6949-47b7-9e59-0a71bdad2653"
+      },
+      {
+       "idweb": "26-98931",
+       "objet": "Travaux de création de deux salles banalisées en préfabriqué au collège de Kani-Kéli.",
+       "nomacheteur": "Rectorat de Mayotte",
+       "code_departement": [
+        "974",
+        "976"
+       ],
+       "dateparution": "2026-10-13",
+       "datelimitereponse": "2026-10-30T12:00:00+00:00",
+       "descripteur_libelle": [
+        "Matériaux de construction"
+       ],
+       "descripteur_code": [
+        "198"
+       ],
+       "nature_libelle": "Avis de marché",
+       "famille_libelle": "Marchés entre 90 k€ et seuils européens",
+       "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-98931",
+       "type_marche": [
+        "TRAVAUX"
+       ],
+       "procedure_libelle": "Procédure Ouverte",
+       "annonce_lie": null,
+       "nature": "APPEL_OFFRE",
+       "etat": "INITIAL",
+       "contractfolderid": null
+      },
+      {
+       "idweb": "26-98515",
+       "objet": "Marché d'entretien des espaces verts et travaux de taille et d'élagage des arbres du GHT Guadeloupe",
+       "nomacheteur": "GHT DE LA GUADELOUPE, Direction des achats (Cellule des marches)",
+       "code_departement": [
+        "971"
+       ],
+       "dateparution": "2026-10-13",
+       "datelimitereponse": "2026-11-30T10:00:00+00:00",
+       "descripteur_libelle": [
+        "Espaces verts"
+       ],
+       "descripteur_code": [
+        "116"
+       ],
+       "nature_libelle": "Avis de marché",
+       "famille_libelle": "Marchés européens",
+       "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-98515",
+       "type_marche": [
+        "SERVICES"
+       ],
+       "procedure_libelle": "Procédure Ouverte",
+       "annonce_lie": null,
+       "nature": "APPEL_OFFRE",
+       "etat": "INITIAL",
+       "contractfolderid": "2d8b811c-dbb2-4b60-a38d-9ddcbab9d1d9"
+      },
+      {
+       "idweb": "26-99092",
+       "objet": "Travaux de réhabilitation post chido du bâtiment B et des clôtures du Rectorat de Mayotte",
+       "nomacheteur": "Rectorat de Mayotte",
+       "code_departement": [
+        "976",
+        "974"
+       ],
+       "dateparution": "2026-10-13",
+       "datelimitereponse": "2026-10-29T10:00:00+00:00",
+       "descripteur_libelle": [
+        "Electricité (travaux)",
+        "Bâtiment",
+        "Charpente",
+        "Clôture",
+        "Cloison, faux plafond"
+       ],
+       "descripteur_code": [
+        "105",
+        "33",
+        "57",
+        "64",
+        "63"
+       ],
+       "nature_libelle": "Avis de marché",
+       "famille_libelle": "Marchés entre 90 k€ et seuils européens",
+       "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-99092",
+       "type_marche": [
+        "TRAVAUX"
+       ],
+       "procedure_libelle": "Procédure Ouverte",
+       "annonce_lie": null,
+       "nature": "APPEL_OFFRE",
+       "etat": "INITIAL",
+       "contractfolderid": null
+      },
+      {
+       "idweb": "26-98477",
+       "objet": "Travaux de renaturation d'une parcelle du Domaine Public Maritime située au lieu-dit Trou d'Eau, commune de Saint-Paul (La Réunion – 974)",
+       "nomacheteur": "CELRL 17",
+       "code_departement": [
+        "17",
+        "974",
+        "976"
+       ],
+       "dateparution": "2026-10-12",
+       "datelimitereponse": "2026-11-13T12:00:00+00:00",
+       "descripteur_libelle": [
+        "Terrassement",
+        "Travaux forestiers",
+        "Démolition"
+       ],
+       "descripteur_code": [
+        "341",
+        "350",
+        "87"
+       ],
+       "nature_libelle": "Avis de marché",
+       "famille_libelle": "Marchés entre 90 k€ et seuils européens",
+       "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-98477",
+       "type_marche": [
+        "TRAVAUX"
+       ],
+       "procedure_libelle": "Procédure Ouverte",
+       "annonce_lie": null,
+       "nature": "APPEL_OFFRE",
+       "etat": "INITIAL",
+       "contractfolderid": null
+      },
+      {
+       "idweb": "26-97913",
+       "objet": "Transport en hélicoptere et travaux aériens pour le compte des adhérents de CADI",
+       "nomacheteur": "Centrale d'Achats Durables et Innovants",
+       "code_departement": [
+        "974"
+       ],
+       "dateparution": "2026-10-11",
+       "datelimitereponse": "2026-11-18T08:00:00+00:00",
+       "descripteur_libelle": [
+        "Transport"
+       ],
+       "descripteur_code": [
+        "347"
+       ],
+       "nature_libelle": "Avis de marché",
+       "famille_libelle": "Marchés européens",
+       "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-97913",
+       "type_marche": [
+        "SERVICES"
+       ],
+       "procedure_libelle": "Procédure Ouverte",
+       "annonce_lie": null,
+       "nature": "APPEL_OFFRE",
+       "etat": "INITIAL",
+       "contractfolderid": "27c9c77d-1483-4e5f-a21c-1dc69a881aef"
+      },
+      {
+       "idweb": "26-96940",
+       "objet": "Construction d'un établissement d'hébergement pour personne âgées dépendantes (EHPAD) sur le site du viaduc - Saint Paul",
+       "nomacheteur": "CHU de la Réunion",
+       "code_departement": [
+        "974"
+       ],
+       "dateparution": "2026-10-08",
+       "datelimitereponse": "2026-11-20T08:00:00+00:00",
+       "descripteur_libelle": [
+        "Gros oeuvre",
+        "Menuiserie",
+        "Peinture (travaux)",
+        "Electricité (travaux)"
+       ],
+       "descripteur_code": [
+        "144",
+        "222",
+        "264",
+        "105"
+       ],
+       "nature_libelle": "Avis de marché",
+       "famille_libelle": "Marchés européens",
+       "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-96940",
+       "type_marche": [
+        "TRAVAUX"
+       ],
+       "procedure_libelle": "Procédure Ouverte",
+       "annonce_lie": null,
+       "nature": "APPEL_OFFRE",
+       "etat": "INITIAL",
+       "contractfolderid": "6e1ee910-f433-4059-a6ea-e9c2b564144d"
+      },
+      {
+       "idweb": "26-97304",
+       "objet": "Travaux de remplacement de la toiture de la Direction de l'Environnement, de l'Aménagement, du Logement et de la Mer de Mayotte (DEALM)",
+       "nomacheteur": "SGCD976",
+       "code_departement": [
+        "976",
+        "974"
+       ],
+       "dateparution": "2026-10-08",
+       "datelimitereponse": "2026-11-02T12:00:00+00:00",
+       "descripteur_libelle": [
+        "Couverture"
+       ],
+       "descripteur_code": [
+        "74"
+       ],
+       "nature_libelle": "Avis de marché",
+       "famille_libelle": "Marchés entre 90 k€ et seuils européens",
+       "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-97304",
+       "type_marche": [
+        "TRAVAUX"
+       ],
+       "procedure_libelle": "Procédure Ouverte",
+       "annonce_lie": null,
+       "nature": "APPEL_OFFRE",
+       "etat": "INITIAL",
+       "contractfolderid": null
+      },
+      {
+       "idweb": "26-96199",
+       "objet": "Travaux de signalisation horizontale sur le patrimoine de la Région Réunion",
+       "nomacheteur": "Région Réunion",
+       "code_departement": [
+        "974"
+       ],
+       "dateparution": "2026-10-07",
+       "datelimitereponse": "2026-11-09T08:00:00+00:00",
+       "descripteur_libelle": [
+        "Voirie",
+        "Peinture (travaux)"
+       ],
+       "descripteur_code": [
+        "365",
+        "264"
+       ],
+       "nature_libelle": "Avis de marché",
+       "famille_libelle": "Marchés européens",
+       "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-96199",
+       "type_marche": [
+        "TRAVAUX"
+       ],
+       "procedure_libelle": "Procédure Ouverte",
+       "annonce_lie": null,
+       "nature": "APPEL_OFFRE",
+       "etat": "INITIAL",
+       "contractfolderid": "bf8d3eca-795a-4c31-9fe7-bb881900a723"
+      },
+      {
+       "idweb": "26-96922",
+       "objet": "Travaux de création, de renforcement, de réhabilitation et de sécurisation des itinéraires de randonnée sur les espaces naturels de La Réunion",
+       "nomacheteur": "CELRL 17",
+       "code_departement": [
+        "974",
+        "976"
+       ],
+       "dateparution": "2026-10-07",
+       "datelimitereponse": "2026-11-04T12:00:00+00:00",
+       "descripteur_libelle": [
+        "Espaces verts"
+       ],
+       "descripteur_code": [
+        "116"
+       ],
+       "nature_libelle": "Avis de marché",
+       "famille_libelle": "Marchés entre 90 k€ et seuils européens",
+       "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-96922",
+       "type_marche": [
+        "TRAVAUX"
+       ],
+       "procedure_libelle": "Procédure Ouverte",
+       "annonce_lie": null,
+       "nature": "APPEL_OFFRE",
+       "etat": "INITIAL",
+       "contractfolderid": null
+      },
+      {
+       "idweb": "26-96154",
+       "objet": "Fourniture de matériaux , matériels et équipements divers pour travaux en régie.",
+       "nomacheteur": "Ville de Petit Bourg (971)",
+       "code_departement": [
+        "971"
+       ],
+       "dateparution": "2026-10-07",
+       "datelimitereponse": "2026-11-09T16:00:00+00:00",
+       "descripteur_libelle": [
+        "Matériaux de construction"
+       ],
+       "descripteur_code": [
+        "198"
+       ],
+       "nature_libelle": "Avis de marché",
+       "famille_libelle": "Marchés européens",
+       "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-96154",
+       "type_marche": [
+        "FOURNITURES"
+       ],
+       "procedure_libelle": "Procédure Ouverte",
+       "annonce_lie": null,
+       "nature": "APPEL_OFFRE",
+       "etat": "INITIAL",
+       "contractfolderid": "b2a1a799-624b-43a1-9ef1-1815d5e11b16"
+      },
+      {
+       "idweb": "26-95108",
+       "objet": "Accord-cadre de maintenance et de travaux d'investissement courants de bâtiment pour la Société Aéroportuaire Guadeloupe Pôle Caraïbes",
+       "nomacheteur": "Société Aéroportuaire Guadeloupe Pôle Caraibes (SAGPC)",
+       "code_departement": [
+        "971"
+       ],
+       "dateparution": "2026-10-03",
+       "datelimitereponse": "2026-10-21T16:00:00+00:00",
+       "descripteur_libelle": [
+        "Bâtiment",
+        "Maintenance"
+       ],
+       "descripteur_code": [
+        "33",
+        "196"
+       ],
+       "nature_libelle": "Avis de marché",
+       "famille_libelle": "Marchés européens",
+       "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-95108",
+       "type_marche": [
+        "TRAVAUX"
+       ],
+       "procedure_libelle": "Procédure Négociée",
+       "annonce_lie": null,
+       "nature": "APPEL_OFFRE",
+       "etat": "INITIAL",
+       "contractfolderid": "517fd4eb-7fc9-4447-b311-74d854a6da54"
+      },
+      {
+       "idweb": "26-95507",
+       "objet": "Aménagement d'un espace de rencontre et de loisir de Terre de Haut",
+       "nomacheteur": "Spl Coeur D'Energie Au Nom Et Pour Le Compte De La Commune De Terre De Haut",
+       "code_departement": [
+        "971"
+       ],
+       "dateparution": "2026-10-02",
+       "datelimitereponse": "2026-11-03T12:00:00+00:00",
+       "descripteur_libelle": [
+        "Charpente",
+        "Electricité (travaux)",
+        "Gros oeuvre",
+        "Menuiserie",
+        "Peinture (travaux)"
+       ],
+       "descripteur_code": [
+        "57",
+        "105",
+        "144",
+        "222",
+        "264"
+       ],
+       "nature_libelle": "Avis de marché",
+       "famille_libelle": "Marchés entre 90 k€ et seuils européens",
+       "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-95507",
+       "type_marche": [
+        "TRAVAUX"
+       ],
+       "procedure_libelle": "Procédure Ouverte",
+       "annonce_lie": null,
+       "nature": "APPEL_OFFRE",
+       "etat": "INITIAL",
+       "contractfolderid": null
+      },
+      {
+       "idweb": "26-95593",
+       "objet": "RENOVATION ET AMENAGEMENT DE L’HOTEL DE POLICE MUNICIPALE DE SAINT-FRANÇOIS",
+       "nomacheteur": "Ville de Saint-François",
+       "code_departement": [
+        "971"
+       ],
+       "dateparution": "2026-10-02",
+       "datelimitereponse": "2026-10-26T18:00:00+00:00",
+       "descripteur_libelle": [
+        "Gros oeuvre",
+        "Peinture (travaux)",
+        "Electricité (travaux)"
+       ],
+       "descripteur_code": [
+        "144",
+        "264",
+        "105"
+       ],
+       "nature_libelle": "Avis de marché",
+       "famille_libelle": "Marchés <90 k€ (MAPA)",
+       "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-95593",
+       "type_marche": [
+        "TRAVAUX"
+       ],
+       "procedure_libelle": "Procédure Adaptée",
+       "annonce_lie": null,
+       "nature": "APPEL_OFFRE",
+       "etat": "INITIAL",
+       "contractfolderid": null
+      },
+      {
+       "idweb": "26-94574",
+       "objet": "Réalisation de travaux d'investissement et de maintenance sur le patrimoine Régional et autres",
+       "nomacheteur": "Région Guadeloupe",
+       "code_departement": [
+        "971"
+       ],
+       "dateparution": "2026-10-02",
+       "datelimitereponse": "2026-11-02T16:00:00+00:00",
+       "descripteur_libelle": [
+        "Plomberie (travaux)",
+        "Menuiserie",
+        "Voirie et réseaux divers",
+        "Gros oeuvre",
+        "Electricité (travaux)"
+       ],
+       "descripteur_code": [
+        "270",
+        "222",
+        "366",
+        "144",
+        "105"
+       ],
+       "nature_libelle": "Avis de marché",
+       "famille_libelle": "Marchés européens",
+       "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-94574",
+       "type_marche": [
+        "TRAVAUX"
+       ],
+       "procedure_libelle": "Procédure Ouverte",
+       "annonce_lie": [
+        "26-76317",
+        "26-86226"
+       ],
+       "nature": "APPEL_OFFRE",
+       "etat": "RECTIFICATIF",
+       "contractfolderid": "9c6ee8f2-0431-45eb-ba55-50cd845a5f1b"
+      },
+      {
+       "idweb": "26-94776",
+       "objet": "SUIVI DU BENTHOS DE SUBSTRATS DURS EN MILIEU MARIN",
+       "nomacheteur": "Office de l'eau Réunion",
+       "code_departement": [
+        "974"
+       ],
+       "dateparution": "2026-10-02",
+       "datelimitereponse": "2026-11-02T12:00:00+00:00",
+       "descripteur_libelle": [
+        "Travaux dans l'eau"
+       ],
+       "descripteur_code": [
+        "349"
+       ],
+       "nature_libelle": "Avis de marché",
+       "famille_libelle": "Marchés européens",
+       "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-94776",
+       "type_marche": [
+        "SERVICES"
+       ],
+       "procedure_libelle": "Procédure Ouverte",
+       "annonce_lie": null,
+       "nature": "APPEL_OFFRE",
+       "etat": "INITIAL",
+       "contractfolderid": "ae314ef9-5e95-4cea-b4bf-c459d9da1ebe"
+      },
+      {
+       "idweb": "26-93339",
+       "objet": "Accord-cadre mixte pour l'exécution de travaux d'entretien, de réparation et d'aménagement sur les emprises militaires dépendant des FAG_corps d'état : Electricité",
+       "nomacheteur": "DID Cayenne",
+       "code_departement": [
+        "973",
+        "971",
+        "972"
+       ],
+       "dateparution": "2026-09-29",
+       "datelimitereponse": "2026-11-02T16:00:00+00:00",
+       "descripteur_libelle": [
+        "Electricité (travaux)"
+       ],
+       "descripteur_code": [
+        "105"
+       ],
+       "nature_libelle": "Avis de marché",
+       "famille_libelle": "Marchés européens",
+       "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-93339",
+       "type_marche": [
+        "TRAVAUX"
+       ],
+       "procedure_libelle": "Procédure Ouverte",
+       "annonce_lie": null,
+       "nature": "APPEL_OFFRE",
+       "etat": "INITIAL",
+       "contractfolderid": "9eda4b05-741d-4a1e-b04e-1f4e2ca204e8"
+      },
+      {
+       "idweb": "26-93201",
+       "objet": "Travaux de régénération des pelouses des stades de la villes",
+       "nomacheteur": "Commune de Saint-Denis",
+       "code_departement": [
+        "974"
+       ],
+       "dateparution": "2026-09-28",
+       "datelimitereponse": "2026-10-29T15:00:00+00:00",
+       "descripteur_libelle": [
+        "Equipement sportif"
+       ],
+       "descripteur_code": [
+        "113"
+       ],
+       "nature_libelle": "Avis de marché",
+       "famille_libelle": "Marchés entre 90 k€ et seuils européens",
+       "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-93201",
+       "type_marche": [
+        "TRAVAUX"
+       ],
+       "procedure_libelle": "Procédure Ouverte",
+       "annonce_lie": null,
+       "nature": "APPEL_OFFRE",
+       "etat": "INITIAL",
+       "contractfolderid": null
+      },
+      {
+       "idweb": "26-92343",
+       "objet": "travaux portant sur la repose de paratonnerres",
+       "nomacheteur": "DID SDS",
+       "code_departement": [
+        "974"
+       ],
+       "dateparution": "2026-09-24",
+       "datelimitereponse": "2026-10-22T12:00:00+00:00",
+       "descripteur_libelle": [
+        "Bâtiment"
+       ],
+       "descripteur_code": [
+        "33"
+       ],
+       "nature_libelle": "Avis de marché",
+       "famille_libelle": "Marchés entre 90 k€ et seuils européens",
+       "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-92343",
+       "type_marche": [
+        "TRAVAUX"
+       ],
+       "procedure_libelle": "Procédure Ouverte",
+       "annonce_lie": null,
+       "nature": "APPEL_OFFRE",
+       "etat": "INITIAL",
+       "contractfolderid": null
+      },
+      {
+       "idweb": "26-92598",
+       "objet": "Travaux de dévoiement des canalisations d'alimentation en eau potable Belle Eau Cadeau et Vernou dans l'emprise de la Technopole Audacia à Baie-Mahault",
+       "nomacheteur": "Spl Coeur D'Energie Agissant Au Nom E Tpour Le Compte De La Ville De Baie-Mahault",
+       "code_departement": [
+        "971"
+       ],
+       "dateparution": "2026-09-24",
+       "datelimitereponse": "2026-10-26T12:00:00+00:00",
+       "descripteur_libelle": [
+        "Alimentation en eau potable",
+        "Canalisations"
+       ],
+       "descripteur_code": [
+        "6",
+        "48"
+       ],
+       "nature_libelle": "Avis de marché",
+       "famille_libelle": "Marchés entre 90 k€ et seuils européens",
+       "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-92598",
+       "type_marche": [
+        "TRAVAUX"
+       ],
+       "procedure_libelle": "Procédure Ouverte",
+       "annonce_lie": null,
+       "nature": "APPEL_OFFRE",
+       "etat": "INITIAL",
+       "contractfolderid": null
+      },
+      {
+       "idweb": "26-92595",
+       "objet": "TRAVAUX POUR LA RESTAURATION ET \nL’AMENAGEMENT DU MUSEE L’HERMINIER",
+       "nomacheteur": "Cap Excellence (971)",
+       "code_departement": [
+        "971"
+       ],
+       "dateparution": "2026-09-24",
+       "datelimitereponse": "2026-10-23T00:00:00+00:00",
+       "descripteur_libelle": [
+        "Monuments historiques"
+       ],
+       "descripteur_code": [
+        "236"
+       ],
+       "nature_libelle": "Avis de marché",
+       "famille_libelle": "Marchés entre 90 k€ et seuils européens",
+       "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-92595",
+       "type_marche": [
+        "TRAVAUX"
+       ],
+       "procedure_libelle": "Procédure Ouverte",
+       "annonce_lie": null,
+       "nature": "APPEL_OFFRE",
+       "etat": "INITIAL",
+       "contractfolderid": null
+      },
+      {
+       "idweb": "26-91940",
+       "objet": "TRAVAUX RELATIF À LA MISE AUX NORMES ET À LA RÉNOVATION DU MARCHÉ INTERCOMMUNAL DE BASSE-TERRE",
+       "nomacheteur": "CA Sud Basse-Terre",
+       "code_departement": [
+        "971"
+       ],
+       "dateparution": "2026-09-23",
+       "datelimitereponse": "2026-10-26T12:00:00+00:00",
+       "descripteur_libelle": [
+        "Travaux de viabilité"
+       ],
+       "descripteur_code": [
+        "353"
+       ],
+       "nature_libelle": "Avis de marché",
+       "famille_libelle": "Marchés entre 90 k€ et seuils européens",
+       "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-91940",
+       "type_marche": [
+        "TRAVAUX"
+       ],
+       "procedure_libelle": "Procédure Ouverte",
+       "annonce_lie": null,
+       "nature": "APPEL_OFFRE",
+       "etat": "INITIAL",
+       "contractfolderid": null
+      },
+      {
+       "idweb": "26-92155",
+       "objet": "MARCHÉ DE TRAVAUX DE MISE À NIVEAU SURETE BATIMENTAIRE",
+       "nomacheteur": "FRANCE TRAVAIL GUADELOUPE ET ILES DU NORD",
+       "code_departement": [
+        "971"
+       ],
+       "dateparution": "2026-09-23",
+       "datelimitereponse": "2026-11-09T12:30:00+00:00",
+       "descripteur_libelle": [
+        "Clôture",
+        "Electricité (travaux)",
+        "Gros oeuvre",
+        "Menuiserie",
+        "Porte automatique, portail"
+       ],
+       "descripteur_code": [
+        "64",
+        "105",
+        "144",
+        "222",
+        "412"
+       ],
+       "nature_libelle": "Avis de marché",
+       "famille_libelle": "Marchés entre 90 k€ et seuils européens",
+       "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-92155",
+       "type_marche": [
+        "TRAVAUX"
+       ],
+       "procedure_libelle": "Procédure Ouverte",
+       "annonce_lie": null,
+       "nature": "APPEL_OFFRE",
+       "etat": "INITIAL",
+       "contractfolderid": null
+      },
+      {
+       "idweb": "26-91587",
+       "objet": "Travaux pour l’aménagement du ciné théâtre du Centre Intercommunal René Philogène à Pointe-Noire (CIRP)",
+       "nomacheteur": "SEMSAMAR (971)",
+       "code_departement": [
+        "971"
+       ],
+       "dateparution": "2026-09-22",
+       "datelimitereponse": "2026-11-06T12:00:00+00:00",
+       "descripteur_libelle": [
+        "Tous corps d'état"
+       ],
+       "descripteur_code": [
+        "345"
+       ],
+       "nature_libelle": "Avis de marché",
+       "famille_libelle": "Marchés entre 90 k€ et seuils européens",
+       "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-91587",
+       "type_marche": [
+        "TRAVAUX"
+       ],
+       "procedure_libelle": "Procédure Ouverte",
+       "annonce_lie": null,
+       "nature": "APPEL_OFFRE",
+       "etat": "INITIAL",
+       "contractfolderid": null
+      },
+      {
+       "idweb": "26-91374",
+       "objet": "Travaux de sécurisation des falaises sur le réseau routier national de MAYOTTE",
+       "nomacheteur": "Direction de l'environnement, de l'aménagement, du logement et de la mer",
+       "code_departement": [
+        "976",
+        "974",
+        "75"
+       ],
+       "dateparution": "2026-09-22",
+       "datelimitereponse": "2026-10-23T14:00:00+00:00",
+       "descripteur_libelle": [
+        "Falaise"
+       ],
+       "descripteur_code": [
+        "125"
+       ],
+       "nature_libelle": "Avis de marché",
+       "famille_libelle": "Marchés entre 90 k€ et seuils européens",
+       "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-91374",
+       "type_marche": [
+        "TRAVAUX"
+       ],
+       "procedure_libelle": "Procédure Ouverte",
+       "annonce_lie": null,
+       "nature": "APPEL_OFFRE",
+       "etat": "INITIAL",
+       "contractfolderid": null
+      },
+      {
+       "idweb": "26-89449",
+       "objet": "Fourniture et livraison de vêtements de travail pour les agents du syndicat mixte Routes de Guadeloupe",
+       "nomacheteur": "Syndicat mixte Routes de Guadeloupe",
+       "code_departement": [
+        "971"
+       ],
+       "dateparution": "2026-09-17",
+       "datelimitereponse": "2026-11-03T16:00:00+00:00",
+       "descripteur_libelle": [
+        "Habillement"
+       ],
+       "descripteur_code": [
+        "150"
+       ],
+       "nature_libelle": "Avis de marché",
+       "famille_libelle": "Marchés européens",
+       "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-89449",
+       "type_marche": [
+        "FOURNITURES"
+       ],
+       "procedure_libelle": "Procédure Ouverte",
+       "annonce_lie": null,
+       "nature": "APPEL_OFFRE",
+       "etat": "INITIAL",
+       "contractfolderid": "03bac2ae-1cf4-4800-b1ee-50e22f53657f"
+      },
+      {
+       "idweb": "26-89199",
+       "objet": "Travaux pour la requalification des espaces publics du projet « Les Portes de l’Océan »-Relance du lot 4 mobilier urbain",
+       "nomacheteur": "SPL Grand Ouest (974)",
+       "code_departement": [
+        "974"
+       ],
+       "dateparution": "2026-09-16",
+       "datelimitereponse": "2026-11-02T08:00:00+00:00",
+       "descripteur_libelle": [
+        "Mobilier urbain"
+       ],
+       "descripteur_code": [
+        "231"
+       ],
+       "nature_libelle": "Avis de marché",
+       "famille_libelle": "Marchés européens",
+       "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-89199",
+       "type_marche": [
+        "TRAVAUX"
+       ],
+       "procedure_libelle": "Procédure Ouverte",
+       "annonce_lie": null,
+       "nature": "APPEL_OFFRE",
+       "etat": "INITIAL",
+       "contractfolderid": "f4e6f9a8-23cf-41f8-9b78-9fd1e7f75c10"
+      },
+      {
+       "idweb": "24-61932",
+       "objet": "TRAVAUX D'ETANCHEITE, CHARPENTE ET COUVERTURE DANS LES BATIMENTS PUBLICS LE MOULE",
+       "nomacheteur": "ADMINISTRATION GENERALE",
+       "code_departement": [
+        "971"
+       ],
+       "dateparution": "2024-05-28",
+       "datelimitereponse": "2202-06-28T12:00:00+00:00",
+       "descripteur_libelle": [
+        "Etanchéité"
+       ],
+       "descripteur_code": [
+        "117"
+       ],
+       "nature_libelle": "Avis de marché",
+       "famille_libelle": "Marchés entre 90 k€ et seuils européens",
+       "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:24-61932",
+       "type_marche": [
+        "TRAVAUX"
+       ],
+       "procedure_libelle": "Procédure Ouverte",
+       "annonce_lie": null,
+       "nature": "APPEL_OFFRE",
+       "etat": "INITIAL",
+       "contractfolderid": null
+      }
+     ]
+    },
+    {
+     "params": {
+      "limit": 100,
+      "order_by": "-dateparution",
+      "where": "((nature=\"RECTIFICATIF\" OR nature=\"ANNULATION\" OR etat=\"RECTIFICATIF\" OR etat=\"ANNULATION\") AND annonce_lie in (\"26-101957\", \"26-101170\", \"26-101682\", \"26-101552\", \"26-101687\", \"26-100385\", \"26-101138\", \"26-101113\", \"26-101137\", \"26-100039\", \"26-99414\", \"26-100178\", \"26-99980\", \"26-99878\", \"26-98982\", \"26-98506\", \"26-98931\", \"26-98515\", \"26-99092\", \"26-98477\", \"26-97913\", \"26-96940\", \"26-97304\", \"26-96199\", \"26-96922\", \"26-96154\", \"26-95108\", \"26-95507\", \"26-95593\", \"26-94776\", \"26-93339\", \"26-93201\", \"26-92343\", \"26-92598\", \"26-92595\", \"26-91940\", \"26-92155\", \"26-91587\", \"26-91374\", \"26-89449\", \"26-89199\", \"24-61932\", \"26-76317\", \"26-86226\")) OR (nature=\"RECTIFICATIF\" AND dateparution >= date'2026-08-22' AND ((objet like \"trav*\" OR descripteur_libelle like \"trav*\")) AND (code_departement like \"971\" OR code_departement like \"974\"))",
+      "select": "idweb,annonce_lie,nature,etat,famille,dateparution,datelimitereponse,contractfolderid,url_avis,donnees"
+     },
+     "duree_s": 0.5,
+     "results": [
+      {
+       "idweb": "26-101691",
+       "annonce_lie": [
+        "26-95108"
+       ],
+       "nature": "APPEL_OFFRE",
+       "etat": "RECTIFICATIF",
+       "famille": "JOUE",
+       "dateparution": "2026-10-21",
+       "datelimitereponse": null,
+       "contractfolderid": "517fd4eb-7fc9-4447-b311-74d854a6da54",
+       "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-101691",
+       "donnees": null
+      },
+      {
+       "idweb": "26-99478",
+       "annonce_lie": [
+        "26-99092"
+       ],
+       "nature": "ANNULATION",
+       "etat": "INITIAL",
+       "famille": "FNS",
+       "dateparution": "2026-10-14",
+       "datelimitereponse": null,
+       "contractfolderid": null,
+       "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-99478",
+       "donnees": "{\"FNSimple\": {\"annulation\": {\"avisInitial\": {\"idWeb\": \"26-99092\", \"datePublication\": \"2026-10-13\"}, \"natureMarche\": {\"intitule\": \"Travaux de réhabilitation post chido du bâtiment B et des clôtures du Rectorat de Mayotte\", \"codeCPV\": {\"objetPrincipal\": {\"classPrincipale\": \"45261000\"}}, \"natureMarche\": {\"travaux\": \"\"}, \"description\": \"Travaux de réhabilitation post chido du bâtiment B et des clôtures du Rectorat de Mayotte\"}, \"infosAnnulation\": \"Le marché a été déclaré sans suite pour motif d'interet general et sera de nouveau publié\"}}}"
+      },
+      {
+       "idweb": "26-99887",
+       "annonce_lie": [
+        "26-92595"
+       ],
+       "nature": "RECTIFICATIF",
+       "etat": "RECTIFICATIF",
+       "famille": "FNS",
+       "dateparution": "2026-10-14",
+       "datelimitereponse": null,
+       "contractfolderid": null,
+       "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-99887",
+       "donnees": "{\"FNSimple\": {\"rectificatif\": {\"avisInitial\": {\"idWeb\": \"26-92595\"}, \"natureMarche\": {\"intitule\": \"TRAVAUX POUR LA RESTAURATION ET L’AMENAGEMENT DU MUSEE L’HERMINIER\", \"codeCPV\": {\"objetPrincipal\": {\"classPrincipale\": \"45212314\"}}, \"natureMarche\": {\"travaux\": \"\"}, \"description\": \"TRAVAUX POUR LA RESTAURATION ET L'AMENAGEMENT DU MUSEE L'HERMINIER\"}, \"infosRectif\": \"La date limite de remise des offres est fixée au 30 octobre 2026 à 12H00.\"}}}"
+      },
+      {
+       "idweb": "26-96200",
+       "annonce_lie": [
+        "26-82275"
+       ],
+       "nature": "RECTIFICATIF",
+       "etat": "RECTIFICATIF",
+       "famille": "FNS",
+       "dateparution": "2026-10-06",
+       "datelimitereponse": null,
+       "contractfolderid": null,
+       "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-96200",
+       "donnees": "{\"FNSimple\": {\"rectificatif\": {\"avisInitial\": {\"idWeb\": \"26-82275\"}, \"natureMarche\": {\"intitule\": \"Travaux de réhabilitation de l'école Les Alpinias, de végétalisation et de réfection de la cour de récréation\", \"codeCPV\": {\"objetPrincipal\": {\"classPrincipale\": \"45454100\"}}, \"natureMarche\": {\"travaux\": \"\"}, \"description\": \"Il s'agit de travaux de démolitions, de VRD, de revêtements, de gros oeuvre, d'étanchéité, de charpente, de couverture, de bardage, d'ouvrages architecturaux, d'aménagements paysagers et de la mise en place de mobiliers, de ludiques et de clôtures.\\nLa consultation est divisée en six lots\", \"criteresAttrib\": \"La valeur technique : 60%\\nLe prix : 40%\"}, \"infosRectif\": \"Rubrique : Date et heure limites de réception des plis, Au lieu de 07/10/2026 à 12h00, lire 21/10/2026 à 12h00\"}}}"
+      },
+      {
+       "idweb": "26-94574",
+       "annonce_lie": [
+        "26-76317",
+        "26-86226"
+       ],
+       "nature": "APPEL_OFFRE",
+       "etat": "RECTIFICATIF",
+       "famille": "JOUE",
+       "dateparution": "2026-10-02",
+       "datelimitereponse": "2026-11-02T16:00:00+00:00",
+       "contractfolderid": "9c6ee8f2-0431-45eb-ba55-50cd845a5f1b",
+       "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-94574",
+       "donnees": null
+      },
+      {
+       "idweb": "26-93361",
+       "annonce_lie": [
+        "26-82275"
+       ],
+       "nature": "RECTIFICATIF",
+       "etat": "RECTIFICATIF",
+       "famille": "FNS",
+       "dateparution": "2026-09-28",
+       "datelimitereponse": null,
+       "contractfolderid": null,
+       "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-93361",
+       "donnees": "{\"FNSimple\": {\"rectificatif\": {\"avisInitial\": {\"idWeb\": \"26-82275\"}, \"natureMarche\": {\"intitule\": \"Travaux de réhabilitation de l'école Les Alpinias, de végétalisation et de réfection de la cour de récréation\", \"codeCPV\": {\"objetPrincipal\": {\"classPrincipale\": \"45454100\"}}, \"natureMarche\": {\"travaux\": \"\"}, \"description\": \"Il s'agit de travaux de démolitions, de VRD, de revêtements, de gros oeuvre, d'étanchéité, de charpente, de couverture, de bardage, d'ouvrages architecturaux, d'aménagements paysagers et de la mise en place de mobiliers, de ludiques et de clôtures.\\nLa consultation est divisée en six lots\", \"criteresAttrib\": \"La valeur technique : 60%\\nLe prix : 40%\"}, \"infosRectif\": \"Rubrique : Date et heure limites de réception des plis, Au lieu de 30/09/2026 à 12h00, lire 07/10/2026 à 12h00\"}}}"
+      },
+      {
+       "idweb": "26-91985",
+       "annonce_lie": [
+        "26-83772"
+       ],
+       "nature": "RECTIFICATIF",
+       "etat": "RECTIFICATIF",
+       "famille": "FNS",
+       "dateparution": "2026-09-23",
+       "datelimitereponse": null,
+       "contractfolderid": null,
+       "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-91985",
+       "donnees": "{\"FNSimple\": {\"rectificatif\": {\"avisInitial\": {\"idWeb\": \"26-83772\"}, \"natureMarche\": {\"intitule\": \"Travaux de mise en conformité des installations de climatisation et de traitement d'air de l'hôtel de police de Fort-de-France\", \"codeCPV\": {\"objetPrincipal\": {\"classPrincipale\": \"45331000\"}}, \"natureMarche\": {\"travaux\": \"\"}, \"description\": \"Le marché a pour objet la mise en conformité des installations de climatisation et de traitement d'air de l'hôtel de police de Fort-de-France\", \"criteresAttrib\": \"Valeur technique : 45 %\\nPrix de prestations : 45 %\\nConsidérations sociales et environnementales : 10 %\"}, \"infosRectif\": \"La date limite de réception des plis (candidatures et offres) est reportée et fixée au 08 octobre 2026.\"}}}"
+      },
+      {
+       "idweb": "26-92160",
+       "annonce_lie": [
+        "26-85129"
+       ],
+       "nature": "RECTIFICATIF",
+       "etat": "RECTIFICATIF",
+       "famille": "FNS",
+       "dateparution": "2026-09-23",
+       "datelimitereponse": null,
+       "contractfolderid": null,
+       "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-92160",
+       "donnees": "{\"FNSimple\": {\"rectificatif\": {\"avisInitial\": {\"idWeb\": \"26-85129\"}, \"natureMarche\": {\"intitule\": \"RÉHABILITATION DU CIS DE BOUILLANTE\", \"codeCPV\": {\"objetPrincipal\": \"\"}, \"natureMarche\": {\"travaux\": \"\"}, \"description\": \"Le présent marché a pour objet la réalisation des travaux de réhabilitation du Centre d’Incendie et de Secours (CIS) de Bouillante, situé sur le territoire de la commune de Bouillante.\"}, \"infosRectif\": \"Nous vous informons que la date limite de remise des offres est reportée au lundi 05 octobre 2026 afin de permettre la prise en compte des modifications apportées au dossier de consultation.\\nCes modifications concernent notamment le lot Électricité, avec la mise à jour du plan et de la DPGF correspondante.\"}}}"
+      },
+      {
+       "idweb": "26-89432",
+       "annonce_lie": [
+        "26-85129"
+       ],
+       "nature": "RECTIFICATIF",
+       "etat": "RECTIFICATIF",
+       "famille": "FNS",
+       "dateparution": "2026-09-15",
+       "datelimitereponse": null,
+       "contractfolderid": null,
+       "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-89432",
+       "donnees": "{\"FNSimple\": {\"rectificatif\": {\"avisInitial\": {\"idWeb\": \"26-85129\"}, \"natureMarche\": {\"intitule\": \"RÉHABILITATION DU CIS DE BOUILLANTE\", \"codeCPV\": {\"objetPrincipal\": \"\"}, \"natureMarche\": {\"travaux\": \"\"}, \"description\": \"Le présent marché a pour objet la réalisation des travaux de réhabilitation du Centre d’Incendie et de Secours (CIS) de Bouillante, situé sur le territoire de la commune de Bouillante.\"}, \"infosRectif\": \"Bonjour à tous,\\n\\nCe message concerne le dossier Bouillante_971_20260901W2_01\\nObjet : RÉHABILITATION DU CIS DE\\nBOUILLANTE\\n\\nNous vous informons que la date limite de remise des offres pour la consultation relative aux travaux du CIS de Bouillante est reportée au 28 septembre 2026 à 12h.\\n\\nPar ailleurs, une visite du site est organisée le 15 septembre 2026 à 16h30 au CIS de Bouillante.\\n\\nLes entreprises souhaitant participer à cette visite sont invitées à se présenter directement sur site à la date et à l’heure indiquées.\\n\\nNous vous remercions de bien vouloir prendre en compte ces nouvelles échéances dans le cadre de la remise de votre offre.\\n\\n\\nLe dossier est disponible sur la plateforme Marchés Sécurisés : https://v2.marches-securises.fr\"}}}"
+      },
+      {
+       "idweb": "26-86829",
+       "annonce_lie": [
+        "26-84727"
+       ],
+       "nature": "RECTIFICATIF",
+       "etat": "RECTIFICATIF",
+       "famille": "FNS",
+       "dateparution": "2026-09-07",
+       "datelimitereponse": null,
+       "contractfolderid": null,
+       "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-86829",
+       "donnees": "{\"FNSimple\": {\"rectificatif\": {\"avisInitial\": {\"idWeb\": \"26-84727\"}, \"natureMarche\": {\"intitule\": \"Aménagement d'un espace de rencontre et de loisir de Terre de Haut\", \"codeCPV\": {\"objetPrincipal\": {\"classPrincipale\": \"45112710\"}}, \"natureMarche\": {\"travaux\": \"\"}, \"description\": \"Les prestations sont réglées par des prix forfaitaires\", \"criteresAttrib\": \"énoncé dans le Rc\"}, \"infosRectif\": [\"Rubrique : Durée, Au lieu de La durée d'exécution est de 12 mois., lire La durée d'exécution est de 6 mois\", \"Rubrique : Forme, Au lieu de Les variantes ne sont pas exigées , lire Les variantes sont autorisées\"]}}}"
+      },
+      {
+       "idweb": "26-86226",
+       "annonce_lie": [
+        "26-76317"
+       ],
+       "nature": "APPEL_OFFRE",
+       "etat": "RECTIFICATIF",
+       "famille": "JOUE",
+       "dateparution": "2026-09-06",
+       "datelimitereponse": "2026-10-01T16:00:00+00:00",
+       "contractfolderid": "9c6ee8f2-0431-45eb-ba55-50cd845a5f1b",
+       "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-86226",
+       "donnees": null
+      },
+      {
+       "idweb": "26-85868",
+       "annonce_lie": [
+        "26-77539"
+       ],
+       "nature": "RECTIFICATIF",
+       "etat": "RECTIFICATIF",
+       "famille": "FNS",
+       "dateparution": "2026-09-04",
+       "datelimitereponse": null,
+       "contractfolderid": null,
+       "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-85868",
+       "donnees": "{\"FNSimple\": {\"rectificatif\": {\"avisInitial\": {\"idWeb\": \"26-77539\"}, \"natureMarche\": {\"intitule\": \"Travaux de requalification du plateau sportif existant de l'école Aristide GIRARD - Le Moule\", \"codeCPV\": {\"objetPrincipal\": {\"classPrincipale\": \"45212220\"}}, \"natureMarche\": {\"travaux\": \"\"}, \"description\": \"La présente consultation porte sur les travaux de requalification du plateau sportif existant de l'école Aristide GIRARD, située au Moule.\\n\\nLes prestations, réalisées en lot unique VRD, comprennent notamment les déposes et démolitions des ouvrages existants, les terrassements et la préparation de la plateforme, la réalisation du drainage et des couches de fondation, la mise en oeuvre du revêtement en enrobé, les tracés réglementaires des terrains de basket-ball, handball et volley-ball, la fourniture et la pose des équipements sportifs, ainsi que les travaux d'espaces verts et la pose du mobilier extérieur.\\n\\nMarché public de travaux à prix unitaires. Le DQE est utilisé pour la comparaison des offres\", \"criteresAttrib\": \"énoncé dans le Rc\"}, \"infosRectif\": \"Rubrique : Date et heure limites de réception des plis, Au lieu de 08/09/2026 à 12h00, lire 10/09/2026 à 12h00\"}}}"
+      },
+      {
+       "idweb": "26-84833",
+       "annonce_lie": [
+        "26-76294"
+       ],
+       "nature": "RECTIFICATIF",
+       "etat": "RECTIFICATIF",
+       "famille": "MAPA",
+       "dateparution": "2026-09-01",
+       "datelimitereponse": null,
+       "contractfolderid": null,
+       "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-84833",
+       "donnees": "{\"MAPA\": {\"rectificatif\": {\"avisInitial\": {\"idWeb\": \"26-76294\", \"datePublication\": \"2026-07-30\"}, \"description\": {\"objet\": \"Marché à procédure adaptée de travaux d'électrication rurale sur des renforcements de câbles ou créations de départ (R3) et extensions (EXT), sans création nu mutation de poste (portant uniquement sur les réseaux basse tension (BT) divisés en 3 lots concernant 11 communes.\\nIl a pour objet :\\n- Les constructions de lignes basses tensions, en conducteurs nus ou isolés, aériens ou souterrains ;\\n- Les renforcements ou réfections sur les réseaux basses tensions ;\\n- Et tous autres travaux ayant attrait à ce domaine de compétence électrique\\nAvis précédent : 845024-2025\\nIdentifiant interne : 2026P020\", \"lieuExecutionLivraison\": {\"voie\": {\"nomvoie\": \"Lot 01 : Communes de Petite Ile - EtangSalé - Entre-Deux - Cilaos - Avirons \\nLot 02 : Communes de Saint-Leu et Saint-Joseph \\nLot 03 : Communes de Trois Bassins – SaintPierre – Saint-Paul – Saint-Louis\"}, \"cp\": \"97441\", \"ville\": \"Ile de la Réunion\"}}, \"procedure\": {\"procedureAdaptee\": \"\"}, \"infosRectif\": {\"rubDelais\": \"ReceptionOffres\", \"auLieuDeDate\": \"2026-09-04T12:00:00\", \"lireDate\": \"2026-09-11T12:00:00\"}}}}"
+      },
+      {
+       "idweb": "26-82680",
+       "annonce_lie": [
+        "26-74831"
+       ],
+       "nature": "RECTIFICATIF",
+       "etat": "RECTIFICATIF",
+       "famille": "FNS",
+       "dateparution": "2026-08-24",
+       "datelimitereponse": null,
+       "contractfolderid": null,
+       "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-82680",
+       "donnees": "{\"FNSimple\": {\"rectificatif\": {\"avisInitial\": {\"idWeb\": \"26-74831\"}, \"natureMarche\": {\"intitule\": \"Maintenance, petits travaux, et fourniture d'accessoires pour les réseaux d'arrosages automatiques des espaces verts du territoire de la CIVIS\", \"codeCPV\": {\"objetPrincipal\": {\"classPrincipale\": \"43323000\"}}, \"natureMarche\": {\"fournitures\": \"\"}, \"description\": \"Maintenance, petits travaux, et fourniture d'accessoires pour les réseaux d'arrosages automatiques des espaces verts du territoire de la CIVIS\", \"criteresAttrib\": \"énoncé dans le Rc\"}, \"infosRectif\": \"Rubrique : Date et heure limites de réception des plis, Au lieu de 25/08/2026 à 12h00, lire 02/09/2026 à 12h00\"}}}"
+      },
+      {
+       "idweb": "24-65513",
+       "annonce_lie": [
+        "24-61932"
+       ],
+       "nature": "RECTIFICATIF",
+       "etat": "RECTIFICATIF",
+       "famille": "FNS",
+       "dateparution": "2024-06-05",
+       "datelimitereponse": null,
+       "contractfolderid": null,
+       "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:24-65513",
+       "donnees": "{\"FNSimple\": {\"rectificatif\": {\"avisInitial\": {\"idWeb\": \"24-61932\", \"datePublication\": \"2024-06-05+02:00\"}, \"natureMarche\": {\"intitule\": \"TRAVAUX D'ETANCHEITE, CHARPENTE ET COUVERTURE DANS LES BATIMENTS PUBLICS\", \"natureMarche\": {\"travaux\": \"\"}}, \"infosRectif\": \"Lire 28/06/2024 à 12h00 au lieu de 28/06/2202\"}}}"
+      }
+     ]
+    },
+    {
+     "params": {
+      "limit": 100,
+      "order_by": "-dateparution",
+      "where": "idweb in (\"26-82275\") OR ((nature=\"ANNULATION\" OR etat=\"ANNULATION\") AND annonce_lie in (\"26-82275\"))",
+      "select": "idweb,objet,nomacheteur,code_departement,dateparution,datelimitereponse,descripteur_libelle,descripteur_code,nature_libelle,famille_libelle,url_avis,type_marche,procedure_libelle,annonce_lie,nature,etat,contractfolderid"
+     },
+     "duree_s": 0.37,
+     "results": [
+      {
+       "idweb": "26-82275",
+       "objet": "Travaux de réhabilitation de l'école Les Alpinias, de végétalisation et de réfection de la cour de récréation",
+       "nomacheteur": "Commune de Petite-Ile",
+       "code_departement": [
+        "974"
+       ],
+       "dateparution": "2026-08-21",
+       "datelimitereponse": "2026-09-30T12:00:00+00:00",
+       "descripteur_libelle": [
+        "Voirie et réseaux divers",
+        "Gros oeuvre",
+        "Charpente",
+        "Espaces verts"
+       ],
+       "descripteur_code": [
+        "366",
+        "144",
+        "57",
+        "116"
+       ],
+       "nature_libelle": "Avis de marché",
+       "famille_libelle": "Marchés entre 90 k€ et seuils européens",
+       "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-82275",
+       "type_marche": [
+        "TRAVAUX"
+       ],
+       "procedure_libelle": "Procédure Ouverte",
+       "annonce_lie": null,
+       "nature": "APPEL_OFFRE",
+       "etat": "INITIAL",
+       "contractfolderid": null
+      }
+     ]
+    }
+   ]
+  },
+  "corse_2A_2B": {
+   "criteres": {
+    "query": "",
+    "departements": [
+     "2A",
+     "2B"
+    ],
+    "limit": 50
+   },
+   "duree_s": 3.36,
+   "requetes": [
+    {
+     "params": {
+      "limit": 50,
+      "offset": 0,
+      "order_by": "-dateparution",
+      "where": "((((objet like \"trav*\" OR descripteur_libelle like \"trav*\"))) AND (code_departement like \"2A\" OR code_departement like \"20A\" OR code_departement like \"2B\" OR code_departement like \"20B\")) AND datelimitereponse >= date'2026-10-21'",
+      "select": "idweb,objet,nomacheteur,code_departement,dateparution,datelimitereponse,descripteur_libelle,descripteur_code,nature_libelle,famille_libelle,url_avis,type_marche,procedure_libelle,annonce_lie,nature,etat,contractfolderid"
+     },
+     "duree_s": 0.59,
+     "results": [
+      {
+       "idweb": "26-101468",
+       "objet": "Aménagement de la Rd 343 du Pr0+000 au Pr0+500. Traversée de Vivario. Section 1. Commune de Vivario - Relance Lot 1 Vrd",
+       "nomacheteur": "Collectivité de Corse",
+       "code_departement": [
+        "20A"
+       ],
+       "dateparution": "2026-10-19",
+       "datelimitereponse": "2026-11-16T12:00:00+00:00",
+       "descripteur_libelle": [
+        "Voirie"
+       ],
+       "descripteur_code": [
+        "365"
+       ],
+       "nature_libelle": "Avis de marché",
+       "famille_libelle": "Marchés entre 90 k€ et seuils européens",
+       "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-101468",
+       "type_marche": [
+        "TRAVAUX"
+       ],
+       "procedure_libelle": "Procédure Ouverte",
+       "annonce_lie": null,
+       "nature": "APPEL_OFFRE",
+       "etat": "INITIAL",
+       "contractfolderid": null
+      },
+      {
+       "idweb": "26-101638",
+       "objet": "Calvi (2B) - 2ème REP - Camp Raffalli - Déconstruction des hangars 25,26 et 32 et reconstruction d'un hangar de stockage de type H.C.C.A (Habillement - Couchage - Campement - Ameublement)",
+       "nomacheteur": "SID Sud-Est",
+       "code_departement": [
+        "69",
+        "20B",
+        "20A"
+       ],
+       "dateparution": "2026-10-19",
+       "datelimitereponse": "2026-11-19T16:00:00+00:00",
+       "descripteur_libelle": [
+        "Tous corps d'état",
+        "Electricité (travaux)",
+        "Chauffage (travaux)",
+        "Ouvrage métallique",
+        "Menuiserie"
+       ],
+       "descripteur_code": [
+        "345",
+        "105",
+        "61",
+        "254",
+        "222"
+       ],
+       "nature_libelle": "Avis de marché",
+       "famille_libelle": "Marchés entre 90 k€ et seuils européens",
+       "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-101638",
+       "type_marche": [
+        "TRAVAUX"
+       ],
+       "procedure_libelle": "Procédure Ouverte",
+       "annonce_lie": null,
+       "nature": "APPEL_OFFRE",
+       "etat": "INITIAL",
+       "contractfolderid": null
+      },
+      {
+       "idweb": "26-100536",
+       "objet": "Marché de travaux et de maintenance de rénovation du parc d'éclairage public du cordon lagunaire de la Marana",
+       "nomacheteur": "Communauté de Communes Marana Golo",
+       "code_departement": [
+        "20B"
+       ],
+       "dateparution": "2026-10-16",
+       "datelimitereponse": "2026-11-06T12:00:00+00:00",
+       "descripteur_libelle": [
+        "Eclairage public"
+       ],
+       "descripteur_code": [
+        "102"
+       ],
+       "nature_libelle": "Avis de marché",
+       "famille_libelle": "Marchés entre 90 k€ et seuils européens",
+       "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-100536",
+       "type_marche": [
+        "TRAVAUX"
+       ],
+       "procedure_libelle": "Procédure Ouverte",
+       "annonce_lie": null,
+       "nature": "APPEL_OFFRE",
+       "etat": "INITIAL",
+       "contractfolderid": null
+      },
+      {
+       "idweb": "26-100589",
+       "objet": "Accord-cadre à bons de commande de travaux de second oeuvre pour l'entretien, la rénovation et la réhabilitation des bâtiments communaux de la commune de Prunelli-di-Fiumorbu.",
+       "nomacheteur": "Mairie de Prunelli di Fiumorbo",
+       "code_departement": [
+        "20B"
+       ],
+       "dateparution": "2026-10-16",
+       "datelimitereponse": "2026-11-16T12:00:00+00:00",
+       "descripteur_libelle": [
+        "Electricité (travaux)",
+        "Peinture (travaux)",
+        "Plomberie (travaux)"
+       ],
+       "descripteur_code": [
+        "105",
+        "264",
+        "270"
+       ],
+       "nature_libelle": "Avis de marché",
+       "famille_libelle": "Marchés entre 90 k€ et seuils européens",
+       "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-100589",
+       "type_marche": [
+        "TRAVAUX"
+       ],
+       "procedure_libelle": "Procédure Ouverte",
+       "annonce_lie": null,
+       "nature": "APPEL_OFFRE",
+       "etat": "INITIAL",
+       "contractfolderid": null
+      },
+      {
+       "idweb": "26-99523",
+       "objet": "travaux de serrurerie",
+       "nomacheteur": "SGAR PFRA",
+       "code_departement": [
+        "20A",
+        "20B"
+       ],
+       "dateparution": "2026-10-15",
+       "datelimitereponse": "2026-12-04T17:00:00+00:00",
+       "descripteur_libelle": [
+        "Serrurerie"
+       ],
+       "descripteur_code": [
+        "321"
+       ],
+       "nature_libelle": "Avis de marché",
+       "famille_libelle": "Marchés européens",
+       "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-99523",
+       "type_marche": [
+        "TRAVAUX"
+       ],
+       "procedure_libelle": "Procédure Ouverte",
+       "annonce_lie": null,
+       "nature": "APPEL_OFFRE",
+       "etat": "INITIAL",
+       "contractfolderid": "ec6363a5-7180-43f8-a7de-ef928b5a138c"
+      },
+      {
+       "idweb": "26-99395",
+       "objet": "Marché de travaux de réaménagement des locaux de la Direction de France Travail Corse",
+       "nomacheteur": "FRANCE TRAVAIL CORSE",
+       "code_departement": [
+        "20A",
+        "20B"
+       ],
+       "dateparution": "2026-10-15",
+       "datelimitereponse": "2026-12-03T10:00:00+00:00",
+       "descripteur_libelle": [
+        "Peinture (travaux)",
+        "Electricité (travaux)",
+        "Menuiserie",
+        "Revêtements de sols",
+        "Plomberie (travaux)",
+        "Cloison, faux plafond",
+        "Revêtements muraux",
+        "Signalétique",
+        "Ventilation",
+        "Climatisation"
+       ],
+       "descripteur_code": [
+        "264",
+        "105",
+        "222",
+        "308",
+        "270",
+        "63",
+        "309",
+        "333",
+        "360",
+        "62"
+       ],
+       "nature_libelle": "Avis de marché",
+       "famille_libelle": "Marchés européens",
+       "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-99395",
+       "type_marche": [
+        "TRAVAUX"
+       ],
+       "procedure_libelle": "Procédure Ouverte",
+       "annonce_lie": null,
+       "nature": "APPEL_OFFRE",
+       "etat": "INITIAL",
+       "contractfolderid": "b99f06f5-633a-4a89-973e-5a4d409ff6c0"
+      },
+      {
+       "idweb": "26-99987",
+       "objet": "Aménagement de bureaux du site d’Ajaccio de la Direction Régionale Corse",
+       "nomacheteur": "Caisse des dépôts et consignations",
+       "code_departement": [
+        "20B",
+        "20A",
+        "75"
+       ],
+       "dateparution": "2026-10-15",
+       "datelimitereponse": "2026-11-16T11:30:00+00:00",
+       "descripteur_libelle": [
+        "Electricité (travaux)",
+        "Plomberie (travaux)",
+        "Peinture (fourniture)"
+       ],
+       "descripteur_code": [
+        "105",
+        "270",
+        "263"
+       ],
+       "nature_libelle": "Avis de marché",
+       "famille_libelle": "Marchés entre 90 k€ et seuils européens",
+       "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-99987",
+       "type_marche": [
+        "TRAVAUX"
+       ],
+       "procedure_libelle": "Procédure Ouverte",
+       "annonce_lie": null,
+       "nature": "APPEL_OFFRE",
+       "etat": "INITIAL",
+       "contractfolderid": null
+      },
+      {
+       "idweb": "26-97773",
+       "objet": "Accord cadre de petits travaux de Vrd - Rt 12 - Voie nouvelle Bastia Furiani",
+       "nomacheteur": "Collectivite De Corse",
+       "code_departement": [
+        "20B"
+       ],
+       "dateparution": "2026-10-09",
+       "datelimitereponse": "2026-10-28T12:00:00+00:00",
+       "descripteur_libelle": [
+        "Génie civil"
+       ],
+       "descripteur_code": [
+        "141"
+       ],
+       "nature_libelle": "Avis de marché",
+       "famille_libelle": "Marchés entre 90 k€ et seuils européens",
+       "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-97773",
+       "type_marche": [
+        "TRAVAUX"
+       ],
+       "procedure_libelle": "Procédure Ouverte",
+       "annonce_lie": null,
+       "nature": "APPEL_OFFRE",
+       "etat": "INITIAL",
+       "contractfolderid": null
+      },
+      {
+       "idweb": "26-96581",
+       "objet": "Travaux d'aménagement de l'espace Logirem Restonica",
+       "nomacheteur": "Commune de Corte",
+       "code_departement": [
+        "20B",
+        "20A"
+       ],
+       "dateparution": "2026-10-08",
+       "datelimitereponse": "2026-11-16T11:00:00+00:00",
+       "descripteur_libelle": [
+        "Voirie et réseaux divers"
+       ],
+       "descripteur_code": [
+        "366"
+       ],
+       "nature_libelle": "Avis de marché",
+       "famille_libelle": "Marchés européens",
+       "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-96581",
+       "type_marche": [
+        "TRAVAUX"
+       ],
+       "procedure_libelle": "Procédure Ouverte",
+       "annonce_lie": null,
+       "nature": "APPEL_OFFRE",
+       "etat": "INITIAL",
+       "contractfolderid": "f30d1836-5bf2-4b94-afe6-920ee62dc576"
+      },
+      {
+       "idweb": "26-96745",
+       "objet": "Travaux d'aménagement du carrefour de Neruccio entre la Rt10 et la Rd545, sur le territoire de la commune d'U Sulaghju\nLe projet consiste en l'aménagement du carrefour de Neru",
+       "nomacheteur": "Collectivité de Corse",
+       "code_departement": [
+        "20B"
+       ],
+       "dateparution": "2026-10-07",
+       "datelimitereponse": "2026-11-09T12:00:00+00:00",
+       "descripteur_libelle": [
+        "Voirie"
+       ],
+       "descripteur_code": [
+        "365"
+       ],
+       "nature_libelle": "Avis de marché",
+       "famille_libelle": "Marchés entre 90 k€ et seuils européens",
+       "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-96745",
+       "type_marche": [
+        "TRAVAUX"
+       ],
+       "procedure_libelle": "Procédure Ouverte",
+       "annonce_lie": null,
+       "nature": "APPEL_OFFRE",
+       "etat": "INITIAL",
+       "contractfolderid": null
+      },
+      {
+       "idweb": "26-95985",
+       "objet": "Travaux pour l'installation de centrales photovoltaïques en toiture de bâtiments de la Communauté de Communes de Marana Golo",
+       "nomacheteur": "Communauté de Communes Marana Golo",
+       "code_departement": [
+        "20B"
+       ],
+       "dateparution": "2026-10-05",
+       "datelimitereponse": "2026-10-30T12:00:00+00:00",
+       "descripteur_libelle": [
+        "Photovoltaïque"
+       ],
+       "descripteur_code": [
+        "476"
+       ],
+       "nature_libelle": "Avis de marché",
+       "famille_libelle": "Marchés entre 90 k€ et seuils européens",
+       "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-95985",
+       "type_marche": [
+        "TRAVAUX"
+       ],
+       "procedure_libelle": "Procédure Ouverte",
+       "annonce_lie": null,
+       "nature": "APPEL_OFFRE",
+       "etat": "INITIAL",
+       "contractfolderid": null
+      },
+      {
+       "idweb": "26-95021",
+       "objet": "Travaux de revêtement hydrocarboné et travaux annexes sur espaces publics",
+       "nomacheteur": "Ville de Bastia",
+       "code_departement": [
+        "20B"
+       ],
+       "dateparution": "2026-10-01",
+       "datelimitereponse": "2026-10-23T12:00:00+00:00",
+       "descripteur_libelle": [
+        "Voirie"
+       ],
+       "descripteur_code": [
+        "365"
+       ],
+       "nature_libelle": "Avis de marché",
+       "famille_libelle": "Marchés entre 90 k€ et seuils européens",
+       "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-95021",
+       "type_marche": [
+        "TRAVAUX"
+       ],
+       "procedure_libelle": "Procédure Ouverte",
+       "annonce_lie": null,
+       "nature": "APPEL_OFFRE",
+       "etat": "INITIAL",
+       "contractfolderid": null
+      },
+      {
+       "idweb": "26-93488",
+       "objet": "Travaux de création d'une classe supplémentaire à l'école de Ceccia",
+       "nomacheteur": "Mairie de Porto Vecchio",
+       "code_departement": [
+        "20A"
+       ],
+       "dateparution": "2026-09-28",
+       "datelimitereponse": "2026-11-02T12:00:00+00:00",
+       "descripteur_libelle": [
+        "Terrassement",
+        "Etanchéité",
+        "Menuiserie",
+        "Isolation",
+        "Plâtrerie",
+        "Peinture (travaux)",
+        "Revêtements de sols",
+        "Revêtements muraux",
+        "Electricité (travaux)",
+        "Plomberie (travaux)",
+        "Sanitaire",
+        "Climatisation",
+        "Ventilation",
+        "Chauffage (travaux)",
+        "Métallerie",
+        "Ferronnerie",
+        "Ascenseur"
+       ],
+       "descripteur_code": [
+        "341",
+        "117",
+        "222",
+        "169",
+        "269",
+        "264",
+        "308",
+        "309",
+        "105",
+        "270",
+        "319",
+        "62",
+        "360",
+        "61",
+        "223",
+        "126",
+        "17"
+       ],
+       "nature_libelle": "Avis de marché",
+       "famille_libelle": "Marchés entre 90 k€ et seuils européens",
+       "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-93488",
+       "type_marche": [
+        "TRAVAUX"
+       ],
+       "procedure_libelle": "Procédure Ouverte",
+       "annonce_lie": null,
+       "nature": "APPEL_OFFRE",
+       "etat": "INITIAL",
+       "contractfolderid": null
+      },
+      {
+       "idweb": "26-92291",
+       "objet": "Marché de service d'insertion professionnelle de type \"Destination Emploi\" au bénéfice des demandeurs d'emploi de l'Agence France Travail Ile-Rousse",
+       "nomacheteur": "FRANCE TRAVAIL - CORSE",
+       "code_departement": [
+        "20B",
+        "20A"
+       ],
+       "dateparution": "2026-09-25",
+       "datelimitereponse": "2026-11-03T11:00:00+00:00",
+       "descripteur_libelle": [
+        "Formation",
+        "Prestations de services"
+       ],
+       "descripteur_code": [
+        "410",
+        "274"
+       ],
+       "nature_libelle": "Avis de marché",
+       "famille_libelle": "Marchés européens",
+       "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-92291",
+       "type_marche": [
+        "SERVICES"
+       ],
+       "procedure_libelle": "Procédure Ouverte",
+       "annonce_lie": null,
+       "nature": "APPEL_OFFRE",
+       "etat": "INITIAL",
+       "contractfolderid": "a0aec417-200f-45cf-a526-51e96f30cad2"
+      },
+      {
+       "idweb": "26-93046",
+       "objet": "ACCORD-CADRE A BONS DE COMMANDE - TRAVAUX D'INFRASTRUCTURE\nCOMMUNE D'ALATA",
+       "nomacheteur": "COMMUNE D'ALATA",
+       "code_departement": [
+        "20A"
+       ],
+       "dateparution": "2026-09-25",
+       "datelimitereponse": "2026-10-26T12:00:00+00:00",
+       "descripteur_libelle": [
+        "Génie civil",
+        "Maçonnerie"
+       ],
+       "descripteur_code": [
+        "141",
+        "195"
+       ],
+       "nature_libelle": "Avis de marché",
+       "famille_libelle": "Marchés entre 90 k€ et seuils européens",
+       "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-93046",
+       "type_marche": [
+        "TRAVAUX"
+       ],
+       "procedure_libelle": "Procédure Ouverte",
+       "annonce_lie": null,
+       "nature": "APPEL_OFFRE",
+       "etat": "INITIAL",
+       "contractfolderid": null
+      },
+      {
+       "idweb": "26-92753",
+       "objet": "travaux d'assainissement",
+       "nomacheteur": "CELRL 17",
+       "code_departement": [
+        "20B",
+        "20A"
+       ],
+       "dateparution": "2026-09-25",
+       "datelimitereponse": "2026-10-26T12:00:00+00:00",
+       "descripteur_libelle": [
+        "Assainissement"
+       ],
+       "descripteur_code": [
+        "18"
+       ],
+       "nature_libelle": "Avis de marché",
+       "famille_libelle": "Marchés entre 90 k€ et seuils européens",
+       "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-92753",
+       "type_marche": [
+        "TRAVAUX"
+       ],
+       "procedure_libelle": "Procédure Ouverte",
+       "annonce_lie": null,
+       "nature": "APPEL_OFFRE",
+       "etat": "INITIAL",
+       "contractfolderid": null
+      },
+      {
+       "idweb": "26-92531",
+       "objet": "marché de travaux de construction d'un parc de stationnement et d'un office de tourisme - Phase 3\nrelance du lot 6 plâtrerie peinture classé sans suite pour motif d'intérêt gé",
+       "nomacheteur": "Mairie de Zonza",
+       "code_departement": [
+        "20A"
+       ],
+       "dateparution": "2026-09-24",
+       "datelimitereponse": "2026-10-26T12:00:00+00:00",
+       "descripteur_libelle": [
+        "Ascenseur",
+        "Plâtrerie",
+        "Peinture (travaux)"
+       ],
+       "descripteur_code": [
+        "17",
+        "269",
+        "264"
+       ],
+       "nature_libelle": "Avis de marché",
+       "famille_libelle": "Marchés entre 90 k€ et seuils européens",
+       "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-92531",
+       "type_marche": [
+        "TRAVAUX"
+       ],
+       "procedure_libelle": "Procédure Ouverte",
+       "annonce_lie": null,
+       "nature": "APPEL_OFFRE",
+       "etat": "INITIAL",
+       "contractfolderid": null
+      },
+      {
+       "idweb": "26-91505",
+       "objet": "Fourniture et livraison de vêtements de travail et d'équipements de protections individuelles (EPI)",
+       "nomacheteur": "Ville d'Ajaccio",
+       "code_departement": [
+        "20A"
+       ],
+       "dateparution": "2026-09-23",
+       "datelimitereponse": "2026-10-23T09:00:00+00:00",
+       "descripteur_libelle": [
+        "Equipements spécialisés"
+       ],
+       "descripteur_code": [
+        "115"
+       ],
+       "nature_libelle": "Avis de marché",
+       "famille_libelle": "Marchés européens",
+       "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-91505",
+       "type_marche": [
+        "FOURNITURES"
+       ],
+       "procedure_libelle": "Procédure Ouverte",
+       "annonce_lie": [
+        "26-88364"
+       ],
+       "nature": "APPEL_OFFRE",
+       "etat": "RECTIFICATIF",
+       "contractfolderid": "d80c3719-1594-4944-878b-849bc142db53"
+      },
+      {
+       "idweb": "26-92059",
+       "objet": "Rénovation énergétique et globale du bâtiment communal",
+       "nomacheteur": "COMMUNE DE SORBOLLANO",
+       "code_departement": [
+        "20A"
+       ],
+       "dateparution": "2026-09-23",
+       "datelimitereponse": "2026-11-06T12:00:00+00:00",
+       "descripteur_libelle": [
+        "Démolition",
+        "Electricité (travaux)",
+        "Maçonnerie",
+        "Menuiserie",
+        "Plomberie (travaux)",
+        "Serrurerie"
+       ],
+       "descripteur_code": [
+        "87",
+        "105",
+        "195",
+        "222",
+        "270",
+        "321"
+       ],
+       "nature_libelle": "Avis de marché",
+       "famille_libelle": "Marchés entre 90 k€ et seuils européens",
+       "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-92059",
+       "type_marche": [
+        "TRAVAUX"
+       ],
+       "procedure_libelle": "Procédure Ouverte",
+       "annonce_lie": null,
+       "nature": "APPEL_OFFRE",
+       "etat": "INITIAL",
+       "contractfolderid": null
+      }
+     ]
+    },
+    {
+     "params": {
+      "limit": 100,
+      "order_by": "-dateparution",
+      "where": "((nature=\"RECTIFICATIF\" OR nature=\"ANNULATION\" OR etat=\"RECTIFICATIF\" OR etat=\"ANNULATION\") AND annonce_lie in (\"26-101468\", \"26-101638\", \"26-100536\", \"26-100589\", \"26-99523\", \"26-99395\", \"26-99987\", \"26-97773\", \"26-96581\", \"26-96745\", \"26-95985\", \"26-95021\", \"26-93488\", \"26-92291\", \"26-93046\", \"26-92753\", \"26-92531\", \"26-92059\", \"26-88364\")) OR (nature=\"RECTIFICATIF\" AND dateparution >= date'2026-08-22' AND ((objet like \"trav*\" OR descripteur_libelle like \"trav*\")) AND (code_departement like \"2A\" OR code_departement like \"20A\" OR code_departement like \"2B\" OR code_departement like \"20B\"))",
+      "select": "idweb,annonce_lie,nature,etat,famille,dateparution,datelimitereponse,contractfolderid,url_avis,donnees"
+     },
+     "duree_s": 0.37,
+     "results": [
+      {
+       "idweb": "26-102208",
+       "annonce_lie": [
+        "26-93488"
+       ],
+       "nature": "RECTIFICATIF",
+       "etat": "RECTIFICATIF",
+       "famille": "FNS",
+       "dateparution": "2026-10-21",
+       "datelimitereponse": null,
+       "contractfolderid": null,
+       "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-102208",
+       "donnees": "{\"FNSimple\": {\"rectificatif\": {\"avisInitial\": {\"idWeb\": \"26-93488\", \"datePublication\": \"2026-09-28\"}, \"natureMarche\": {\"intitule\": \"Travaux de création d'une classe supplémentaire à l'école de Ceccia\", \"codeCPV\": {\"objetPrincipal\": {\"classPrincipale\": \"45000000\"}}, \"natureMarche\": {\"travaux\": \"\"}, \"description\": \"La présente consultation a pour objet la création d'une classe supplémentaire à l'école de Ceccia.\"}, \"infosRectif\": \"La date limite de réception des offres, initialement prévue le 2 novembre 2026 à 12h00, est reportée au 16 novembre 2026 à 12h00.\"}}}"
+      },
+      {
+       "idweb": "26-102488",
+       "annonce_lie": [
+        "26-95985"
+       ],
+       "nature": "RECTIFICATIF",
+       "etat": "RECTIFICATIF",
+       "famille": "FNS",
+       "dateparution": "2026-10-21",
+       "datelimitereponse": null,
+       "contractfolderid": null,
+       "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-102488",
+       "donnees": "{\"FNSimple\": {\"rectificatif\": {\"avisInitial\": {\"idWeb\": \"26-95985\"}, \"natureMarche\": {\"intitule\": \"Travaux pour l'installation de centrales photovoltaïques en toiture de bâtiments de la Communauté de Communes de Marana Golo\", \"codeCPV\": {\"objetPrincipal\": {\"classPrincipale\": \"45261215\"}}, \"natureMarche\": {\"travaux\": \"\"}, \"description\": \"Travaux de fourniture et pose de centrales photovoltaïques en toiture de bâtiments de la CCMG : station d'épuration de Borgo littoral (cordon lagunaire) et siège social (Lucciana)\", \"criteresAttrib\": \"énoncé dans le Rc\"}, \"infosRectif\": \"Rubrique : Date et heure limites de réception des plis, Au lieu de 30/10/2026 à 12h00, lire 02/11/2026 à 12h00\"}}}"
+      },
+      {
+       "idweb": "26-97630",
+       "annonce_lie": [
+        "26-90900"
+       ],
+       "nature": "RECTIFICATIF",
+       "etat": "RECTIFICATIF",
+       "famille": "FNS",
+       "dateparution": "2026-10-08",
+       "datelimitereponse": null,
+       "contractfolderid": null,
+       "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-97630",
+       "donnees": "{\"FNSimple\": {\"rectificatif\": {\"avisInitial\": {\"idWeb\": \"26-90900\"}, \"natureMarche\": {\"intitule\": \"Travaux d'équipements pour la réutilisation des eaux de pluie de toiture sur la commune de Peri\", \"codeCPV\": {\"objetPrincipal\": {\"classPrincipale\": \"45232100\"}}, \"natureMarche\": {\"travaux\": \"\"}, \"description\": \"Le marché concerne la réalisation de travaux d'équipements pour la réutilisation des eaux de pluie de toiture sur plusieurs sites de la commune de Peri (20167). Les sites incluent des infrastructures communales, une fromagerie agricole et une habitation privée. Les travaux visent à adapter les infrastructures au changement climatique dans le cadre du projet ADAPTWISE\", \"criteresAttrib\": \"énoncé dans le Rc\"}, \"infosRectif\": \"Rubrique : Date et heure limites de réception des plis, Au lieu de 12/10/2026 à 11h00, lire 19/10/2026 à 11h00\"}}}"
+      },
+      {
+       "idweb": "26-91505",
+       "annonce_lie": [
+        "26-88364"
+       ],
+       "nature": "APPEL_OFFRE",
+       "etat": "RECTIFICATIF",
+       "famille": "JOUE",
+       "dateparution": "2026-09-23",
+       "datelimitereponse": "2026-10-23T09:00:00+00:00",
+       "contractfolderid": "d80c3719-1594-4944-878b-849bc142db53",
+       "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-91505",
+       "donnees": null
+      },
+      {
+       "idweb": "26-90393",
+       "annonce_lie": [
+        "26-81934"
+       ],
+       "nature": "RECTIFICATIF",
+       "etat": "RECTIFICATIF",
+       "famille": "FNS",
+       "dateparution": "2026-09-18",
+       "datelimitereponse": null,
+       "contractfolderid": null,
+       "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-90393",
+       "donnees": "{\"FNSimple\": {\"rectificatif\": {\"avisInitial\": {\"idWeb\": \"26-81934\"}, \"natureMarche\": {\"intitule\": \"Travaux de remplacement des canalisations du lotissement communal RT 50\", \"codeCPV\": {\"objetPrincipal\": {\"classPrincipale\": \"45232150\"}}, \"natureMarche\": {\"travaux\": \"\"}, \"description\": \"Travaux de remplacement des canalisations du lotissement communal RT 50 sur la Commune de Corte\", \"criteresAttrib\": \"énoncé dans le Rc\"}, \"infosRectif\": [\"Rubrique : Date et heure limites de réception des plis, Au lieu de 26/09/2026 à 12h00, lire 28/09/2026 à 12h00\", \"Rubrique : date limite de remise des offres, Au lieu de 26/09/2026 à 12h00 au plus tard, lire 28/09/2026 à 12h00 au plus tard\"]}}}"
+      }
+     ]
+    }
+   ]
+  }
+ }
+}
