@@ -19,6 +19,7 @@ import base64
 import io
 import json
 import os
+import re
 import subprocess
 import sys
 import uuid
@@ -31,6 +32,14 @@ import pytest
 def _db():
     from app.core.database import SessionLocal
     return SessionLocal()
+
+
+def _nombre_present(nombre: str, texte: str) -> bool:
+    """« 40000 » écrit comme un nombre (« 40000 », « 40000.5 », « : 40000, »), pas comme un morceau d'identifiant
+    (« AO-40000085 », marché n° 40000085) ni d'empreinte (« …a40000f… ») : la recherche d'un prix qui ne doit pas
+    fuiter ne dépend pas des identifiants de la base (PostgreSQL ne les réutilise jamais ; en production, ils sont
+    grands)."""
+    return re.search(rf"(?<![0-9A-Za-z]){re.escape(nombre)}(?![0-9A-Za-z])", texte) is not None
 
 
 def _register(client, company="Partenaire Compte SARL", email=None, verified=True):
@@ -547,8 +556,8 @@ def test_doctrine_brouillon_puis_generee(client, auth, mails):
     assert v["status"] == "draft" and v["content_md"] is None and v["total_offre_ht"] is None
     raw = json.dumps(v, ensure_ascii=False)
     # (« 125 » seul pouvait apparaître dans un horodatage ou un identifiant : test instable.)
-    assert "40000" not in raw and "40 000" not in raw and "60 000" not in raw
-    assert "125000" not in raw and "125 000" not in raw and "125000.5" not in raw
+    assert not _nombre_present("40000", raw) and "40 000" not in raw and "60 000" not in raw
+    assert not _nombre_present("125000", raw) and "125 000" not in raw and "125000.5" not in raw
     mine = [m for m in v["membres"] if m["company"] == "Morvan Plomberie"]
     others = [m for m in v["membres"] if m["company"] != "Morvan Plomberie"]
     assert mine and mine[0]["prix_lot_ht"] == 25000.5
@@ -635,7 +644,7 @@ def test_llm_ne_recoit_jamais_la_convention_et_zip(client, auth, mails, monkeypa
     joined = "\n".join(prompts)
     assert c["content_hash"] not in joined
     assert "Convention de groupement" not in joined and "Article 6" not in joined
-    assert "40000" not in joined and "40 000" not in joined          # aucun prix au LLM
+    assert not _nombre_present("40000", joined) and "40 000" not in joined          # aucun prix au LLM
     assert "Le Gall Électricité" in joined and "Lot 2" in joined      # l'apport SOUMIS du partenaire, sans prix
     n_avant = len(prompts)
     from app.models import Project
@@ -1024,7 +1033,7 @@ def test_sous_traitant_ne_voit_ni_texte_ni_prix(client, auth, mails):
     g = client.get(f"/api/invite/{st['token']}/convention").json()
     assert g["content_md"] is None and g["total_offre_ht"] is None and g["membres"] == []
     assert not g.get("apercu_md")
-    assert "40000" not in json.dumps(g) and "Le Gall" not in json.dumps(g)
+    assert not _nombre_present("40000", json.dumps(g)) and "Le Gall" not in json.dumps(g)
     # Un membre signataire voit bien le texte complet et le total.
     m = client.get(f"/api/invite/{invs[0]['token']}/convention").json()
     assert m["content_md"] and m["total_offre_ht"] == c["total_offre_ht"]

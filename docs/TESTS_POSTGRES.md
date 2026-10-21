@@ -99,6 +99,14 @@ clients ne change pas.
 5. **Compte administrateur gardé d'un test à l'autre (`_admin_headers`, `test_reseau_partenaires.py`).** Avant de
    réutiliser ce compte, le test vérifie qu'il existe encore et reste administrateur. Sinon, il en recrée un.
    Rien ne repose plus sur un identifiant gardé entre deux tests sans revérification.
+6. **Prix cherchés dans un texte qui contient des identifiants, 6 assertions.** Elles sont dans
+   `test_convention_groupement.py` (3 tests) et `test_cotraitance_v4.py` (2 tests). Ces tests vérifient qu'un prix
+   (« 40000 », « 125000 », « 100000 ») ne fuite pas dans une vue JSON. Ils cherchaient la suite de chiffres
+   n'importe où, y compris dans un identifiant : avec des identifiants de production, la référence « AO-40000085 »
+   du marché n° 40000085 faisait échouer `test_doctrine_brouillon_puis_generee`. Le constat est venu de
+   `--ids-decales`, plus bas. Ils cherchent maintenant ce nombre écrit comme un nombre, avec `_nombre_present` :
+   « 40000 », « 40000.5 » ou « : 40000, » sont trouvés ; « AO-40000085 », « 1400000 » et une empreinte « …a40000f… »
+   ne le sont pas. Les formes écrites (« 40 000 », « 125 000 ») restent cherchées partout, comme avant.
 
 ## Vérifier l'indépendance aux identifiants : `--ids-decales`
 
