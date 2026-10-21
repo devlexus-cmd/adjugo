@@ -23,7 +23,7 @@
 <script src="/static/vendor/lucide-1.20.0.min.js" integrity="sha384-vEpkK5oidsrH6UhRc6tAPlgJZ/qXFwumFY+Kx8vBSeZ7NBag809YZCSmxFYGe/pt"></script>
 <!-- Chiffrement par membre du détail de chiffrage (co-traitance v2) : window.AdjugoCrypto, chargé AVANT app.js -->
 <script src="/static/cotraitance-crypto.js" integrity="sha384-q8DL80RVudBWgsaCfc4AJZ3iCrB4O6OoIs5lA81bOty2NmjC5qh+tkxKPVJDzShC"></script>
-<script src="/static/i18n.js" integrity="sha384-j/bj2Z91W4pmhaCVUGhaUdYE7pANkCIOFm178JY56Fo012Ajplbfb+PMkF+QPA6+" defer></script>
+<script src="/static/i18n.js" integrity="sha384-UgoNAZb4/aD5MBS5lRYy11xpVLfepNTKcBaNRSZfd6Ft/WsFRbNyWKlzxupj5Rov" defer></script>
 </head>
 <body>
 <div id="app">
@@ -135,7 +135,7 @@
               <button type="button" role="tab" class="notif-og" :class="{on:notifsOnglet==='activite'}" :aria-selected="notifsOnglet==='activite'?'true':'false'" @click="notifsVoir('activite')"><span>Activité</span><span v-if="notifUnseen>0" class="notif-point" aria-hidden="true"></span><span v-if="notifUnseen>0" class="sr-only"> (nouvelle activité)</span></button>
             </div>
             <div v-if="notifsOnglet==='a_faire'" role="tabpanel">
-              <div v-if="!aFaire().length" class="muted small notif-vide">Rien n'attend de réponse de votre part.</div>
+              <div v-if="!aFaire().length && aFaireLu()" class="muted small notif-vide">Rien n'attend de réponse de votre part.</div>
               <button v-for="t in aFaire()" :key="'nf'+t.k" type="button" class="notif-l" @click="aFaireOuvrir(t)">
                 <i :data-lucide="t.ic" aria-hidden="true"></i>
                 <span class="notif-tx"><b class="small">{{ t.titre }}</b><span class="muted small">{{ t.detail }}</span></span>
@@ -226,14 +226,14 @@
               <i data-lucide="rocket" class="pp-ic" aria-hidden="true"></i>
               <b id="pp-t" class="pp-titre">Vos premiers pas</b>
               <button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Chaque tâche se coche d'elle-même, d'après ce que vous avez fait dans Adjugo. Un marché entre dans Mes marchés quand vous l'analysez, ou quand vous préparez à plusieurs un contrat qui arrive à échéance. <span v-if="pp.d.jusqu_au">Cette liste reste sur l'accueil jusqu'au {{ fmtDate(pp.d.jusqu_au) }}.</span></span></button>
-              <span class="pill neutral pp-compte">{{ pp.d.n_terminees }} sur {{ pp.d.n_total }}<span class="sr-only"> terminées</span></span>
-              <button type="button" class="btn sm ghost pp-replier" :aria-expanded="pp.d.replie ? 'false' : 'true'" aria-controls="pp-liste" @click="ppReplier(!pp.d.replie)"><i :data-lucide="pp.d.replie ? 'chevron-down' : 'chevron-up'"></i>{{ pp.d.replie ? 'Déplier' : 'Replier' }}</button>
+              <span class="pill neutral pp-compte"><span><span>{{ pp.d.n_terminees }}</span> <span>sur</span> <span>{{ pp.d.n_total }}</span></span><span class="sr-only"> terminées</span></span>
+              <button type="button" class="btn sm ghost pp-replier" :aria-expanded="pp.d.replie ? 'false' : 'true'" :aria-controls="pp.d.replie ? null : 'pp-liste'" @click="ppReplier(!pp.d.replie)"><i :data-lucide="pp.d.replie ? 'chevron-down' : 'chevron-up'"></i>{{ pp.d.replie ? 'Déplier' : 'Replier' }}</button>
             </div>
             <template v-if="!pp.d.replie">
               <ul id="pp-liste" class="pp-liste">
                 <li v-for="t in ppTaches()" :key="'pp'+t.k" class="pp-l" :class="'pp-'+t.statut">
                   <i :data-lucide="t.ic" class="pp-l-ic" aria-hidden="true"></i>
-                  <span class="pp-tx"><b class="small">{{ t.titre }}</b><span class="muted small">{{ t.detail }}</span></span>
+                  <span class="pp-tx"><b class="small">{{ t.titre }}</b><span class="muted small"><span v-for="(m,mi) in t.morceaux" :key="'ppm'+t.k+mi">{{ m }}</span></span></span>
                   <span class="pill pp-st" :class="t.pill">{{ t.libelle }}</span>
                   <span v-if="t.actions.length" class="pp-a"><button v-for="(a,ai) in t.actions" :key="'ppa'+t.k+ai" type="button" class="btn sm" :class="{primary: ai===0}" @click="ppOuvrir(a)"><i :data-lucide="a.ic"></i>{{ a.label }}</button></span>
                 </li>
@@ -249,7 +249,7 @@
               <b id="afaire-t" style="flex:1">À faire</b>
               <button type="button" class="tip tip-l"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Ce qui attend votre action : un accord ou une partie du dossier de présentation qu'un chef de file vous demande, une invitation reçue, une date limite dans les 7 jours, une part de partenaire encore attendue, une pièce à renouveler. La même liste est dans la cloche, en haut de chaque écran.</span></button>
             </div>
-            <p v-if="!aFaire().length" class="muted small afaire-vide">Rien n'attend de réponse de votre part.</p>
+            <p v-if="!aFaire().length && aFaireLu()" class="muted small afaire-vide">Rien n'attend de réponse de votre part.</p>
             <ul v-else class="afaire-liste">
               <li v-for="t in aFaire().slice(0, 6)" :key="'af'+t.k" class="afaire-l">
                 <i :data-lucide="t.ic" aria-hidden="true"></i>
@@ -1580,14 +1580,16 @@
             <div class="row wrap" style="gap:8px"><i data-lucide="calendar-clock" style="color:var(--accent-text)"></i><b style="font-size:13.5px">Contrats qui arrivent à échéance</b><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Marchés <b>déjà attribués</b> dont le contrat arrive à terme : positionnez-vous auprès du client <b>avant la republication</b>. Dates de fin <b>estimées</b> (durée citée si disponible), sources réelles BOAMP. Classés selon votre métier, votre zone et la date de fin estimée.</span></button></div>
             <div class="row wrap" style="margin-top:10px">
               <input class="inp" v-model="src.query" placeholder="Mots-clés métier (rénovation, gros œuvre…)" @keyup.enter="srcRenewals()" style="flex:1;min-width:200px" aria-label="Mots-clés métier">
-              <input class="inp" v-model="src.dept" placeholder="Départements (29, 56…)" @keyup.enter="srcRenewals()" style="width:165px" aria-label="Départements">
+              <input ref="srcRenDep" class="inp" v-model="src.dept" placeholder="Départements (29, 56…)" @keyup.enter="srcRenewals()" style="width:165px" aria-label="Départements">
               <button class="btn primary" @click="srcRenewals()" :disabled="src.renewals.loading"><span v-if="src.renewals.loading" class="spin"></span><i v-else data-lucide="search"></i>Chercher les fins de contrat</button>
             </div>
             <!-- État vide (vague 2b, B1, étude § 7.3) : ce que montre l'onglet, et « Modifier ma zone ». Les projets votés en
-                 conseil n'y sont pas annoncés : cette fonction (Veille V1) n'est pas en ligne. -->
+                 conseil n'y sont pas annoncés : cette fonction (Veille V1) n'est pas en ligne. Relecture de la vague 2b :
+                 la zone de cette recherche est le champ « Départements » de l'onglet (srcDeps), jamais celle de « Ce que je
+                 cherche » ; « Modifier ma zone » y met le focus (srcRenZone). -->
             <div v-if="!src.renewals.list.length && !src.renewals.loading" class="row wrap small" style="margin-top:8px;gap:8px;align-items:center">
               <span class="muted">{{ src.renewals.done ? "Aucune échéance proche sur ce périmètre." : "Contrats de votre zone qui arrivent à échéance." }}</span>
-              <button type="button" class="linkbtn small" @click="go('criteria')">Modifier ma zone</button>
+              <button type="button" class="linkbtn small" @click="srcRenZone()">Modifier ma zone</button>
             </div>
             <div v-for="r in src.renewals.list" :key="r.idweb" class="row" style="padding:10px;margin-top:8px;border:1px solid var(--border);border-radius:10px;align-items:flex-start;gap:10px">
               <div style="flex:1;min-width:0">
@@ -3223,7 +3225,7 @@
         <!-- ░░ CRITERIA ░░ -->
         <section data-test="vue-criteria" v-if="view==='criteria'">
           <!-- La tâche des premiers pas de cet écran (vague 2b, B1) : ce qui reste à dire, lu par le serveur. -->
-          <p v-if="ppRappel('dire')" class="pp-rappel small pp-rappel-haut"><i data-lucide="rocket" aria-hidden="true"></i><span>Vos premiers pas :</span> <span>{{ ppRappel('dire').titre }}</span> <span class="pill pp-st" :class="ppRappel('dire').pill">{{ ppRappel('dire').libelle }}</span> <span class="muted">{{ ppRappel('dire').detail }}</span></p>
+          <p v-if="ppRappel('dire')" class="pp-rappel small pp-rappel-haut"><i data-lucide="rocket" aria-hidden="true"></i><span>Vos premiers pas :</span> <span>{{ ppRappel('dire').titre }}</span> <span class="pill pp-st" :class="ppRappel('dire').pill">{{ ppRappel('dire').libelle }}</span> <span class="muted"><span v-for="(m,mi) in ppRappel('dire').morceaux" :key="'pprm'+mi">{{ m }}</span></span></p>
           <div class="card pad" style="max-width:820px">
             <div class="sectitle ent-sectitle0">Mes métiers</div>
             <div class="frow"><div class="field"><label for="crit-spec">Spécialités</label><input id="crit-spec" v-model="criteria.specialites" placeholder="Gros œuvre, Maçonnerie"></div>
@@ -3545,7 +3547,7 @@
                       <div class="row wrap" style="gap:4px;margin-top:4px;align-items:center"><span class="muted small">Vous apportez :</span><span v-for="a in ex.ecran_partenaire.apporte" :key="'exe'+a" class="sg-chip by">{{ a }}</span></div>
                     </div>
                   </div>
-                  <div class="offre-box" style="flex-wrap:wrap"><div style="flex:1;min-width:140px"><div class="small"><b>Votre prix</b></div><div class="muted small">Le détail de vos postes, vous seul le voyez.</div></div><div class="offre-total">{{ exEur(ex.ecran_partenaire.prix_ht) }}</div></div>
+                  <div class="offre-box" style="flex-wrap:wrap"><div style="flex:1;min-width:140px"><div class="small"><b>Votre prix</b></div><div class="muted small">Le détail de votre chiffrage (coûts, marges, méthode), vous seul le voyez.</div></div><div class="offre-total">{{ exEur(ex.ecran_partenaire.prix_ht) }}</div></div>
                   <div class="offre-box" style="flex-wrap:wrap"><div style="flex:1;min-width:140px"><div class="small"><b>Total de l'offre commune</b></div><div class="muted small">{{ ex.ecran_partenaire.deux_membres }}</div></div><div class="offre-total">{{ exEur(ex.ecran_partenaire.total_ht) }}</div></div>
                 </div>
                 <div class="ex-voit">
@@ -4151,7 +4153,7 @@
         <section data-test="vue-apercu-partenaire" class="pa-vue" v-if="view==='apercu'">
           <button class="btn ghost sm" @click="apercuRetour()" style="margin-bottom:12px"><i data-lucide="arrow-left"></i>Retour au marché</button>
           <div data-test="apercu-choix" class="card pad" style="margin-bottom:14px">
-            <div class="row wrap" style="gap:6px 8px;align-items:center"><i data-lucide="eye" style="color:var(--accent-text)"></i><h2 class="pa-ap-t">Ce que verra votre partenaire</h2><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Son écran tel qu'il le verra, en lecture. Adjugo n'y met que ce qu'il lui montre : le marché, votre nom de chef de file, la date limite, ce qui est attendu de lui et, quand il le voit, le total de l'offre commune. Jamais le détail de votre prix, ni la part des autres partenaires.</span></button>
+            <div class="row wrap" style="gap:6px 8px;align-items:center"><i data-lucide="eye" style="color:var(--accent-text)"></i><h2 class="pa-ap-t">Ce que verra votre partenaire</h2><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Son écran tel qu'il le verra, en lecture. Adjugo n'y met que ce qu'il lui montre : le marché, votre nom de chef de file, la date limite, ce qui est attendu de lui et, quand il le voit, le total de l'offre commune. Jamais le détail de votre chiffrage, ni les pièces des autres partenaires. Une fois la convention générée, chaque membre qui la signe y lit la partie et le prix de vente de chacun, et le total.</span></button>
               <div class="spacer"></div>
               <button v-if="apercu.depuis" type="button" class="btn sm primary" @click="apercuReprendre()"><i data-lucide="user-plus"></i>Revenir à l'invitation</button></div>
             <div class="field" style="margin:12px 0 0"><label for="ap-pour">Aperçu pour</label>
@@ -4163,7 +4165,7 @@
               <label class="rn-check"><input type="radio" name="ap-role" value="cotraitant" :checked="apercu.role==='cotraitant'" @change="apercuOption('role','cotraitant')"><span>Partenaire du groupement</span></label>
               <label class="rn-check"><input type="radio" name="ap-role" value="sous_traitant" :checked="apercu.role==='sous_traitant'" @change="apercuOption('role','sous_traitant')"><span>Sous-traitant</span></label>
               <label class="rn-check"><input type="checkbox" :checked="apercu.reseau" @change="apercuOption('reseau',$event.target.checked)"><span>Invité par le réseau Adjugo</span></label>
-              <label class="rn-check"><input type="checkbox" :checked="apercu.can_view_docs" @change="apercuOption('can_view_docs',$event.target.checked)"><span>Pièces du marché téléchargeables</span></label>
+              <label class="rn-check"><input type="checkbox" :checked="apercu.can_view_docs" @change="apercuOption('can_view_docs',$event.target.checked)"><span>Dossier du marché téléchargeable</span></label>
             </div>
           </div>
           <div v-if="apercu.loading && !apercu.d" class="card pad" style="text-align:center" role="status"><span class="spin"></span> Chargement de l'aperçu…</div>
@@ -4177,7 +4179,7 @@
                 <h2 class="pa-titre"><span>Votre part dans</span> « {{ v.project.name }} »</h2>
                 <div v-if="v.project.client" class="muted small">{{ v.project.client }}</div>
                 <div v-if="v.apercu_minimal" class="pa-limite"><i data-lucide="lock"></i><div><b>Aperçu limité</b><div class="muted small">{{ v.apercu_message }}</div></div></div>
-                <div v-if="paJours(v.project.deadline) !== null" class="pa-delai small"><i data-lucide="clock"></i><span>{{ paDelai(v.project.deadline) }}</span></div>
+                <div v-if="apercuDelaiVisible(v)" class="pa-delai small"><i data-lucide="clock"></i><span>{{ paDelai(v.project.deadline) }}</span></div>
                 <div style="margin-top:10px">
                   <div v-if="v.project.deadline && !(v.project.analysis && v.project.analysis.date_limite)" class="row small" style="padding:5px 0;border-bottom:1px solid var(--hairline)"><span class="muted" style="min-width:140px">Date limite</span><span style="flex:1"><b>{{ fmtDate(v.project.deadline) }}</b></span></div>
                   <div v-for="f in sharedFact(v.project.analysis)" :key="'apf'+f.k" class="row small" style="padding:5px 0;border-bottom:1px solid var(--hairline)"><span class="muted" style="min-width:140px">{{ f.k }}</span><span style="flex:1">{{ f.v }}</span></div>
@@ -4195,10 +4197,11 @@
                 <b style="font-size:13.5px">Ce qui est attendu de vous</b>
                 <ul class="pa-attendu">
                   <li v-if="v.apercu_minimal"><i data-lucide="log-in"></i><span>Accepter l'invitation depuis votre compte Adjugo : vous verrez alors le dossier complet.</span></li>
-                  <li v-if="v.can_contribute"><i data-lucide="file-pen-line"></i><span>Votre part : le prix de vente de votre partie, vos références et votre paragraphe pour le dossier de présentation.</span></li>
+                  <li v-if="v.can_contribute"><i data-lucide="file-pen-line"></i><span>Votre part : le prix de vente de votre partie, vos références et votre paragraphe pour le dossier de présentation.</span><span v-if="apercuEtape('part')" class="pill pa-att-st" :class="apercuEtape('part').pill">{{ apercuEtape('part').statut }}</span></li>
                   <li v-if="apercuPieces()"><i data-lucide="folder-lock"></i><span><span>Vos pièces administratives :</span> {{ apercuPieces() }}.</span></li>
-                  <li v-if="v.invited.role !== 'sous_traitant'"><i data-lucide="file-signature"></i><span>Votre accord sur la convention de groupement, quand le chef de file l'aura générée.</span></li>
-                  <li v-else><i data-lucide="info"></i><span>Vous intervenez en sous-traitance : vous n'avez pas à valider la convention de groupement.</span></li>
+                  <li v-if="apercuEtape('accord')"><i data-lucide="file-signature"></i><span v-if="apercuConventionGeneree()">Votre accord sur la convention de groupement.</span><span v-else>Votre accord sur la convention de groupement, quand le chef de file l'aura générée.</span><span class="pill pa-att-st" :class="apercuEtape('accord').pill">{{ apercuEtape('accord').statut }}</span></li>
+                  <li v-else-if="v.invited.role === 'sous_traitant'"><i data-lucide="info"></i><span>Vous intervenez en sous-traitance : vous n'avez pas à valider la convention de groupement.</span></li>
+                  <li v-else-if="!v.can_contribute"><i data-lucide="eye"></i><span>Ce lien est en lecture seule : aucune part à renseigner ni convention à valider.</span></li>
                 </ul>
               </div>
               <div v-if="apercuTotal()" data-test="apercu-offre" class="offre-box" style="flex-wrap:wrap;margin-bottom:14px"><i data-lucide="lock" style="width:18px;height:18px;color:var(--accent-text);flex:none"></i><div style="flex:1;min-width:140px"><div class="small"><b>Offre commune figée</b><template v-if="apercuTotal().frozen_at"> le {{ fmtDate(apercuTotal().frozen_at) }}</template></div><div v-if="v.for_member.warning_two_members" class="muted small">À deux, le total révèle mécaniquement la part de l'autre.</div></div><div class="offre-total">{{ eur(apercuTotal().total_offre_ht) }} HT</div></div>
@@ -4351,7 +4354,7 @@
       <fieldset class="siret-seul">
         <legend class="small">Jusqu'à quel montant répondez-vous seul ? <span class="hint">facultatif</span></legend>
         <div class="siret-seul-l">
-          <input id="siret-seul" class="inp" type="number" min="0" step="1000" v-model.number="welcome.seul" :disabled="welcome.seulInconnu" placeholder="Montant en € HT" aria-label="Montant que vous portez seul, en euros HT">
+          <input id="siret-seul" class="inp" type="number" min="0" max="10000000000" step="1000" v-model.number="welcome.seul" :disabled="welcome.seulInconnu" placeholder="Montant en € HT" aria-label="Montant que vous portez seul, en euros HT">
           <label class="small siret-seul-ns"><input type="checkbox" v-model="welcome.seulInconnu" @change="welcomeSeulInconnu()">Je ne sais pas</label>
         </div>
       </fieldset>
@@ -4443,7 +4446,7 @@
             </fieldset>
             <div v-if="rinv.kind!=='connu'" class="field"><label for="rinv-l">Part proposée</label><input id="rinv-l" class="inp" v-model="rinv.lot" maxlength="255" :disabled="rinv.busy" placeholder="ex. Électricité (lot 2)"></div>
             <div v-if="rinv.kind==='connu'" class="rn-check-line"><input id="rinv-part" type="checkbox" v-model="rinv.can_contribute" :disabled="rinv.busy"><label for="rinv-part">Laisser le partenaire apporter sa part (ses références, sa partie, son prix)</label></div>
-            <div class="rn-check-line"><input id="rinv-docs" type="checkbox" v-model="rinv.can_view_docs" :disabled="rinv.busy"><label for="rinv-docs">Autoriser le téléchargement des pièces du marché</label><button v-if="rinv.kind==='reseau'" type="button" class="tip tip-l"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Le partenaire ne voit les pièces, l'acheteur et la composition du groupement qu'après avoir accepté l'invitation depuis son compte.</span></button></div>
+            <div class="rn-check-line"><input id="rinv-docs" type="checkbox" v-model="rinv.can_view_docs" :disabled="rinv.busy"><label for="rinv-docs">Autoriser le téléchargement du dossier du marché</label><button v-if="rinv.kind==='reseau'" type="button" class="tip tip-l"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Le partenaire ne voit les pièces, l'acheteur et la composition du groupement qu'après avoir accepté l'invitation depuis son compte.</span></button></div>
             <div v-if="rinv.kind==='connu'" class="field"><label for="rinv-x">Durée du lien</label><select id="rinv-x" class="inp" v-model.number="rinv.expires_days" :disabled="rinv.busy"><option :value="7">7 jours</option><option :value="30">30 jours</option><option :value="90">90 jours</option><option :value="0">Sans limite</option></select></div>
             <!-- Vague 2b (B3) : avant d'envoyer, l'écran que verra ce partenaire (ses choix : rôle, réseau, pièces, part) -->
             <button v-if="rinv.projectId && !rinv.noRole" type="button" class="linkbtn small rinv-apercu" @click="rinvApercu()"><i data-lucide="eye" aria-hidden="true"></i><span>Voir ce que verra</span> {{ rinv.name || 'ce partenaire' }}</button>
@@ -4629,6 +4632,6 @@
 <script src="/static/redaction-partenaire.js" integrity="sha384-0jgm5b/r+FlC5YZVhiyqvLZyxecxtCABbOw03QuJfDDsfua5T9wxISR2Hfis2Dh+" defer></script>
 <script src="/static/sources-publiques.js" integrity="sha384-/0soYF6qmMI5KHOb/uzkHBoYNeOr5+R784XFb0c0+HjUkhtEyVBgunl6Xo08Dok+" defer></script>
 <script src="/static/carnet-notes.js" integrity="sha384-/jbwJaEiImCDEsYHkGeIht+znVCg4i9vSGuAfG6SRpjAST+OI5nP9fPwr8Py0NPV" defer></script>
-<script src="/static/app.js" integrity="sha384-EexO1TT/8bZL/t6dsBdBae+T+hfpBfZtZJeoAA31AyoAaqwGiLxS1Wko6sIiVk9m" defer></script>
+<script src="/static/app.js" integrity="sha384-DcL7H7mjeMdgxpUhs/jKVMlUAocmyrhsR8mufLhP6BiIcpZ98xHbcIVbZdrL1pHV" defer></script>
 </body>
 </html>

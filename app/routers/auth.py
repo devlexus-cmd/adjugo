@@ -150,7 +150,9 @@ def register(request: Request, data: UserCreate, db: Session = Depends(get_db)):
     # app/core/quota.py : 403), les rédactions de l'atelier, de l'entretien et des fiches de Mon savoir-faire (403
     # « email_non_confirme »), l'invitation d'un membre du réseau, la demande de publication du profil partenaire,
     # l'accord donné sur une convention et l'acceptation d'un lien nominatif (403) ; il n'envoie aucun courriel au nom
-    # d'Adjugo vers un tiers (invitation d'un partenaire ou d'un collègue : le lien reste à copier). Ne vérifient PAS
+    # d'Adjugo vers un tiers (invitation d'un partenaire ou d'un collègue : le lien reste à copier ; ni le rappel
+    # planifié de la part ni l'alerte d'attestations à ses partenaires : app/services/alerts.py,
+    # _comptes_non_confirmes). Ne vérifient PAS
     # l'adresse : les appels qui passent seulement par exiger_ia (questions sur un marché déjà analysé, estimation du
     # prix, veille) ; ils restent bornés par le garde-fou de l'essai (docs/REORGANISATION_V2B.md, B1, laissé). Le jeton
     # est rendu quand même : il sert à renvoyer l'email, à revérifier la confirmation et à se déconnecter.

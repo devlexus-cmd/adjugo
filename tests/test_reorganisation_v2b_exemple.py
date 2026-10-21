@@ -360,7 +360,10 @@ LIBELLES = ["Marché d'exemple", MENTION, "Chargement de l'exemple…", "Réessa
             "Comment l'offre sera notée", "Points, seul puis à plusieurs", "Exigé :", "Inviter et réunir les parts",
             "Répartition", "Membre", "Part", "Prix de vente HT", "Total de l'offre commune", "Ce que chacun voit",
             "L'écran du partenaire", "Chef de file :", "Pourquoi vous dans ce groupement", "Vous apportez :",
-            "Votre prix", "Le détail de vos postes, vous seul le voyez.", "Il voit", "Il ne voit pas",
+            # Relecture de la vague 2b (§ S.2) : le tableau de prix déposé (le détail des postes, aux prix de vente) part
+            # au chef de file ; seul le chiffrage détaillé (coûts, marges, méthode) reste au partenaire.
+            "Votre prix", "Le détail de votre chiffrage (coûts, marges, méthode), vous seul le voyez.", "Il voit",
+            "Il ne voit pas",
             "Le parcours en entier sur un marché fictif :", "voir un exemple"]
 
 

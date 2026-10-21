@@ -13,7 +13,8 @@ Contrat : docs/REORGANISATION_V2B.md, section B1.
    | suivre       | 3 marchés dans Mes marchés (hors corbeille)                      | 1 ou 2                                |
    | lire         | 1 marché dont le dossier complet a été lu                        | un dossier importé, pas encore lu     |
    | plusieurs    | 1 invitation envoyée, ou le profil publié sur le réseau Adjugo   | un profil enregistré, pas publié       |
-   | dossiers     | 3 dossiers de présentation dans Mon savoir-faire                 | 1 ou 2                                |
+   | dossiers     | 3 dossiers de présentation dans Mon savoir-faire (ceux du compte, | 1 ou 2                                |
+   |              | comme l'écran les liste)                                         |                                       |
 
    L'ancienne étape « Lancez votre première recherche » (validée seulement après une analyse) n'existe plus. La
    tâche « dossiers » vit avec la fonction qui la fait (rédaction, vague 3 : import dans Mon savoir-faire, fiches
@@ -106,7 +107,10 @@ def taches(db, user) -> list:
     st = "termine" if (invite or profil == "publie") else ("en_cours" if profil != "aucun" else "pas_commence")
     out.append({"k": "plusieurs", "statut": st, "invitation": invite, "profil": profil})
 
-    n = (db.query(KnowledgeDoc.id).filter(KnowledgeDoc.user_id.in_(ids),
+    # Les dossiers du COMPTE, comme les liste Mon savoir-faire (GET /api/knowledge/ : KnowledgeDoc.user_id == le compte),
+    # l'écran où la tâche se fait et où son rappel s'affiche. Relecture de la vague 2b : compter ceux de l'organisation
+    # faisait lire « 3 sur 3 dans Mon savoir-faire » à un collègue devant un écran vide.
+    n = (db.query(KnowledgeDoc.id).filter(KnowledgeDoc.user_id == user.id,
                                           KnowledgeDoc.kind == KIND_DOSSIER_PRESENTATION).count())
     out.append({"k": "dossiers", "statut": _statut(n, DOSSIERS_N), "fait": min(n, DOSSIERS_N), "sur": DOSSIERS_N})
     return out

@@ -21,7 +21,7 @@
   },
   "partenaire": {
     "nom": "Breizh Désamiantage",
-    "presentation": "Désamiantage dans le Morbihan (56). 18 personnes, 2 100 000 € de chiffre d'affaires au dernier exercice. Qualification désamiantage SS3."
+    "presentation": "Désamiantage dans le Morbihan (56). 18 personnes, 2 100 000 € de chiffre d'affaires au dernier exercice. Qualification désamiantage SS3 et certification amiante sous-section 3."
   },
   "intro": "Bâtiment de l'Ouest découvre ce marché. Voici, étape par étape, ce qu'Adjugo lui montre, jusqu'à l'écran de l'entreprise qui répond avec lui.",
   "lire": {
@@ -60,7 +60,7 @@
       { "key": "delai", "label": "Délai de réponse", "seul": 10, "a_plusieurs": 10, "max": 10, "apporte_par": [] }
     ],
     "manques": [
-      { "key": "capacite", "titre": "Chiffre d'affaires minimum exigé", "gravite": "bloquant", "exige": "3 000 000 € HT par an, en moyenne sur 3 ans", "a": "1 250 000 €", "phrase": "Le candidat justifie d'un chiffre d'affaires annuel moyen d'au moins 3 000 000 € HT sur les trois derniers exercices." },
+      { "key": "capacite", "titre": "Chiffre d'affaires minimum exigé", "gravite": "bloquant", "exige": "3 000 000 € HT par an, en moyenne sur 3 ans", "a": "1 250 000 € au dernier exercice", "phrase": "Le candidat justifie d'un chiffre d'affaires annuel moyen d'au moins 3 000 000 € HT sur les trois derniers exercices." },
       { "key": "qualifs", "titre": "Qualification exigée non détenue", "gravite": "important", "exige": "Qualification désamiantage SS3 et certification amiante sous-section 3", "a": "Qualibat 3212, RGE", "phrase": "Le candidat justifie d'une qualification désamiantage SS3 et d'une certification amiante sous-section 3, en cours de validité." },
       { "key": "metier", "titre": "Métier de la partie 1 (lot 1) hors de son activité", "gravite": "important", "exige": "Désamiantage et retrait d'amiante", "a": "Toiture, étanchéité, gros œuvre, isolation", "phrase": "" },
       { "key": "zone", "titre": "Lieu d'exécution hors de sa zone", "gravite": "important", "exige": "Kerhel (56)", "a": "Ses départements suivis, sans le Morbihan (56)", "phrase": "" }
@@ -73,7 +73,7 @@
       "apporte": ["Métier", "Zone", "Chiffre d'affaires", "Qualification SS3"],
       "a_plusieurs": 100
     },
-    "cumul": "Le règlement apprécie les capacités des membres ensemble : 1 250 000 € + 2 100 000 € = 3 350 000 € de chiffre d'affaires, au-dessus des 3 000 000 € exigés, et la qualification SS3 de Breizh Désamiantage compte pour le groupement.",
+    "cumul": "Le règlement apprécie les capacités des membres ensemble : au dernier exercice, 1 250 000 € + 2 100 000 € = 3 350 000 € de chiffre d'affaires, pour 3 000 000 € exigés en moyenne sur trois exercices ; la moyenne des trois exercices de chacun reste à confirmer. La qualification SS3 et la certification amiante de Breizh Désamiantage comptent pour le groupement.",
     "avertissement": "Calcul fondé sur des capacités de Breizh Désamiantage déclarées par Bâtiment de l'Ouest : elles sont à confirmer auprès du partenaire.",
     "decision": "Bâtiment de l'Ouest choisit «\u00a0Préparer à plusieurs\u00a0». Adjugo montre ce que dit le dossier et ce qui manque ; c'est l'entreprise qui décide."
   },
@@ -87,7 +87,7 @@
     ],
     "total_ht": 1250000,
     "cloisonnement": [
-      "Chacun saisit son prix chez lui : Bâtiment de l'Ouest voit le prix de vente de Breizh Désamiantage, jamais le détail de ses postes.",
+      "Chacun saisit son prix chez lui : Bâtiment de l'Ouest reçoit le prix de vente de Breizh Désamiantage et, s'il le dépose, son tableau de prix de vente ; jamais le détail de ses coûts ni de ses marges.",
       "Chacun écrit sa partie du dossier de présentation ; le chef de file assemble les parties qu'on lui envoie. Ce que chaque entreprise range dans «\u00a0Mon savoir-faire\u00a0» reste chez elle.",
       "La convention de groupement est la même pour les deux membres : chacun la relit et donne son accord depuis son espace."
     ],

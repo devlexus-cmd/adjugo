@@ -100,7 +100,11 @@ def test_invitation_d_un_partenaire_connu_en_html_et_en_texte(client, auth, cour
         assert "Partenaire du groupement" in x
         assert "Ce qui est attendu de vous" in x and "Renseigner votre part" in x and "La soumettre à Breizh Couverture" in x
         assert "Ce que vous verrez" in x and "Jamais le détail des prix des autres entreprises." in x
-        assert "Breizh Couverture reçoit le prix de votre partie, pas son détail." in x
+        # Relecture de la vague 2b : le tableau de prix déposé part au chef de file (ses prix de vente, ligne par ligne) ;
+        # seul le chiffrage détaillé (coûts, marges, méthode) reste chez le partenaire. Avant : « pas son détail », faux.
+        assert ("Votre chiffrage détaillé (coûts, marges, méthode) reste chez vous : Breizh Couverture reçoit le prix "
+                "de vente de votre partie et, si vous le déposez, votre tableau de prix de vente.") in x
+        assert "pas son détail" not in x
         assert f"Votre part dans « {nom} »" in x
         assert "déclinez l'invitation" in x
     assert "Ouvrir votre part" in c["html"]
@@ -134,7 +138,8 @@ def test_sans_nom_d_entreprise_ni_date_limite_rien_n_est_invente():
     t = c["texte"]
     assert t.startswith("Bonjour,\n\nUne entreprise vous invite à rejoindre son groupement")
     assert "Chef de file :" not in t and "Date limite : pas encore indiquée sur ce marché" in t
-    assert "La soumettre au chef de file" in t and "le chef de file reçoit le prix de votre partie" in t
+    # Relecture de la vague 2b : « le prix de vente de votre partie et, si vous le déposez, votre tableau de prix ».
+    assert "La soumettre au chef de file" in t and "le chef de file reçoit le prix de vente de votre partie" in t
     _assert_courriel_propre(c, "https://adjugo.pro/invite/t")
 
 

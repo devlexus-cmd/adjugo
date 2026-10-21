@@ -366,7 +366,7 @@ def test_compte_rendu_du_groupement_dit_juste():
                                          "partners": parts, "lots": []}, [])).split())
     assert "Partenaire du groupement" in txt and "Sous-traitant" in txt
     assert not mots_bannis(txt), mots_bannis(txt)
-    assert "%" not in txt and "1/2" not in txt and "64" not in txt
+    assert "%" not in txt and not _compteur(txt, "1/2") and "64" not in txt
     assert "1 sur 2" in txt and "5 sur 5" in txt and "0 sur 5" in txt
 
 
@@ -378,8 +378,21 @@ def test_compte_rendu_de_la_demonstration(client, vitrine):
     r = client.get(f"/api/projects/{kerhel['id']}/consortium/report", headers=vitrine)
     assert r.status_code == 200, r.text
     txt = " ".join(_pdf_text(r.content).split())
-    assert not mots_bannis(txt) and "%" not in txt and "1/1" not in txt, txt[:400]
+    assert not mots_bannis(txt) and "%" not in txt and not _compteur(txt, "1/1"), txt[:400]
     assert "1 sur 1" in txt and "Partenaire du groupement" in txt
+
+
+def _compteur(txt, n_sur_m):
+    """Un compteur « N/M » (« 1/1 », « 1/2 ») dans le texte, jamais un morceau de date : relecture de la vague 2b, le
+    test échouait chaque jour dont la date d'édition du PDF contient « 1/1 » (« édité le 21/10/2026 », 11/11…)."""
+    return re.search(r"(?<![\d/])" + re.escape(n_sur_m) + r"(?![\d/])", txt) is not None
+
+
+def test_le_controle_du_compteur_ignore_les_dates():
+    for date_edition in ("01/10/2026", "11/11/2026", "21/10/2026", "31/12/2026", "11/12/2026", "01/01/2027"):
+        assert not _compteur(f"édité le {date_edition} 1 sur 1 part reçue", "1/1"), date_edition
+        assert not _compteur(f"édité le {date_edition} 1 sur 2 parts reçues", "1/2"), date_edition
+    assert _compteur("parts reçues 1/1", "1/1") and _compteur("(1/2) reçues", "1/2")
 
 
 def _ai(pid, analyse):

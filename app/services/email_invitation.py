@@ -173,7 +173,7 @@ def invitation(*, chef: str, marche: str, url: str, date_limite=None, role: str 
         verra = [f"Le résumé du marché{pieces}."]
     verra.append("Jamais le détail des prix des autres entreprises.")
     if peut_contribuer:
-        verra.append(f"Le détail de vos prix reste chez vous : {chez} reçoit le prix de votre partie, pas son détail.")
+        verra.append(_chiffrage_chez_vous(chez))
 
     validite = ("Ce lien est réservé à votre entreprise"
                 + (f" et valable jusqu'au {jour(expire_le)}." if jour(expire_le) else "."))
@@ -218,6 +218,16 @@ def invitation(*, chef: str, marche: str, url: str, date_limite=None, role: str 
             "html": _carte(corps, preheader=_e(intro), pourquoi=notes[-1])}
 
 
+def _chiffrage_chez_vous(chez: str) -> str:
+    """Ce qui reste chez le partenaire et ce que reçoit le chef de file, dans les mots de son écran (relecture de la
+    vague 2b) : le détail chiffré de son chiffrage (coûts, marges, méthode : guest_save_detail, chiffré dans son
+    navigateur) n'est lu que par lui ; le chef de file reçoit le prix de vente de sa partie et, s'il le dépose, son
+    tableau de prix — ses prix de vente ligne par ligne (bulle « Mon tableau de prix » d'invite.html). Avant, la phrase
+    disait « pas son détail », faux dès que le tableau de prix est déposé."""
+    return (f"Votre chiffrage détaillé (coûts, marges, méthode) reste chez vous : {chez} reçoit le prix de vente de "
+            "votre partie et, si vous le déposez, votre tableau de prix de vente.")
+
+
 def rappel_part(*, chef: str, marche: str, url: str, date_limite, jours_restants: int,
                 attestations: Iterable[str] = (), parties: Iterable[str] = ()) -> dict:
     """Rappel planifié (J-3, puis J-1) au partenaire dont la part n'est pas soumise. `attestations` et `parties` :
@@ -239,7 +249,7 @@ def rappel_part(*, chef: str, marche: str, url: str, date_limite, jours_restants
              "réponse commune.")
     verra = ("Depuis votre lien, vous voyez le résumé du marché et votre part, jamais le détail des prix des autres "
              "entreprises. "
-             f"Le détail de vos prix reste chez vous : {chez} reçoit le prix de votre partie, pas son détail.")
+             + _chiffrage_chez_vous(chez))
     texte = ["Bonjour,", "", phrase, "", suite, "", verra]
     corps = [f'<h1 style="margin:14px 0 10px;font-family:{_POLICE};font-size:20px;font-weight:800;color:{_INK};">'
              'Bonjour,</h1>', _p(_e(phrase)), _p(_e(suite)), _p(_e(verra), taille="14px", couleur=_MUTED)]

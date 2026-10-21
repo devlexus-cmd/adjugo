@@ -29,6 +29,20 @@ def _demo_user_ids(db: Session) -> set:
         return set()
 
 
+def _comptes_non_confirmes(db: Session) -> set:
+    """Comptes dont l'adresse email n'est pas confirmée. Relecture de la vague 2b : aucune tâche planifiée n'écrit à un
+    tiers pour eux (rappel de la part, alerte d'attestations), comme l'invitation elle-même, qui ne part par courriel
+    que si l'expéditeur a confirmé son adresse (anti-spam par comptes jetables, invites._create_invite) — sinon le
+    rappel planifié, qui porte le lien, devenait l'invitation complète envoyée à la place du compte. Les comptes d'avant
+    la vérification d'email ont été confirmés par sa migration (j4k5l6m7n8o9)."""
+    try:
+        from sqlalchemy import or_
+        return {uid for (uid,) in db.query(User.id).filter(
+            or_(User.email_verified.is_(None), User.email_verified == False)).all()}   # noqa: E712
+    except Exception:
+        return set()
+
+
 def _due_alert(doc, days: int, today=None):
     """Retourne (label, flags_à_marquer) pour l'alerte due, ou None. Paliers : 30 jours, 7 jours, le jour même (et
     après). Le libellé est celui de la liste de Mes documents (app.services.pieces_fin.etat_fin), en minuscule."""
@@ -107,8 +121,10 @@ def run_cotraitance_reminders(db: Session) -> dict:
         ProjectInvite.can_contribute.is_(True)).all()
     scanned, reminded = 0, 0
     demo_ids = _demo_user_ids(db)
+    non_confirmes = _comptes_non_confirmes(db)
     for inv in invites:
-        if not _is_email(inv.recipient) or inv.owner_id in demo_ids:
+        # Jamais pour la démonstration ; jamais pour un chef de file dont l'adresse n'est pas confirmée.
+        if not _is_email(inv.recipient) or inv.owner_id in demo_ids or inv.owner_id in non_confirmes:
             continue
         project = db.query(Project).filter(Project.id == inv.project_id,
                                            Project.deleted_at.is_(None)).first()
@@ -204,6 +220,7 @@ def _piece_alerts_due(db: Session, today) -> list:
     except Exception:
         return []
     demo_ids = _demo_user_ids(db)
+    non_confirmes = _comptes_non_confirmes(db)
     labels = dict(_PIECE_LABELS)
     for project in projects:
         if project.user_id in demo_ids or _status_value(project) in _CLOSED:
@@ -221,10 +238,14 @@ def _piece_alerts_due(db: Session, today) -> list:
         except Exception:
             continue
         owner_user = db.query(User).filter(User.id == project.user_id).first()
-        owner_email = owner_user.email if owner_user and _is_email(owner_user.email) else None
+        # Une adresse non confirmée ne reçoit rien (elle peut être celle d'un tiers, posée sur un compte jetable).
+        owner_email = (owner_user.email if owner_user and _is_email(owner_user.email)
+                       and owner_user.id not in non_confirmes else None)
         # Propriétaire CANONIQUE du tenant (porteur du profil entreprise et de la chaîne
         # d'audit) — jamais project.user_id brut si un membre a créé le marché.
         tenant_oid = tenant_owner_id(project, db)
+        if tenant_oid in non_confirmes:
+            continue                # chef de file sans adresse confirmée : aucune alerte vers ses partenaires
         company = (db.query(Company).filter(Company.user_id == tenant_oid).first()
                    or db.query(Company).filter(Company.user_id == project.user_id).first())
         du_chef = f"de {company.name}" if company and company.name else "du chef de file"

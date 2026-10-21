@@ -330,7 +330,9 @@
       const libelles = { accepter: "Accepter", part: "Ma part", accord: "Donner mon accord", depose: "Déposé par le chef de file" };
       const statuts = { fait: "Terminé", en_cours: "En cours", a_faire: "À faire" };
       const sousTraitant = String(d.role || "").trim().toLowerCase().replace(/-/g, "_") === "sous_traitant";
-      const ordre = ["accepter"].concat(d.part === false ? [] : ["part"], sousTraitant ? [] : ["accord"], ["depose"]);
+      // Un lien en lecture seule (part === false) ne dépose rien et ne signe pas la convention : ni « Ma part », ni
+      // « Donner mon accord » (relecture de la vague 2b).
+      const ordre = ["accepter"].concat(d.part === false ? [] : ["part"], (sousTraitant || d.part === false) ? [] : ["accord"], ["depose"]);
       const fait = {
         accepter: !d.apercuMinimal,
         part: d.partStatut === "submitted",
@@ -568,8 +570,9 @@
         head.appendChild(box);
       }
       // Compte à rebours : le partenaire perçoit l'urgence et sait combien de temps il lui
-      // reste pour renvoyer SA part (le mandataire assemble AVANT la date limite officielle).
-      if (p.deadline) {
+      // reste pour renvoyer SA part (le mandataire assemble AVANT la date limite officielle). Un lien en lecture seule
+      // n'a pas de part à soumettre : pas de compte à rebours (relecture de la vague 2b).
+      if (p.deadline && d.can_contribute) {
         const dLeft = Math.ceil((new Date(p.deadline) - new Date()) / 86400000);
         if (!isNaN(dLeft)) {
           const past = dLeft < 0, urgent = dLeft <= 3;

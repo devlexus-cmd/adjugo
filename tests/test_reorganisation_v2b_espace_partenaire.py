@@ -446,7 +446,9 @@ console.log(JSON.stringify(out));
     assert r["perimee"][2] == ["accord", "En cours", True]                 # à revalider
     assert all(s[1] == "Terminé" and not s[2] for s in r["depose"])
     assert [x[0] for x in r["sous_traitant"]] == ["accepter", "part", "depose"] and r["sous_traitant"][2][2] is True
-    assert [x[0] for x in r["lecture"]] == ["accepter", "accord", "depose"]
+    # Relecture de la vague 2b : un lien en lecture seule ne dépose rien et ne signe jamais la convention (il ne peut
+    # pas soumettre de part, sans laquelle la convention ne se génère pas) — ni « Ma part » ni « Donner mon accord ».
+    assert [x[0] for x in r["lecture"]] == ["accepter", "depose"]
 
 
 def test_le_dossier_partage_se_reduit_a_votre_part_et_garde_ses_fonctions():
@@ -536,7 +538,10 @@ def test_vocabulaire_et_textes_justes():
     neufs = APERCU + _fonction(INV, "renderCompte") + _fonction(INV, "barrePartenaire")
     assert "vérifié" not in neufs and "Vérifié" not in neufs
     # Une bulle (i) explique l'aperçu ; l'aperçu promet ce que le serveur tient (aucune fonction absente).
-    assert APERCU.count('class="tip"') == 1 and "Jamais le détail de votre prix, ni la part des autres partenaires." in APERCU
+    # Relecture de la vague 2b : « ni la part des autres partenaires » était faux (une fois la convention générée, chaque
+    # signataire y lit la partie et le prix de vente de chacun) ; la bulle dit ce qui est vrai.
+    assert APERCU.count('class="tip"') == 1 and "Jamais le détail de votre chiffrage, ni les pièces des autres partenaires." in APERCU
+    assert "ni la part des autres partenaires" not in APERCU
 
 
 def test_traductions_des_libelles_de_l_espace_partenaire():

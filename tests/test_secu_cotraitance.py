@@ -160,7 +160,10 @@ def _project_doc(client, h, pid, content: bytes, name="cctp.pdf"):
     did = r.json()["id"]
     db = SessionLocal()
     try:
-        db.query(Document).get(did).project_id = pid
+        # Rangée dans le dossier de l'acheteur (« DCE »), comme l'import du dossier du marché : relecture de la vague
+        # 2b, le partenaire ne voit plus que ce dossier (une pièce du marché hors dossier ne lui est jamais partagée).
+        d = db.query(Document).get(did)
+        d.project_id, d.folder = pid, "DCE"
         db.commit()
     finally:
         db.close()

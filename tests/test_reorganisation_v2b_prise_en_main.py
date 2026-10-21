@@ -352,7 +352,9 @@ def test_fenetre_siret_pose_la_question_du_montant_porte_seul():
     assert "Un seul champ suffit" not in f                     # il y a maintenant une question de plus (facultative)
     assert 'data-lucide="sparkles"' not in f                   # réservé aux actions de l'IA (§ 8, règle 5)
     w = _methode("welcomeStart")
-    r = _node("const o = {\n" + w + "\n};\n" + r"""
+    # Relecture de la vague 2b : welcomeStart contrôle le montant avant l'envoi (montantSeulValide, en tête du fichier).
+    borne = JS[JS.index("const MONTANT_SEUL_MAX = "):JS.index("// Confirmation d'email vivante (décision 12 (a))")]
+    r = _node(borne + "const o = {\n" + w + "\n};\n" + r"""
 const res = {};
 async function cas(seul, ns) {
   const envoye = [];
@@ -409,7 +411,8 @@ console.log(JSON.stringify({ avec: tachesPremiersPas(pp, 2), sans: tachesPremier
     t = {x["k"]: x for x in r["avec"]}
     assert list(t) == TACHES                                                   # la clé inconnue n'est pas affichée
     assert r["statuts"] == {"pas_commence": "Pas commencé", "en_cours": "En cours", "termine": "Terminé"}
-    verbes = ("Dire", "Suivre", "Lire", "Inviter", "Ajouter")
+    # Relecture de la vague 2b : « Suivre 3 marchés » nommait un geste absent ; « Ajouter 3 marchés à Mes marchés ».
+    verbes = ("Dire", "Ajouter", "Lire", "Inviter", "Ajouter")
     assert [x["titre"].split()[0] for x in r["avec"]] == list(verbes)          # chaque tâche commence par un verbe
     assert t["dire"]["detail"] == "Reste à dire : le montant que vous portez seul (ou « Je ne sais pas »)."
     assert t["suivre"]["detail"] == "1 sur 3 dans Mes marchés." and t["suivre"]["libelle"] == "En cours"
@@ -426,16 +429,22 @@ def test_bloc_de_l_accueil_repliable_et_accessible():
     b = zone(HTML, "accueil-premiers-pas")
     assert b.startswith('<section data-test="accueil-premiers-pas" v-if="ppVisible()"')
     assert ">Vos premiers pas</b>" in b and 'aria-labelledby="pp-t"' in b
-    assert ':aria-expanded="pp.d.replie ? \'false\' : \'true\'" aria-controls="pp-liste"' in b
+    # Relecture de la vague 2b : replié, la liste quitte la page (v-if) ; aria-controls ne la désigne alors plus (une
+    # référence ARIA vers un élément absent est cassée).
+    assert (':aria-expanded="pp.d.replie ? \'false\' : \'true\'" :aria-controls="pp.d.replie ? null : \'pp-liste\'"'
+            in b) and ' aria-controls="pp-liste"' not in b
     assert "{{ pp.d.replie ? 'Déplier' : 'Replier' }}" in b and '@click="ppReplier(!pp.d.replie)"' in b
-    assert "{{ pp.d.n_terminees }} sur {{ pp.d.n_total }}" in b                # « N sur M » (décision 8), jamais un %
+    # « N sur M » (décision 8), jamais un % ; relecture de la vague 2b : chaque morceau dans son élément, « sur » est
+    # une clé du dictionnaire (traduit en néerlandais et en espagnol).
+    assert "<span>{{ pp.d.n_terminees }}</span> <span>sur</span> <span>{{ pp.d.n_total }}</span>" in b
     assert "%" not in re.sub(r"<!--.*?-->", "", b, flags=re.S)
     assert "fmtDate(pp.d.jusqu_au)" in b and "30 jours" not in re.sub(r"<!--.*?-->", "", b, flags=re.S)
     assert '@click="ppOuvrir(a)"' in b and "{{ t.libelle }}" in b
     assert '"/api/prise-en-main", { replie: !!replie }' in _methode("ppReplier")
     # Lu au démarrage, en revenant à l'accueil, après « Ce que je cherche » et la fenêtre du SIRET.
     boot = _methode("boot")
-    assert "this.loadPriseEnMain()]" in boot
+    # Relecture de la vague 2b : les pièces à renouveler et les invitations reçues sont lues dans le même allSettled.
+    assert "this.loadPriseEnMain(), this.loadExpiring(), this.rnLoadRecues(true)]" in boot
     assert "this.loadPriseEnMain(); }" in _methode("go") and "this.loadPriseEnMain();" in _methode("saveCriteria")
     assert "this.loadPriseEnMain();" in _methode("welcomeStart")
 
@@ -748,7 +757,7 @@ def test_une_seule_bulle_d_explication_par_carte_nouvelle():
 # ═══ Textes, mots, traductions, 375 px ═════════════════════════════════════════════════════════════════════════════
 
 NOUVEAUX = [
-    "Vos premiers pas", "Vos premiers pas :", "Replier", "Déplier", "Dire ce que vous faites et où", "Suivre 3 marchés",
+    "Vos premiers pas", "Vos premiers pas :", "Replier", "Déplier", "Dire ce que vous faites et où", "Ajouter 3 marchés à Mes marchés",
     "Lire le dossier d'un marché", "Inviter un partenaire, ou vous faire trouver",
     "Ajouter vos 3 derniers dossiers de présentation", "Pas commencé", "En cours", "Terminé",
     "Métier, zone et montant porté seul : c'est dit.", "Un dossier complet lu.", "Dossier importé, pas encore lu en entier.",
@@ -778,7 +787,8 @@ def test_traductions_des_libelles_nouveaux():
         assert d["nl"].get(lib) and d["es"].get(lib), lib
         assert lib in HTML or lib in JS, lib
     # Règle de la vague 1 : un seul mot pour « marché » et pour « à plusieurs ».
-    assert "aanbesteding" in d["nl"]["Suivre 3 marchés"] and "licitaciones" in d["es"]["Suivre 3 marchés"]
+    t = "Ajouter 3 marchés à Mes marchés"                   # relecture de la vague 2b (était « Suivre 3 marchés »)
+    assert "aanbesteding" in d["nl"][t] and "licitaciones" in d["es"][t]
     assert "samen" in d["nl"]["Comment Adjugo dit seul ou à plusieurs"]
     assert "agrupación" in d["es"]["Comment Adjugo dit seul ou à plusieurs"]
 

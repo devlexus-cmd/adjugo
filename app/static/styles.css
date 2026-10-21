@@ -1972,3 +1972,9 @@ sup.atl-ref-p { font-size:10px; font-weight:700; color:var(--text-2); background
   .pa-ecran { padding:10px; }
   .pa-titre { font-size:17px; }
 }
+
+/* Relecture de la vague 2b : dans « Ce qui est attendu de vous » de l'aperçu, le statut de chaque tâche (celui de sa
+   barre), à droite de sa ligne ; il passe sous le texte quand la place manque (375 px). */
+.pa-attendu li { flex-wrap:wrap; }
+.pa-attendu li > span:not(.pill) { flex:1 1 200px; min-width:0; }
+.pa-attendu .pa-att-st { flex:none; font-size:11px; margin-left:auto; }

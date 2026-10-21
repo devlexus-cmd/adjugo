@@ -611,12 +611,15 @@ def test_l_accueil_lit_la_meme_liste_a_faire():
     assert a in dash and dash.index(zone(HTML, "accueil-premiers-pas")) < dash.index(a) < dash.index(zone(HTML, "accueil-reseau"))
     # Vague 2b (B1, étude § 7.3) : jamais « 0 » ; quand rien n'attend, le bloc le dit en une phrase.
     assert a.startswith('<div data-test="accueil-a-faire" class="card pad dash-block"')
-    assert '<p v-if="!aFaire().length" class="muted small afaire-vide">Rien n\'attend de réponse de votre part.</p>' in a
+    # Relecture de la vague 2b : la phrase ne s'affiche qu'une fois lus les pièces à renouveler et les invitations reçues.
+    assert ('<p v-if="!aFaire().length && aFaireLu()" class="muted small afaire-vide">Rien n\'attend de réponse de votre '
+            'part.</p>') in a
     assert 'v-for="t in aFaire().slice(0, 6)"' in a and '@click="aFaireOuvrir(t)"' in a
     m = _method("aFaire")
     assert "listeAFaire({ shared: this.shared, recues: this.reseau.recues.list, projects: this.projects," in m
     boot = JS[JS.index("    async boot() {"):JS.index("    // ══════════ Menu par rubriques (réorganisation, vague 1, 1.3 ; RUBRIQUES")]
-    assert "this.loadExpiring();" in boot                                            # sur tous les écrans
+    # Sur tous les écrans ; relecture de la vague 2b : lue AVANT l'ouverture de l'écran (dans le Promise.allSettled).
+    assert "this.loadExpiring(), this.rnLoadRecues(true)]);" in boot
 
 
 def test_liste_a_faire_sous_node():

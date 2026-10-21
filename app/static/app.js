@@ -413,7 +413,7 @@ function barreDuMarche(statut, dossierLu, etapeGroupement) {
 // La même barre que la page du marché du chef de file, avec les tâches du partenaire (étude, § 5.3) : Accepter · Ma part
 // · Donner mon accord · Déposé par le chef de file. Des faits que son écran reçoit déjà : l'aperçu limité d'une
 // invitation du réseau pas encore acceptée, l'état de sa part, la convention et son accord, l'étape du groupement.
-// Un sous-traitant ne valide pas la convention (pas d'étape « accord ») ; un lien en lecture seule n'a pas de part.
+// Un sous-traitant ne valide pas la convention (pas d'étape « accord ») ; un lien en lecture seule n'a ni part ni accord.
 // Trois statuts, comme la barre du chef de file. MÊME texte dans app.js et invite.html (vérifié par les tests).
 // `d` : { apercuMinimal, role, part (false : pas de part demandée), partStatut, conventionStatut, signature, groupement }.
 function barrePartenaire(d) {
@@ -421,7 +421,9 @@ function barrePartenaire(d) {
   const libelles = { accepter: "Accepter", part: "Ma part", accord: "Donner mon accord", depose: "Déposé par le chef de file" };
   const statuts = { fait: "Terminé", en_cours: "En cours", a_faire: "À faire" };
   const sousTraitant = String(d.role || "").trim().toLowerCase().replace(/-/g, "_") === "sous_traitant";
-  const ordre = ["accepter"].concat(d.part === false ? [] : ["part"], sousTraitant ? [] : ["accord"], ["depose"]);
+  // Un lien en lecture seule (part === false) ne dépose rien et ne signe pas la convention : ni « Ma part », ni
+  // « Donner mon accord » (relecture de la vague 2b).
+  const ordre = ["accepter"].concat(d.part === false ? [] : ["part"], (sousTraitant || d.part === false) ? [] : ["accord"], ["depose"]);
   const fait = {
     accepter: !d.apercuMinimal,
     part: d.partStatut === "submitted",
@@ -494,46 +496,54 @@ const PP_STATUTS = { pas_commence: "Pas commencé", en_cours: "En cours", termin
 const PP_PILLS = { pas_commence: "neutral", en_cours: "a_etudier", termine: "go" };
 const PP_TACHES = {
   dire: { titre: "Dire ce que vous faites et où", ic: "sliders-horizontal" },
-  suivre: { titre: "Suivre 3 marchés", ic: "folder-kanban" },
+  // Relecture de la vague 2b : « Suivre 3 marchés » nommait un geste absent de la recherche (une carte n'offre que
+  // « Analyser ce marché ») ; la tâche dit ce qui la termine (3 marchés dans Mes marchés), comme la bulle du bloc.
+  suivre: { titre: "Ajouter 3 marchés à Mes marchés", ic: "folder-kanban" },
   lire: { titre: "Lire le dossier d'un marché", ic: "folder-open" },
   plusieurs: { titre: "Inviter un partenaire, ou vous faire trouver", ic: "handshake" },
   dossiers: { titre: "Ajouter vos 3 derniers dossiers de présentation", ic: "library" },
 };
 const PP_MANQUES = { metier: "votre métier", zone: "votre zone", montant: "le montant que vous portez seul (ou « Je ne sais pas »)" };
-// Une tâche du serveur → ce que l'écran affiche : titre, statut, une ligne qui dit l'état, et ses actions (`cible` : ce
-// qu'ouvre le bouton). `nbMarches` : les marchés de Mes marchés (pour proposer « Inviter un partenaire » seulement s'il y
-// en a un sur lequel inviter). null pour une clé inconnue.
+// La ligne d'état en MORCEAUX (relecture de la vague 2b) : chacun est rendu dans son propre élément, si bien que chaque
+// libellé fixe (« Reste à dire : », « votre zone », « sur », « dans Mes marchés. ») est un nœud texte entier, donc une
+// clé du dictionnaire de traduction (translateDOM ne traduit qu'un nœud entier) ; les nombres et la ponctuation restent
+// tels quels. `detail` reste la ligne entière, en français.
+function _ppCompte(t, ou) { return [String(t.fait), " sur ", String(t.sur), " " + ou]; }
+// Une tâche du serveur → ce que l'écran affiche : titre, statut, une ligne qui dit l'état (`morceaux`), et ses actions
+// (`cible` : ce qu'ouvre le bouton). `nbMarches` : les marchés de Mes marchés (pour proposer « Inviter un partenaire »
+// seulement s'il y en a un sur lequel inviter). null pour une clé inconnue.
 function tachePremiersPas(t, nbMarches) {
   const def = t && PP_TACHES[t.k];
   if (!def || !PP_STATUTS[t.statut]) return null;
-  const fini = t.statut === "termine", sur = (t.fait != null && t.sur) ? t.fait + " sur " + t.sur : "";
-  let detail = "", actions = [];
+  const fini = t.statut === "termine", compte = t.fait != null && t.sur, sur = compte ? t.fait + " sur " + t.sur : "";
+  let morceaux = [], actions = [];
   if (t.k === "dire") {
     const m = (t.manque || []).map(x => PP_MANQUES[x]).filter(Boolean);
-    detail = fini ? "Métier, zone et montant porté seul : c'est dit." : "Reste à dire : " + m.join(", ") + ".";
+    morceaux = fini ? ["Métier, zone et montant porté seul : c'est dit."]
+      : ["Reste à dire :"].concat(...m.map((x, i) => i ? [",", " " + x] : [" " + x]), ["."]);
     actions = [{ label: "Renseigner", ic: "sliders-horizontal", cible: { view: "criteria" } }];
   } else if (t.k === "suivre") {
-    detail = sur + " dans Mes marchés.";
+    morceaux = compte ? _ppCompte(t, "dans Mes marchés.") : [];
     actions = [{ label: "Trouver des marchés", ic: "search", cible: { rubrique: "trouver" } }];
   } else if (t.k === "lire") {
-    detail = fini ? "Un dossier complet lu." : t.statut === "en_cours" ? "Dossier importé, pas encore lu en entier."
-      : "Importez le dossier complet d'un marché, à l'étape Lire de sa page.";
+    morceaux = [fini ? "Un dossier complet lu." : t.statut === "en_cours" ? "Dossier importé, pas encore lu en entier."
+      : "Importez le dossier complet d'un marché, à l'étape Lire de sa page."];
     actions = t.projet ? [{ label: "Ouvrir le marché", ic: "folder-open", cible: { view: "aodetail", projet: t.projet } }]
       : [{ label: "Trouver des marchés", ic: "search", cible: { rubrique: "trouver" } }];
   } else if (t.k === "plusieurs") {
-    detail = t.invitation ? "Partenaire invité sur un marché." : t.profil === "publie" ? "Profil publié sur le réseau Adjugo."
+    morceaux = [t.invitation ? "Partenaire invité sur un marché." : t.profil === "publie" ? "Profil publié sur le réseau Adjugo."
       : t.profil === "en_attente" ? "Profil en attente de validation par Adjugo."
       : t.profil === "brouillon" ? "Profil partenaire enregistré, pas encore publié."
-      : "Invitez une entreprise sur un marché, ou publiez votre profil partenaire.";
+      : "Invitez une entreprise sur un marché, ou publiez votre profil partenaire."];
     if (nbMarches > 0) actions.push({ label: "Inviter un partenaire", ic: "user-plus", cible: { inviter: true } });
     if (t.profil !== "publie") actions.push({ label: t.profil === "en_attente" ? "Voir ma demande de publication" : "Publier mon profil",
                                              ic: "id-card", cible: { reseau: "profil" } });
   } else if (t.k === "dossiers") {
-    detail = sur + " dans Mon savoir-faire.";
+    morceaux = compte ? _ppCompte(t, "dans Mon savoir-faire.") : [];
     actions = [{ label: "Importer", ic: "library", cible: { view: "kb" } }];
   }
   return { k: t.k, titre: def.titre, ic: def.ic, statut: t.statut, libelle: PP_STATUTS[t.statut], pill: PP_PILLS[t.statut],
-           detail, sur, actions: fini ? [] : actions };
+           detail: morceaux.join(""), morceaux, sur, actions: fini ? [] : actions };
 }
 function tachesPremiersPas(pp, nbMarches) {
   return ((pp && pp.taches) || []).map(t => tachePremiersPas(t, nbMarches)).filter(Boolean);
@@ -544,6 +554,16 @@ function rappelPremiersPas(pp, k) {
   if (!pp || !pp.visible) return null;
   const t = tachesPremiersPas(pp, 0).find(x => x.k === k);
   return t && t.statut !== "termine" ? t : null;
+}
+// Le montant porté seul (« Jusqu'à quel montant répondez-vous seul ? ») : vide (sans réponse) ou un nombre de 0 à
+// MONTANT_SEUL_MAX, la borne du serveur (app/routers/criteria_v2.py, vérifiée par les tests) ; au-delà, une faute de
+// frappe que le serveur refuse (400).
+const MONTANT_SEUL_MAX = 10000000000;
+const MSG_MONTANT_SEUL = "Le montant que vous portez seul est un montant positif, en euros HT, jusqu'à 10 milliards.";
+function montantSeulValide(v) {
+  if (v === "" || v == null) return true;
+  const n = Number(v);
+  return Number.isFinite(n) && n >= 0 && n <= MONTANT_SEUL_MAX;
 }
 // Confirmation d'email vivante (décision 12 (a)) : l'écran revérifie seul, sans marteler le serveur — toutes les 5 s
 // pendant 2 minutes, puis toutes les 15 s jusqu'à 15 minutes, puis chaque minute ; seulement quand l'onglet est visible,
@@ -1314,7 +1334,7 @@ const __adjApp = createApp({
       mmFiltre: "tous",        // Mes marchés (vague 2a, A2) : tous | pilote | partenaire | plusieurs
       reorgEtat: (function(){ try { return JSON.parse(localStorage.getItem("adjugo_reorg_v1") || "{}") || {}; } catch(e){ return {}; } })(),
       auth: { mode: "login", email: "", password: "", full_name: "", company_name: "", resetToken: "", sent: false },
-      stats: {}, projects: [], cotraitants: [], contacts: [], invoices: [], documents: [], docQuery: "", docSort: "recent", expiring: [],
+      stats: {}, projects: [], cotraitants: [], contacts: [], invoices: [], documents: [], docQuery: "", docSort: "recent", expiring: [], expiringLu: false,
       categoriesDoc: CATEGORIES_DOC, docBusy: null,   // Mes documents : catégorie et date de fin modifiables (vague 2a, A3)
       notifs: [], notifsOpen: false, notifsOnglet: "a_faire", notifsSeen: (function(){ try { return localStorage.getItem("adjugo_notifs_seen") || ""; } catch(e){ return ""; } })(),
       consortiums: { consortiums: [], active: 0, partners_total: 0, submitted_total: 0 },
@@ -1954,13 +1974,14 @@ const __adjApp = createApp({
       try { this.user = await this.api("GET", "/api/auth/me"); } catch (e) { this.ecranPret = true; return; }
       // Vague 2b (B1) : allSettled — un chargement en échec n'empêche plus d'ouvrir l'écran de l'adresse (aucun écran
       // n'est affiché avant : ecranPret). « Vos premiers pas » et la carte « Faites-vous trouver » viennent du serveur.
-      await Promise.allSettled([this.loadCompany(), this.loadCriteria(), this.loadProjects(), this.loadCotraitants(), this.loadStats(), this.loadOrg(), this.loadAdaptedCountries(), this.loadAmont(), this.loadNotifs(), this.loadConsortiums(), this.loadShared(), this.loadGrpDash(), this.loadPriseEnMain()]);
+      // Relecture de la vague 2b : « À faire » (accueil, cloche) lit aussi les pièces à renouveler et les invitations
+      // reçues ; elles sont lues ICI, avant d'ouvrir l'écran — jamais « Rien n'attend de réponse » avant de les avoir lues.
+      await Promise.allSettled([this.loadCompany(), this.loadCriteria(), this.loadProjects(), this.loadCotraitants(), this.loadStats(), this.loadOrg(), this.loadAdaptedCountries(), this.loadAmont(), this.loadNotifs(), this.loadConsortiums(), this.loadShared(), this.loadGrpDash(), this.loadPriseEnMain(), this.loadExpiring(), this.rnLoadRecues(true)]);
       // Adaptation au pays de l'organisation : scope AO + devise + LANGUE par défaut
       if (this.org.data && this.org.data.country) { this.src.country = this.org.data.country; this.orgCountry = this.org.data.country; this.applyLang(this.org.data.lang); }
       // Une adresse par écran (vague 2a, A1) : l'écran que demande l'adresse (lien, favori, rechargement, ou
       // l'adresse gardée avant la connexion Google) ; un lien d'invitation « ouvert dans mon Adjugo » (?shared=…)
       // ouvre son dossier ; sinon l'accueil. Le jeton d'invitation ne reste jamais dans l'adresse.
-      this.loadExpiring();      // « À faire » (cloche, accueil) : les pièces à renouveler, quel que soit l'écran
       let _demande = etatDeAdresse(this._adresseDemandee());
       try {
         const st = new URLSearchParams(location.search).get("shared");
@@ -1979,7 +2000,6 @@ const __adjApp = createApp({
         const raw = sessionStorage.getItem("adjugo_suggest_profile");
         if (raw) { sessionStorage.removeItem("adjugo_suggest_profile"); this._rnSuggest(JSON.parse(raw)); }
       } catch (e) {}
-      this.rnLoadRecues(true);   // pastille « Invitations reçues » du menu Réseau
     },
 
     // ══════════ Menu par rubriques (réorganisation, vague 1, 1.3 ; RUBRIQUES en tête du fichier) ══════════
@@ -2417,6 +2437,13 @@ const __adjApp = createApp({
     async welcomeStart() {
       const q = (this.welcome.siret || "").trim();
       if (!q) { this.notify("Saisissez votre SIRET (14 chiffres)", "err"); return; }
+      // Relecture de la vague 2b : un montant hors des bornes du serveur (MONTANT_SEUL_MAX) faisait refuser TOUT
+      // l'enregistrement des critères, en silence. Il est contrôlé avant l'envoi : la fenêtre reste ouverte et le dit.
+      if (!this.welcome.seulInconnu && !montantSeulValide(this.welcome.seul)) {
+        this.notify(MSG_MONTANT_SEUL, "err");
+        try { document.getElementById("siret-seul").focus(); } catch (e) {}
+        return;
+      }
       this.welcome.busy = true;
       try {
         const r = await this.api("GET", "/api/registre/company?q=" + encodeURIComponent(q));
@@ -2434,14 +2461,17 @@ const __adjApp = createApp({
         // montant, ou « Je ne sais pas ») ; sans réponse, rien n'est enregistré ni déduit.
         const seul = this.welcome.seul;
         if (this.welcome.seulInconnu) { this.criteria.montant_porte_seul = null; this.criteria.montant_porte_seul_inconnu = true; }
-        else if (seul !== "" && seul != null && Number(seul) >= 0) { this.criteria.montant_porte_seul = Number(seul); this.criteria.montant_porte_seul_inconnu = false; }
-        try { await this.api("PUT", "/api/criteria/", this.criteria); } catch (e) {}
+        else if (seul !== "" && seul != null) { this.criteria.montant_porte_seul = Number(seul); this.criteria.montant_porte_seul_inconnu = false; }
+        // Un refus du serveur n'est plus avalé : l'écran dit ce qui n'a pas été enregistré (le profil, lui, l'est).
+        let critErr = "";
+        try { await this.api("PUT", "/api/criteria/", this.criteria); } catch (e) { critErr = (e && e.message) || "erreur"; }
         this.loadPriseEnMain();
         // 3) Pré-remplir et lancer la 1re recherche pertinente.
         if (spec && !this.src.query) this.src.query = spec.split(/[ ,;]/)[0];
         if (dep && !this.src.dept) this.src.dept = dep;
         this.welcomeDone();
-        this.notify("Profil créé depuis votre SIRET");
+        if (critErr) this.notify("Profil créé depuis votre SIRET. Votre métier, votre zone et votre montant n'ont pas été enregistrés : " + critErr, "err");
+        else this.notify("Profil créé depuis votre SIRET");
         this.go("sourcing");
         this.$nextTick(() => this.srcSearch());
       } catch (e) { this.notify("Entreprise introuvable — vérifiez le SIRET", "err"); }
@@ -2566,7 +2596,9 @@ const __adjApp = createApp({
       catch (e) { this.notify(e.message, "err"); }
     },
     async loadDocuments() { try { this.documents = await this.api("GET", "/api/documents/") || []; } catch (e) {} },
-    async loadExpiring() { try { this.expiring = await this.api("GET", "/api/documents/expiring") || []; } catch (e) { this.expiring = []; } },
+    // `expiringLu` : la liste a été lue au moins une fois (une erreur ne compte pas) ; « À faire » ne dit « rien
+    // n'attend » qu'ensuite (aFaireLu).
+    async loadExpiring() { try { this.expiring = await this.api("GET", "/api/documents/expiring") || []; this.expiringLu = true; } catch (e) { this.expiring = []; } },
     async loadCompany() { try { const c = await this.api("GET", "/api/company/"); if (c && !c.detail) this.company = c; } catch (e) {} },
     async loadLlmInfo() { try { this.llmInfo = await this.api("GET", "/api/llm/info"); } catch (e) {} },
     async loadCriteria() { try { this.criteria = await this.api("GET", "/api/criteria/") || {}; } catch (e) {} },
@@ -3130,6 +3162,24 @@ const __adjApp = createApp({
       return barrePartenaire({ apercuMinimal: v.apercu_minimal, role: v.invited && v.invited.role, part: v.can_contribute ? undefined : false,
                                partStatut: e.part, conventionStatut: e.convention, signature: e.signature, groupement: st.state });
     },
+    // Relecture de la vague 2b : « Ce qui est attendu de vous » suit la barre — chaque tâche porte le statut de son
+    // étape (Terminé, En cours, À faire), et une tâche absente de la barre n'est pas annoncée (un lien en lecture seule
+    // n'a ni part ni accord ; un sous-traitant ne valide pas la convention). null : pas d'étape `k` sur son écran.
+    apercuEtape(k) {
+      const s = this.apercuBarre().find(x => x.k === k);
+      return s ? Object.assign({ pill: ({ fait: "go", en_cours: "a_etudier", a_faire: "neutral" })[s.etat] || "neutral" }, s) : null;
+    },
+    // La convention est générée (à valider, ou validée par tous) : plus de « quand le chef de file l'aura générée ».
+    apercuConventionGeneree() {
+      const e = (this.apercu.d && this.apercu.d.etat) || {};
+      return e.convention === "a_signer" || e.convention === "signee";
+    },
+    // Le compte à rebours « pour soumettre votre part », comme sur son écran (invite.html) : seulement quand il a une
+    // part à soumettre, et plus une fois sa part soumise.
+    apercuDelaiVisible(v) {
+      const e = (this.apercu.d && this.apercu.d.etat) || {};
+      return !!(v && v.can_contribute) && this.paJours(v.project && v.project.deadline) !== null && e.part !== "submitted";
+    },
     apercuPieces() { return ((this.apercu.d && this.apercu.d.pieces_attendues) || []).map(x => x && x.label).filter(Boolean).join(", "); },
     // Le compte à rebours de son écran (invite.html) : le partenaire sait combien de temps il lui reste pour sa part.
     paJours(dl) { if (!dl) return null; const n = Math.ceil((new Date(dl) - new Date()) / 86400000); return isNaN(n) ? null : n; },
@@ -3558,6 +3608,10 @@ const __adjApp = createApp({
                            enCours: (this.grpDash && this.grpDash.en_cours) || [], expiring: this.expiring },
                          new Date().toISOString().slice(0, 10));
     },
+    // « Rien n'attend de réponse de votre part » n'est vrai qu'une fois lus les pièces à renouveler et les invitations
+    // reçues (le reste de la liste est lu avant l'ouverture de l'écran) ; avant, ou si l'une n'a pas pu être lue, la
+    // phrase ne s'affiche pas (relecture de la vague 2b).
+    aFaireLu() { return !!this.expiringLu && !!this.reseau.recues.loaded; },
     aFaireOuvrir(t) {
       this.notifsOpen = false;
       const c = (t && t.cible) || {};
@@ -5620,6 +5674,12 @@ const __adjApp = createApp({
     srcDeps() { return this.src.dept.split(",").map(s => s.trim()).filter(Boolean); },
     srcCpv() { return (this.src.cpv || "").split(/[,\s]+/).map(s => s.trim()).filter(Boolean); },
     srcResetAdv() { this.src.type_marche = ""; this.src.cpv = ""; },
+    // « Modifier ma zone » (À venir, état vide) : la zone de la recherche des fins de contrat est le champ
+    // « Départements » de l'onglet — srcRenewals n'envoie que lui (srcDeps) ; on y met le focus, texte sélectionné.
+    srcRenZone() {
+      const el = this.$refs.srcRenDep;
+      if (el && el.focus) { el.focus(); try { el.select(); } catch (e) {} }
+    },
     async srcRenewals() {
       if (this.src.renewals.loading) return;   // Entrée maintenue dans les champs de l'onglet « À venir » : une seule recherche
       this.src.renewals.loading = true; this.src.renewals.done = false;

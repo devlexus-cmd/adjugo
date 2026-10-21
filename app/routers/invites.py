@@ -1081,15 +1081,27 @@ def _unfreeze_offer_if_needed(db: Session, project_id: int, reason: str, *, acto
     return True
 
 
+# Les pièces du marché que voit un partenaire : SEULEMENT le dossier de l'acheteur (dossier « DCE » du marché, affiché
+# « Dossier du marché »). Relecture de la vague 2b (cloisonnement, défaut antérieur à la vague) : le filtre ne portait
+# que sur le marché, et le partenaire téléchargeait aussi les pièces que le chef de file range dans les autres dossiers
+# du même marché — formulaires officiels (« CERFA » : l'acte d'engagement ATTRI1 porte le prix de vente de chaque
+# membre, le DC2 le chiffre d'affaires du chef de file), dossier de présentation assemblé (« Mémoire technique » : le
+# savoir-faire du chef de file et les parties des autres membres), tableau de prix. Un sous-traitant y lisait ainsi le
+# prix d'un partenaire que la convention lui cache. Une seule règle pour la liste (vue du partenaire, aperçu du chef de
+# file) et le téléchargement.
+DOSSIER_PARTAGE = "DCE"
+
+
 def _documents_partages(inv, db: Session) -> list:
-    """Les pièces du marché que le lien laisse télécharger (rien si le partage des pièces est coupé)."""
+    """Les pièces du marché que le lien laisse télécharger : le dossier de l'acheteur (dossier « DCE »), rien d'autre ;
+    rien si le partage des pièces est coupé."""
     if not inv.can_view_docs:
         return []
     # Versions remplacées (parent_id posé) EXCLUES : ce que le mandataire a remplacé
     # disparaît aussi pour le partenaire (même règle que le coffre-fort et l'export).
     rows = db.query(Document).filter(
-        Document.project_id == inv.project_id, Document.deleted_at.is_(None),
-        Document.parent_id.is_(None)
+        Document.project_id == inv.project_id, Document.folder == DOSSIER_PARTAGE,
+        Document.deleted_at.is_(None), Document.parent_id.is_(None)
     ).order_by(Document.created_at.desc()).all()
     return [{"id": d.id, "name": d.name,
              "category": d.category.value if hasattr(d.category, "value") else str(d.category or ""),
@@ -1166,6 +1178,15 @@ def _pieces_attendues(project) -> list:
     return [{"key": k, "label": _PIECE_LABELS.get(k, k)} for k in keys]
 
 
+def _pieces_attendues_de(vue: dict, project):
+    """Les pièces administratives attendues DE CE partenaire, pour « Ce qui est attendu de vous » de l'aperçu : aucune
+    pendant l'aperçu limité du réseau, ni pour un lien en lecture seule, qui ne peut rien déposer (relecture de la
+    vague 2b : l'aperçu ne lui annonce jamais une tâche qu'il ne peut pas faire)."""
+    if vue.get("apercu_minimal") or not vue.get("can_contribute"):
+        return None
+    return _pieces_attendues(project)
+
+
 def _raison_sans_acces(inv) -> str:
     if inv.revoked:
         return "revoquee"
@@ -1215,7 +1236,7 @@ def apercu_partenaire(project_id: int, invite_id: Optional[int] = None, role: st
             "convention": conv_status, "signature": signature,
         }
         return {"acces": True, "invite_id": inv.id, "pour": "invitation", "vue": vue, "etat": etat,
-                "pieces_attendues": None if vue["apercu_minimal"] else _pieces_attendues(project)}
+                "pieces_attendues": _pieces_attendues_de(vue, project)}
     # Pas encore invité : la vue d'une invitation neuve, calculée sur une invitation qui n'existe pas en base (jamais
     # ajoutée à la session). Une invitation neuve n'a ni part ni accord ; elle rend caduque une offre figée et une
     # convention générée (_create_invite) : le partenaire n'y verra donc aucun total à son arrivée.
@@ -1229,13 +1250,14 @@ def apercu_partenaire(project_id: int, invite_id: Optional[int] = None, role: st
     vue = _apercu_de(_invite_public(tmp, project, owner_company, _documents_partages(tmp, db), db=None))
     return {"acces": True, "invite_id": None, "pour": "nouveau", "vue": vue,
             "etat": {"part": None, "convention": None, "signature": None},
-            "pieces_attendues": None if vue["apercu_minimal"] else _pieces_attendues(project)}
+            "pieces_attendues": _pieces_attendues_de(vue, project)}
 
 
 @router.get("/api/invite/{token}/doc/{doc_id}")
 @limiter.limit("60/minute")
 def guest_download(token: str, doc_id: int, request: Request, db: Session = Depends(get_db)):
-    """Télécharge une pièce partagée — STRICTEMENT limitée au projet de l'invitation."""
+    """Télécharge une pièce partagée — STRICTEMENT limitée au dossier de l'acheteur (« DCE ») du projet de
+    l'invitation, la même règle que la liste (_documents_partages)."""
     inv = _valid_invite(token, db)
     if not inv.can_view_docs:
         raise HTTPException(403, "Le partage des pièces n'est pas autorisé pour ce lien")
@@ -1243,7 +1265,7 @@ def guest_download(token: str, doc_id: int, request: Request, db: Session = Depe
         raise HTTPException(403, "Acceptez d'abord l'invitation depuis votre compte Adjugo pour télécharger "
                                  "les pièces du marché.")
     doc = db.query(Document).filter(
-        Document.id == doc_id, Document.project_id == inv.project_id,
+        Document.id == doc_id, Document.project_id == inv.project_id, Document.folder == DOSSIER_PARTAGE,
         Document.deleted_at.is_(None), Document.parent_id.is_(None)
     ).first()
     if not doc or not doc.file_key:
