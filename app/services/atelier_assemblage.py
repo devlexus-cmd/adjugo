@@ -1158,7 +1158,7 @@ def _executer(db, *, job_id: int, project_id: int, owner_id: int, member_ids: li
         ag._journal(db, action="redaction.transition_ajoutee", project_id=project.id, owner_id=dossier.owner_id,
                     actor=acteur, actor_kind="owner", invite_id=s.author_invite_id, target_id=s.id,
                     detail=f"Phrase de transition ajoutée au début de votre partie, à revalider : {titre}")
-        ag._notifier_partenaire(db, project, db.get(ProjectInvite, s.author_invite_id), titre, True)
+        ag._notifier_partenaire(db, project, db.get(ProjectInvite, s.author_invite_id), titre, True, user=user)
     ag._journal(db, action="redaction.harmonisation", project_id=project.id, owner_id=dossier.owner_id, actor=acteur,
                 actor_kind="owner", target_type="dossier_presentation", target_id=dossier.id,
                 detail=(f"Ton harmonisé : {ajoutees} phrase{'s' if ajoutees > 1 else ''} de transition ajoutée"

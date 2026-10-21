@@ -1141,7 +1141,9 @@ confirmée — l'invitation elle-même ne part pas —, il devenait l'invitation
 jours (reproduit). `run_cotraitance_reminders` et l'alerte d'attestations (`_piece_alerts_due`) ignorent maintenant
 les invitations d'un chef de file non confirmé (`_comptes_non_confirmes`, `app/services/alerts.py`) ; le récapitulatif
 d'attestations ne part plus vers une adresse non confirmée. Les comptes d'avant la vérification d'email ont été
-confirmés par sa migration : rien ne change pour eux. Le commentaire d'`auth.py` le dit.
+confirmés par sa migration : rien ne change pour eux. Le commentaire d'`auth.py` le dit. Complété par la
+contre-relecture (§ T.1 et T.2) : la relance planifiée des parties du dossier de présentation et « Votre partie est à
+valider » ne partaient pas par ces deux tâches et écrivaient encore au tiers.
 
 ### S.6 « Rien n'attend de réponse » seulement une fois lu
 
@@ -1271,4 +1273,103 @@ recalculées.
 - **Le compte « N sur M » ailleurs dans l'application** (`{{ a }} sur {{ b }}` en un seul nœud) reste en français en
   néerlandais et en espagnol : la remarque portait sur « Vos premiers pas » ; la clé « sur » existe maintenant pour qui
   reprendra les autres comptes.
+- **D14** : rien n'a changé (aucun contrôle d'offre, aucun prix, aucune carte d'offre, ni la vitrine).
+
+---
+
+## T. Contre-relecture de la vague 2b
+
+Base : la relecture (`47a0983`). Quatre remarques (deux lentilles : cloisonnement et liens ; données, démonstration et
+suite), dont trois sur la même correction (S5) : deux défauts distincts, plus le commentaire d'`auth.py`. Chacune a été
+**reproduite** avant d'être corrigée (tests des relecteurs relancés, puis tests écrits ici) ; **aucune n'est rejetée**.
+Tests : `tests/test_reorganisation_v2b_contre_relecture.py` (7 tests ; 5 échouent sur `47a0983`, chacun sur ce qu'il
+décrit ; les deux témoins d'un compte confirmé passent des deux côtés). Aucune migration ; aucune route nouvelle ;
+aucun libellé nouveau à l'écran ; aucun contrôle d'offre, prix ni carte d'offre touchés (D14), ni la vitrine.
+
+| Remarque | Gravité | Corrigé | Test qui échouait avant |
+|---|---|---|---|
+| 1 et 3 (en partie) : relance planifiée des parties d'un compte non confirmé | majeur (défaut de la production) | § T.1 | `test_t1_*[False]` |
+| 2 et 3 (en partie) : « Votre partie est à valider » d'un compte non confirmé ; commentaire d'`auth.py` | majeur (défaut de la production) | § T.2 | `test_t2_*[False]`, `test_t2_le_compte_qui_agit_*`, `test_t2_le_commentaire_*` |
+| 4 : une relecture en échec fait dire « Rien n'attend » (S6) | mineur | § T.3 | `test_t3_*` |
+
+### T.1 La relance planifiée des parties ne part que d'un compte confirmé (remarques 1 et 3)
+
+**Reproduit** (sur `47a0983`, tout par l'API d'un compte jamais confirmé, et sur Postgres avec le code de production) :
+marché sans dossier de l'acheteur ni date limite, plan libre, une partie, un partenaire invité par adresse (le lien
+reste à copier : `emailed` faux), la partie lui est confiée avec une date limite interne à J+2 ; aucune de ces routes ne
+lit l'adresse. La tournée planifiée (`run_cotraitance_reminders`) rendait `parts_relancees: 1` : « Rappel — votre partie
+du dossier de présentation », avec « Votre lien Adjugo : …/invite/<jeton> », partait au tiers. S5 avait écarté ces
+invitations du rappel de la part ; leurs parties n'étaient donc plus ajoutées à ce rappel, et `relancer_parts`, qui ne
+filtrait que la démonstration, leur écrivait à part (`app.services.email.send_email`, que le test S5 ne remplaçait
+pas). Le même compte reçoit 403 sur « Demander les parts ».
+
+**Corrigé** : `relancer_parts` (`app/services/atelier_groupement.py`) ignore les invitations dont le chef de file
+(`inv.owner_id`) n'a pas confirmé son adresse ; la tournée lui passe l'ensemble qu'elle a déjà lu
+(`non_confirmes`, `alerts._comptes_non_confirmes`), un appel direct le relit. Rien n'est marqué envoyé : une fois
+l'adresse confirmée, le palier encore dû part à la tournée suivante (testé). Le témoin d'un compte confirmé reçoit la
+relance, comme en production. Le titre du § S.5 devient vrai.
+
+### T.2 « Votre partie est à valider » ne part que d'un compte confirmé (remarques 2 et 3)
+
+**Reproduit** (sur `47a0983`, même parcours) : quand ce compte écrit la partie du partenaire
+(`PUT /api/atelier/{pid}/repartition/{sid}/texte`, 200), `_notifier_partenaire` envoyait aussitôt au tiers « Votre
+partie est à valider », avec le lien de l'invitation ; `chef_modifier_part` ne refuse que la démonstration. Le
+commentaire d'`auth.py` (« il n'envoie aucun courriel au nom d'Adjugo vers un tiers ») était donc faux. Défaut antérieur
+à la vague.
+
+**Corrigé** : `_notifier_partenaire` n'envoie rien quand le chef de file (propriétaire de l'invitation) ou le compte qui
+agit n'a pas confirmé son adresse (`adresse_confirmee`, paramètre `user` passé par « écrire à la place » et par
+l'harmonisation du ton, `app/services/atelier_assemblage.py`) ; le texte reste enregistré, comme pour « Demander les
+parts ». Le commentaire d'`auth.py` dit ce qui part réellement : ni l'invitation, ni le rappel de la part, ni l'alerte
+d'attestations, ni la relance des parties, ni « Votre partie est à valider » ; seule exception, à la demande de qui
+ouvre le lien, le code qui vérifie l'adresse du partenaire (sans le lien ; 8 par jour au plus pour une organisation non
+confirmée, `invites._otp_cap_reached`, inchangé), puis, une fois cette adresse vérifiée, l'accusé de sa part envoyée.
+Revu au passage, sans changement : les autres envois vers un partenaire vérifient déjà l'expéditeur (renvoi,
+convention à valider, retrait, invitation réseau, invitation d'un collègue) ou suivent une part soumise, donc une
+adresse vérifiée par ce code (offre figée, accusé) ; les envois au chef de file ne partent que vers une adresse
+confirmée (`_mandataire_email`).
+
+### T.3 Une relecture des pièces à renouveler qui échoue garde la liste (remarque 4)
+
+**Reproduit** (sous Node avec les méthodes réelles d'`app.js`) : lue une fois, puis relue en échec (chaque retour sur
+l'accueil, une mise à la corbeille ou une restauration de document relit la liste), `loadExpiring` vidait la liste et
+laissait `expiringLu` vrai : l'accueil et la cloche disaient « Rien n'attend de réponse de votre part. » alors qu'une
+pièce était à renouveler. **Corrigé** : une relecture en échec garde la liste déjà lue (aucune phrase vide sur une
+panne du réseau) ; une liste vide bien relue rend la phrase vraie. Vérifié aussi dans le navigateur (§ T.4).
+
+### T.4 Vérifications
+
+- **Tests de la contre-relecture** : `tests/test_reorganisation_v2b_contre_relecture.py`, 8 tests (7 sur le code, 1 sur
+  ce contrat) ; 5 des 7 échouent sur `47a0983`, chacun sur ce qu'il décrit ; les deux témoins d'un compte confirmé passent
+  des deux côtés.
+- **Suite complète SQLite** (TZ=UTC, `ADJUGO_TEST_DB=moi2b_full.db`, code final) : 2 329 réussis sur 2 331. Les deux
+  échecs : le test de ce contrat (le § T.4 attendait ces résultats ; il passe depuis) et
+  `tests/test_corrections_v34_b.py::test_dpgf_csv_volumineux_borne`, un test de chronométrage que la vague ne touche pas
+  (`_check_dpgf_csv` inchangé depuis `0afc1ed`), joué pendant que trois autres chantiers faisaient tourner leurs suites
+  (charge de la machine entre 12 et 23) ; relancé seul sous la même charge, il passe 2 fois sur 3.
+- **SRI, JavaScript, traductions** : `scripts/sri_update.py --check` à jour ; `node --check` sur `app.js`, `i18n.js`,
+  `cotraitance-crypto.js`, `redaction-partenaire.js`, `carnet-notes.js` ; `scripts/i18n_ajouter.py --check` : 789 clés.
+- **Postgres** 16.2 depuis l'état exact de la production (`scratchpad/cr2b_fix/run_cr2b_pg.py`, TZ=UTC) : base montée et
+  remplie par le code `0afc1ed` (tête `c4montantseul`) ; le défaut est constaté avec le code de production (la tournée
+  écrit au tiers du compte non confirmé, avec le lien) ; code corrigé : une seule tête `c5priseenmain`, schéma égal à
+  celui d'une base neuve, aucun compte ne bouge ; T1 (la tournée n'écrit qu'au partenaire du témoin), T2 (« écrire à la
+  place » enregistre le texte dans les deux cas, « Votre partie est à valider » part pour le témoin seulement), T1 bis
+  (une fois l'adresse confirmée, le palier dû part) ; le code de production relancé sur la base migrée lit et écrit.
+  Fichiers communs : mêmes échecs qu'avec la production (20, tous dans `test_secu_rgpd.py` et `test_secu2_donnees.py`,
+  propres à SQLite), la production a en plus le test de la date corrigé par S14. Les 7 fichiers de la vague 2b sur une
+  base à part : 123 sur 124, le seul échec étant ce contrat avant ces résultats.
+- **Navigateur réel** (serveur local sur ce code, base jetable, démonstration par lien privé avec une clé de test locale,
+  un compte de test local) : accueil de la démonstration sans « Rien n'attend » et avec « 2 pièces à renouveler », sans
+  premiers pas ; `/app/exemple` (6 mentions « Exemple · entreprises et client fictifs », « Seul 43 % », moyenne des trois
+  exercices « à confirmer ») ; `/app/marches/2/apercu-partenaire` ouvert directement par son adresse (« Il vous reste 60
+  jours », barre Accepter · Ma part · Donner mon accord · Déposé) ; compte neuf non confirmé : écran « Confirmez votre
+  adresse email » avec la suite, puis, l'adresse confirmée en base, l'écran se ferme seul en quelques secondes et la
+  fenêtre du SIRET s'ouvre ; premiers pas « 0 sur 5 » ; 1 280 et 375 px sans défilement horizontal ; aucune erreur de
+  script de l'application en console.
+
+### T.5 Laissé, avec sa raison
+
+- **Le code de vérification envoyé à l'adresse du partenaire** pour un chef de file non confirmé (8 par jour au plus
+  pour son organisation) : il ne porte pas le lien et c'est le seul moyen pour le partenaire de prouver son adresse
+  avant de soumettre sa part ; comportement de la production, dit dans le commentaire d'`auth.py`.
 - **D14** : rien n'a changé (aucun contrôle d'offre, aucun prix, aucune carte d'offre, ni la vitrine).

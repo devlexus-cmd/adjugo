@@ -2597,8 +2597,9 @@ const __adjApp = createApp({
     },
     async loadDocuments() { try { this.documents = await this.api("GET", "/api/documents/") || []; } catch (e) {} },
     // `expiringLu` : la liste a été lue au moins une fois (une erreur ne compte pas) ; « À faire » ne dit « rien
-    // n'attend » qu'ensuite (aFaireLu).
-    async loadExpiring() { try { this.expiring = await this.api("GET", "/api/documents/expiring") || []; this.expiringLu = true; } catch (e) { this.expiring = []; } },
+    // n'attend » qu'ensuite (aFaireLu). Une relecture qui échoue (retour sur l'accueil, corbeille, restauration) garde
+    // la liste déjà lue : jamais « Rien n'attend… » parce que le réseau a manqué (contre-relecture de la vague 2b).
+    async loadExpiring() { try { this.expiring = await this.api("GET", "/api/documents/expiring") || []; this.expiringLu = true; } catch (e) { /* la liste déjà lue reste */ } },
     async loadCompany() { try { const c = await this.api("GET", "/api/company/"); if (c && !c.detail) this.company = c; } catch (e) {} },
     async loadLlmInfo() { try { this.llmInfo = await this.api("GET", "/api/llm/info"); } catch (e) {} },
     async loadCriteria() { try { this.criteria = await this.api("GET", "/api/criteria/") || {}; } catch (e) {} },

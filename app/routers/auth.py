@@ -152,7 +152,11 @@ def register(request: Request, data: UserCreate, db: Session = Depends(get_db)):
     # l'accord donné sur une convention et l'acceptation d'un lien nominatif (403) ; il n'envoie aucun courriel au nom
     # d'Adjugo vers un tiers (invitation d'un partenaire ou d'un collègue : le lien reste à copier ; ni le rappel
     # planifié de la part ni l'alerte d'attestations à ses partenaires : app/services/alerts.py,
-    # _comptes_non_confirmes). Ne vérifient PAS
+    # _comptes_non_confirmes ; ni la relance planifiée des parties du dossier de présentation ni « Votre partie est à
+    # valider » quand il écrit la partie d'un partenaire : app/services/atelier_groupement.py, relancer_parts et
+    # _notifier_partenaire). Seule exception, à la demande de qui ouvre le lien : le code qui vérifie l'adresse du
+    # partenaire (sans le lien ; 8 par jour au plus pour une organisation non confirmée : invites._otp_cap_reached),
+    # puis, une fois cette adresse vérifiée, l'accusé de sa part envoyée. Ne vérifient PAS
     # l'adresse : les appels qui passent seulement par exiger_ia (questions sur un marché déjà analysé, estimation du
     # prix, veille) ; ils restent bornés par le garde-fou de l'essai (docs/REORGANISATION_V2B.md, B1, laissé). Le jeton
     # est rendu quand même : il sert à renvoyer l'email, à revérifier la confirmation et à se déconnecter.

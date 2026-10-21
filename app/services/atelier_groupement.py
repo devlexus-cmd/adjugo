@@ -2059,15 +2059,29 @@ def modifier_part(db, project: Project, dossier: DossierPresentation, section: D
                      f"Partie rédigée par le chef de file, à valider : {titre}"))
     apres_changement_commun(db, project, dossier, f"partie « {titre} » modifiée par le chef de file",
                             actor=user.email or "", actor_kind="owner", ip=ip)
-    _notifier_partenaire(db, project, inv, titre, redigee)
+    _notifier_partenaire(db, project, inv, titre, redigee, user=user)
     db.refresh(section)
     return section
 
 
-def _notifier_partenaire(db, project: Project, inv: Optional[ProjectInvite], titre: str, modifiee: bool) -> None:
+def adresse_confirmee(db, user_id) -> bool:
+    """Le compte a confirmé son adresse email (jamais pour un compte inconnu)."""
+    u = db.get(User, user_id) if user_id else None
+    return bool(u is not None and getattr(u, "email_verified", False))
+
+
+def _notifier_partenaire(db, project: Project, inv: Optional[ProjectInvite], titre: str, modifiee: bool,
+                         user: Optional[User] = None) -> None:
+    """« Votre partie est à valider » au partenaire dont le chef de file a modifié ou écrit la partie (best-effort,
+    hors requête). Jamais pour la démonstration. Contre-relecture de la vague 2b : jamais quand le chef de file
+    (propriétaire de l'invitation) ou le compte qui agit (`user`) n'a pas confirmé son adresse — ce courriel porte le
+    lien de l'invitation, que sa création n'envoie pas pour un tel compte (invites._create_invite) ; le texte reste
+    enregistré, comme pour « Demander les parts »."""
     try:
         from app.routers.invites import _invite_is_demo, _is_email, _notify_allowed, _send_mails_async
         if inv is None or not _is_email(inv.recipient) or _invite_is_demo(inv, db):
+            return
+        if not adresse_confirmee(db, inv.owner_id) or (user is not None and not getattr(user, "email_verified", False)):
             return
         if not _notify_allowed(("redaction_modif", inv.id)):
             return
@@ -2221,15 +2235,22 @@ def liste_relance(lignes: list) -> str:
     return "\n".join(f"- {x}" for x in lignes_relance(lignes))
 
 
-def relancer_parts(db, today: Optional[date] = None, deja=()) -> dict:
+def relancer_parts(db, today: Optional[date] = None, deja=(), non_confirmes=None) -> dict:
     """Relance planifiée (appelée par la relance de la co-traitance, POST /api/admin/run-cotraitance-reminders) :
     un email par partenaire dont une partie n'est pas encore envoyée, à J-2 puis le jour de sa date limite
     interne ; un palier par partie (relance_palier : 1 = J-2, 2 = jour J), jamais deux fois ; rien après le
     dépôt ou la clôture du marché, rien pour la démonstration. `deja` : les partenaires dont le rappel de la
-    co-traitance de cette tournée portait déjà la liste de leurs parties (jamais deux emails)."""
+    co-traitance de cette tournée portait déjà la liste de leurs parties (jamais deux emails).
+    Contre-relecture de la vague 2b : rien pour un chef de file dont l'adresse n'est pas confirmée (`non_confirmes`,
+    l'ensemble lu par la relance de la co-traitance, sinon relu ici : alerts._comptes_non_confirmes) — ce courriel porte
+    le lien de l'invitation, que sa création n'envoie pas pour un tel compte ; ses paliers restent à envoyer et partent
+    une fois l'adresse confirmée, s'ils sont encore dus."""
     from app.core.config import get_settings
     from app.routers.invites import _invite_is_demo, _is_email
     from app.services import email as _email
+    if non_confirmes is None:
+        from app.services.alerts import _comptes_non_confirmes
+        non_confirmes = _comptes_non_confirmes(db)
     base = (get_settings().APP_BASE_URL or "").rstrip("/")
     relances = 0
     for iid, lignes in parts_a_relancer(db, today).items():
@@ -2237,6 +2258,8 @@ def relancer_parts(db, today: Optional[date] = None, deja=()) -> dict:
             continue
         inv = db.get(ProjectInvite, iid)
         if inv is None or not peut_rediger(db, inv)[0] or not _is_email(inv.recipient) or _invite_is_demo(inv, db):
+            continue
+        if inv.owner_id in non_confirmes:
             continue
         p = lignes[0][3]
         if _email.send_email(inv.recipient, f"Rappel — votre partie du dossier de présentation ({p.name[:50]})",

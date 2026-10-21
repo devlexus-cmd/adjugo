@@ -31,7 +31,8 @@ def _demo_user_ids(db: Session) -> set:
 
 def _comptes_non_confirmes(db: Session) -> set:
     """Comptes dont l'adresse email n'est pas confirmée. Relecture de la vague 2b : aucune tâche planifiée n'écrit à un
-    tiers pour eux (rappel de la part, alerte d'attestations), comme l'invitation elle-même, qui ne part par courriel
+    tiers pour eux (rappel de la part, alerte d'attestations ; relance des parties du dossier de présentation,
+    atelier_groupement.relancer_parts, depuis la contre-relecture), comme l'invitation elle-même, qui ne part par courriel
     que si l'expéditeur a confirmé son adresse (anti-spam par comptes jetables, invites._create_invite) — sinon le
     rappel planifié, qui porte le lien, devenait l'invitation complète envoyée à la place du compte. Les comptes d'avant
     la vérification d'email ont été confirmés par sa migration (j4k5l6m7n8o9)."""
@@ -178,7 +179,7 @@ def run_cotraitance_reminders(db: Session) -> dict:
     # dont le rappel ci-dessus les portait déjà).
     try:
         from app.services.atelier_groupement import relancer_parts
-        result.update(relancer_parts(db, today, deja=parts_merged))
+        result.update(relancer_parts(db, today, deja=parts_merged, non_confirmes=non_confirmes))
     except Exception as e:
         db.rollback()
         logger.warning("relances co-traitance : parts du dossier de présentation non relancées : %s", e)
