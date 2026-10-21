@@ -20,7 +20,8 @@ def sanitize_tender_links(tender):
     n'atteigne l'interface (« Voir l'avis ↗ ») ou la base (Project.source_url). Un lien
     invalide devient vide — l'UI n'affiche alors simplement pas de lien (jamais inventé)."""
     try:
-        provs = [tender.provenance] + list(getattr(tender, "also_seen_in", None) or [])
+        provs = ([tender.provenance] + list(getattr(tender, "also_seen_in", None) or [])
+                 + list(getattr(tender, "rectificatifs", None) or []))
         for prov in provs:
             if prov is not None and prov.source_url:
                 prov.source_url = safe_link_url(prov.source_url, _MAX_LINK_LEN) or ""
@@ -36,6 +37,26 @@ _DEPT_RE = re.compile(r"^(?:[0-9]{2,3}|2[AB])$", re.IGNORECASE)
 
 def _un_chiffre(d: str) -> str:
     return d.zfill(2) if (len(d) == 1 and d.isdigit()) else d
+
+
+def dept_cle(d) -> str:
+    """Forme de comparaison d'un département : majuscules, « 6 » → « 06 », Corse « 2A »/« 2B » telle quelle,
+    outre-mer sur ses TROIS chiffres (« 974 »). Jamais tronquée : 971 à 976 ne deviennent plus tous « 97 »."""
+    return _un_chiffre(str(d or "").strip().upper())
+
+
+def dans_departements(dept, voulus) -> bool:
+    """Le département `dept` (d'un avis) fait-il partie des départements `voulus` ? Comparaison sur le code
+    COMPLET (« 974 » ≠ « 971 », « 2A » ≠ « 2B »). Seule tolérance, inchangée : « 97 » ou « 98 » saisis sur
+    deux chiffres couvrent tout leur outre-mer (971 à 976, 984 à 988), comme avant cette correction."""
+    d = dept_cle(dept)
+    if not d:
+        return False
+    for v in voulus or ():
+        v = dept_cle(v)
+        if d == v or (v in ("97", "98") and len(d) == 3 and d.startswith(v)):
+            return True
+    return False
 
 
 class SourceIndisponible(Exception):

@@ -84,6 +84,14 @@ class NormalizedTender(BaseModel):
     score: Optional[Score] = None
     dedup_key: str = ""                        # clé de déduplication
     also_seen_in: list[Provenance] = []        # mêmes AO trouvés sur d'autres sources
+    # Rectificatifs du BOAMP rattachés à cet avis par `annonce_lie` (lot 1 « Dire juste », docs/MOTEUR_LOT1.md) :
+    # la fiche reste celle de l'avis initial (même référence, même lien) ; chaque rectificatif garde son lien.
+    rectificatifs: list[Provenance] = []
+    rectifie_le: Optional[str] = None          # date de parution du dernier rectificatif rattaché (ISO)
+    date_limite_initiale: Optional[str] = None # date limite de l'avis initial, quand un rectificatif l'a changée
+    # True : un rectificatif change la date limite mais sa nouvelle date n'a pas pu être lue sans doute
+    # possible → date_limite reste vide (« non précisée »), jamais l'ancienne date ni une date devinée.
+    date_limite_rectifiee_non_lue: bool = False
     raw: dict[str, Any] = {}                   # payload brut (traçabilité)
 
     @field_validator("dce_url", mode="before")

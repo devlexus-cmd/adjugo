@@ -11,7 +11,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError as
 from datetime import date, datetime
 from typing import Optional
 
-from app.sourcing.base import TenderSource, TenderCriteria, CompanySource, SourceIndisponible
+from app.sourcing.base import (TenderSource, TenderCriteria, CompanySource, SourceIndisponible,
+                               dans_departements)
 from app.sourcing.schemas import NormalizedTender, NormalizedCompany, SourceError
 from app.sourcing.scoring import score_tender, score_company
 
@@ -120,11 +121,12 @@ class TenderSearchService:
         # Filtre DÉPARTEMENT (filet de sécurité, toutes sources confondues) : si l'utilisateur
         # a ciblé des départements, on retire les AO dont le département CONNU n'en fait pas
         # partie. Les AO sans département (nationaux / zone non précisée) sont conservés.
-        # Empêche « je saisis 29 → on me propose Arras (62) ».
-        wanted_deps = {str(d).strip()[:2] for d in getattr(criteria, "departements", []) if str(d).strip()}
+        # Empêche « je saisis 29 → on me propose Arras (62) ». Comparaison sur le code COMPLET (lot 1, point 4) :
+        # « 974 » ne laisse plus passer la Guadeloupe (971) ; la Corse « 2A »/« 2B » est comparée telle quelle.
+        wanted_deps = [d for d in getattr(criteria, "departements", []) if str(d).strip()]
         if wanted_deps:
             deduped = [t for t in deduped
-                       if (not t.departements) or any(str(d)[:2] in wanted_deps for d in t.departements)]
+                       if (not t.departements) or any(dans_departements(d, wanted_deps) for d in t.departements)]
 
         # Filtre montant DEMANDÉ par l'utilisateur : on n'écarte QUE les avis dont le
         # montant est CONNU et hors fourchette (les avis sans montant — le cas le plus
@@ -176,6 +178,11 @@ class TenderSearchService:
         }
 
 
+def _aujourdhui() -> date:
+    """« Aujourd'hui » du serveur (UTC en production) ; un seul point, que les tests figent."""
+    return date.today()
+
+
 def _is_closed(date_limite) -> bool:
     """True si la date limite de réponse est passée (AO clôturé)."""
     if not date_limite:
@@ -184,7 +191,7 @@ def _is_closed(date_limite) -> bool:
         d = datetime.strptime(str(date_limite)[:10], "%Y-%m-%d").date()
     except Exception:
         return False
-    return d < date.today()
+    return d < _aujourdhui()
 
 
 def _dedup_tenders(tenders: list[NormalizedTender]) -> list[NormalizedTender]:
@@ -205,10 +212,17 @@ def _dedup_tenders(tenders: list[NormalizedTender]) -> list[NormalizedTender]:
         if existing:
             existing.also_seen_in.append(t.provenance)
             existing.confidence = min(1.0, round(existing.confidence + 0.1, 2))  # concordance
-            # compléter les champs manquants à partir du doublon (jamais écraser)
-            for f in ("acheteur", "montant_estime", "date_limite", "dce_url", "procedure"):
+            # compléter les champs manquants à partir du doublon (jamais écraser). Une date que le rectificatif
+            # du BOAMP n'a pas permis de lire (date_limite_rectifiee_non_lue) n'est JAMAIS comblée par celle
+            # d'un doublon : elle pourrait être l'ancienne (lot 1, point 2).
+            for f in ("acheteur", "montant_estime", "date_limite", "dce_url", "procedure",
+                      "rectifie_le", "date_limite_initiale"):
+                if f == "date_limite" and existing.date_limite_rectifiee_non_lue:
+                    continue
                 if getattr(existing, f) in (None, "", []) and getattr(t, f) not in (None, "", []):
                     setattr(existing, f, getattr(t, f))
+            if t.rectificatifs and not existing.rectificatifs:
+                existing.rectificatifs = list(t.rectificatifs)
         else:
             out.append(t)
             if ref_key:

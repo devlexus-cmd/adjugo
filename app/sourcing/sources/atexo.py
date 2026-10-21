@@ -21,6 +21,7 @@ import threading
 import time
 
 from app.sourcing.base import SourceIndisponible, TenderSource, TenderCriteria
+from app.sourcing.dates_fr import date_textuelle, derniere_date_textuelle
 from app.sourcing.schemas import NormalizedTender, Provenance
 
 logger = logging.getLogger("adjugo")
@@ -94,8 +95,10 @@ def _noter_refus(name: str, motif: str) -> None:
         logger.warning("Atexo %s refuse l'en-tête honnête d'Adjugo (%s) : source marquée indisponible "
                        "pendant 1 h, SANS contournement ; la recherche continue avec BOAMP et TED. "
                        "Autorisation à demander : docs/AUTORISATIONS_PLATEFORMES.md.", name, motif)
-_MOIS = {"janv": 1, "févr": 2, "fevr": 2, "mars": 3, "avri": 4, "mai": 5, "juin": 6,
-         "juil": 7, "août": 8, "aout": 8, "sept": 9, "octo": 10, "nove": 11, "déce": 12, "dece": 12}
+
+
+# Les mois des dates (« 7 Déc. 2026 ») sont lus par la table EXPLICITE de app/sourcing/dates_fr.py : l'ancienne
+# coupe à 4 lettres laissait vides les dates d'octobre, novembre, décembre, février et avril (lot 1, point 1).
 _MAX_PAGES = 3            # plafond de pages ; le budget ADAPTATIF ci-dessous décide vraiment
 _TIME_BUDGET = 6.0       # budget temps (s) : on n'entame une page de plus que si elle y tient
 _CACHE = {}              # url -> (expire_ts, [NormalizedTender])
@@ -107,12 +110,28 @@ def _clean(s):
 
 
 def _parse_date(text):
-    ms = re.findall(r"(\d{1,2})\s+([A-Za-zéûàèùçÉ.]+)\.?\s+(\d{4})(?:\s+\d{1,2}:\d{2})?", text)
-    if not ms:
-        return None
-    d, mo, y = ms[-1]
-    m = _MOIS.get(mo.lower().strip(".")[:4], 0)
-    return f"{y}-{m:02d}-{int(d):02d}" if m else None
+    """Date limite d'un bloc de résultat lu en TEXTE (repli quand la case « clôture » manque) : la dernière
+    date « jour mois année » du bloc, le mois lu dans la table explicite de app/sourcing/dates_fr.py
+    (« Oct. », « Nov. », « Déc. », « Fév. », « Avr. » compris). Mois inconnu : None, jamais deviné."""
+    return derniere_date_textuelle(text)
+
+
+def _date_cloture(node):
+    """(case trouvée, date) : la case « clôture » d'un résultat Atexo (jour, mois, année dans trois cases,
+    ex. « 7 » « Déc. » « 2026 »). Plusieurs cases dans le même bloc ou une case incomplète : aucune date
+    (jamais celle d'une autre consultation, jamais devinée)."""
+    try:
+        cases = node.select(".cloture-line")
+    except Exception:
+        return False, None
+    if not cases:
+        return False, None
+    if len(cases) != 1:
+        return True, None
+    j, mo, a = (cases[0].select_one(sel) for sel in (".day", ".month", ".year"))
+    if not (j and mo and a):
+        return True, None
+    return True, date_textuelle(j.get_text(strip=True), mo.get_text(strip=True), a.get_text(strip=True))
 
 
 def _post_fields(soup):
@@ -161,8 +180,10 @@ def _parse_page(html, source_name, base):
             continue
         cons_url = base + (href if href.startswith("/") else "/" + href)
         cons_url = re.split(r"#|&code=", cons_url)[0]
+        trouvee, cloture = _date_cloture(node)
         te = NormalizedTender(
-            objet=titre[:400], acheteur=organisme or None, date_limite=_parse_date(t),
+            objet=titre[:400], acheteur=organisme or None,
+            date_limite=cloture if trouvee else _parse_date(t),
             lieu=organisme or None, departements=[dep] if dep else [],
             nature="Marché public", dce_url=cons_url,
             provenance=Provenance(source=source_name, source_url=cons_url, official_ref=cid),
