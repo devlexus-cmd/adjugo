@@ -217,9 +217,15 @@ def test_corbeille_des_marches_purgee_et_non_restaurable(client):
 # ── Intégrité : préfixe de chaîne pour un ancien propriétaire parti ──────────────────
 def test_verify_org_chains_prefixe():
     from app.services import audit
+    from app.models import User
     db = _db()
     try:
-        oid = 900000 + int(uuid.uuid4().int % 90000)
+        # Journal d'un compte RÉEL : sous des clés étrangères appliquées (PostgreSQL, la production), une entrée
+        # rattachée à un compte inexistant est refusée et audit.record, qui l'avale, n'écrivait rien.
+        u = User(email=f"journal_{uuid.uuid4().hex[:8]}@test.fr", hashed_password="!", full_name="Journal")
+        db.add(u)
+        db.commit()
+        oid = u.id
         audit.record(db, action="a", owner_id=oid, actor="x")
         audit.record(db, action="b", owner_id=oid, actor="x")
         from app.models import AuditLog

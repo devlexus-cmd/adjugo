@@ -60,6 +60,12 @@ def _pdf_text(pdf: bytes) -> str:
     return "\n".join(p.extract_text() or "" for p in PdfReader(io.BytesIO(pdf)).pages)
 
 
+def _sans_dates(txt: str) -> str:
+    """Le texte sans ses dates (« édité le 21/10/2026 », « figée le 21/10 ») : l'absence d'un « N/M » ne doit pas
+    dépendre du jour (« 21/10 » contient « 1/1 », « 05/11/2026 » contient « 1/2 ») ; tout autre « N/M » reste trouvé."""
+    return re.sub(r"\ble\s+\d{2}/\d{2}(?:/\d{4})?\b", "le ", txt)
+
+
 def _db():
     from app.core.database import SessionLocal
     return SessionLocal()
@@ -363,7 +369,7 @@ def test_compte_rendu_du_groupement_dit_juste():
                                          "partners": parts, "lots": []}, [])).split())
     assert "Partenaire du groupement" in txt and "Sous-traitant" in txt
     assert not mots_bannis(txt), mots_bannis(txt)
-    assert "%" not in txt and "1/2" not in txt and "64" not in txt
+    assert "%" not in txt and "1/2" not in _sans_dates(txt) and "64" not in txt
     assert "1 sur 2" in txt and "5 sur 5" in txt and "0 sur 5" in txt
 
 
@@ -375,7 +381,7 @@ def test_compte_rendu_de_la_demonstration(client, vitrine):
     r = client.get(f"/api/projects/{kerhel['id']}/consortium/report", headers=vitrine)
     assert r.status_code == 200, r.text
     txt = " ".join(_pdf_text(r.content).split())
-    assert not mots_bannis(txt) and "%" not in txt and "1/1" not in txt, txt[:400]
+    assert not mots_bannis(txt) and "%" not in txt and "1/1" not in _sans_dates(txt), txt[:400]
     assert "1 sur 1" in txt and "Partenaire du groupement" in txt
 
 

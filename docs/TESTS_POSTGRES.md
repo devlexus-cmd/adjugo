@@ -1,0 +1,113 @@
+# La suite de tests sur PostgreSQL
+
+La production tourne sur PostgreSQL (Railway). La suite (pytest, environ 2 200 tests) tourne sur SQLite par
+défaut. Elle passe désormais à 100 % sur les deux moteurs, sans recopier le code ni tolérer d'échecs « connus ».
+Jusqu'ici, ces échecs tolérés pouvaient cacher un vrai problème à chaque mise en ligne.
+
+## Lancer
+
+### SQLite (défaut, inchangé)
+
+```sh
+TZ=UTC ADJUGO_TEST_DB=ma_suite.db pytest
+```
+
+### PostgreSQL jetable : `scripts/tests_postgres.py`
+
+Le script démarre un PostgreSQL 16 jetable avec [pgserver](https://pypi.org/project/pgserver/), lance la suite
+(ou les fichiers donnés), puis arrête le serveur et efface ses données. Il se lance avec un Python où pgserver
+est installé. `--python` donne l'interpréteur du projet, celui qui lance pytest.
+
+```sh
+# Suite complète
+venvpg/bin/python scripts/tests_postgres.py --python venv/bin/python
+
+# Fichiers ou tests donnés, options de pytest passées telles quelles
+venvpg/bin/python scripts/tests_postgres.py --python venv/bin/python tests/test_secu_rgpd.py -x -rfE
+
+# Ce qui suit « -- » va à pytest
+venvpg/bin/python scripts/tests_postgres.py --python venv/bin/python -- -k effacement
+```
+
+- Le code de sortie est celui de pytest.
+- Le serveur démarre dans un dossier unique et écoute sur un socket local, sans port réseau. Plusieurs suites
+  peuvent donc tourner en même temps sur la même machine.
+- `--dossier` choisit le dossier parent du serveur (par défaut, le dossier temporaire du système).
+- `--garder` garde le serveur arrêté et la base de test, pour les inspecter.
+- `--ids-decales` est une vérification facultative, décrite plus bas.
+
+### PostgreSQL existant : `ADJUGO_TEST_PG_URL`
+
+```sh
+ADJUGO_TEST_PG_URL=postgresql://postgres@localhost:5432/postgres pytest
+```
+
+La variable suffit, avec n'importe quel serveur PostgreSQL 13 ou plus récent dont le rôle peut créer une base
+(par exemple, un service PostgreSQL dans une CI). À chaque lancement, `tests/conftest.py`, avec l'aide de
+`tests/_base_postgres.py` :
+
+1. crée une base neuve au nom unique, `adjugo_test_<pid>_<hasard>`. La base nommée dans l'URL sert seulement à
+   se connecter et n'est jamais modifiée ;
+2. y monte le schéma par les migrations (`alembic upgrade head`), comme en production. Sur PostgreSQL,
+   `app/main.py` ne crée aucune table ;
+3. supprime cette base en fin de session (`DROP DATABASE … WITH (FORCE)`). `ADJUGO_TEST_PG_GARDER=1` la garde.
+
+Chaque lancement part donc d'une base vide, comme le fichier SQLite effacé au lancement. Sans cette base neuve,
+une base réutilisée verrait ses données s'accumuler et ses compteurs d'identifiants continuer, car PostgreSQL ne
+réutilise jamais un identifiant. L'en-tête de pytest indique le moteur utilisé, sauf avec `-q`.
+
+`pytest.ini` contient déjà `-q`. Un `-q` de plus masque la ligne de total : lancez avec `-o addopts=` ou lisez
+le fichier `--junitxml`.
+
+## Ce qui a été corrigé
+
+Aucun défaut du logiciel n'a été trouvé : sur PostgreSQL, tous les échecs venaient des tests. Aucune assertion
+n'a été retirée ou relâchée, aucun test n'a été supprimé ni marqué skip ou xfail. Le comportement pour les
+clients ne change pas.
+
+1. **Clés étrangères (`fk_on`), dans 5 fichiers.** `test_secu_rgpd.py`, `test_secu2_donnees.py`,
+   `test_secu4_final.py` et `test_secu5_sauvegardes_ancrage.py` avaient chacun leur propre fixture `fk_on`, qui
+   lançait `PRAGMA foreign_keys=ON`. Cette commande n'existe que sur SQLite. Les 4 copies sont remplacées par une
+   seule fixture, dans `tests/conftest.py`, qui vérifie la même garantie sur les deux moteurs :
+   - SQLite : PRAGMA sur chaque connexion, le temps du test, et contrôle que le réglage est actif ;
+   - PostgreSQL : rien à activer, ce sont les vraies contraintes posées par les migrations ;
+   - sur les deux moteurs, avant le test : une ligne orpheline (journal rattaché à un compte qui n'existe pas)
+     doit être refusée ;
+   - l'écouteur est retiré quoi qu'il arrive (`try/finally`).
+
+   Avant cette correction, le contrôle de `test_secu_rgpd.py` échouait avant le `yield`. L'écouteur restait alors
+   branché, et toute connexion suivante échouait. D'où les « 6 échecs et 45 erreurs » et la « contamination » de
+   `test_secu_fichiers.py`, `test_smoke.py` et des fichiers lancés ensuite.
+2. **Journaux d'un compte inventé, dans 2 tests.** Il s'agit de
+   `test_hotfix_v2_fuites.py::test_fourche_historique_toleree_alteration_detectee` et
+   `test_secu3_final.py::test_verify_org_chains_prefixe`. Ces tests écrivaient le journal d'un `owner_id` sans
+   compte, ce qu'interdit la clé `audit_logs.owner_id → users.id` de la production. `audit.record` avalait le
+   refus, rien n'était écrit, et le test échouait. Ils utilisent maintenant un vrai compte, avec les mêmes
+   assertions.
+3. **Dépendance à l'ordre :
+   `test_reseau_partenaires.py::test_cron_borne_et_jamais_de_depublication_sur_erreur`.** Le cron traite au plus
+   25 profils, du moins récemment regardé au plus récent. Au-delà d'environ 37 profils publiés par les tests
+   précédents, le profil du test sortait du lot dès le 3e passage, sur les deux moteurs. Le test le remet
+   maintenant en tête de file avant chaque passage, comme il le faisait déjà avant le 4e. Il vérifie aussi, en
+   plus, que chaque passage a bien porté sur ce profil. Avant, une absence de traitement passait pour un succès.
+4. **Dépendance à la date, dans 3 tests.** Il s'agit de `test_compte_rendu_de_la_demonstration`,
+   `test_compte_rendu_du_groupement_dit_juste` et `test_pdf_compte_rendu_balisage_voulu_rendu`. Ils vérifient
+   l'absence de « 1/1 », « 1/2 » ou « 2/2 » dans le compte-rendu PDF. Or les dates imprimées en contiennent selon
+   le jour : « édité le 21/10/2026 », « figée le 21/10 », « 05/11/2026 », « 05/12/2026 ». La recherche se fait
+   maintenant sur le texte privé de ses seules dates, celles qui suivent « le ». Tout autre « N/M » reste trouvé.
+   Une sonde l'a vérifié pour chaque jour de 2026 à 2028.
+5. **Compte administrateur gardé d'un test à l'autre (`_admin_headers`, `test_reseau_partenaires.py`).** Avant de
+   réutiliser ce compte, le test vérifie qu'il existe encore et reste administrateur. Sinon, il en recrée un.
+   Rien ne repose plus sur un identifiant gardé entre deux tests sans revérification.
+
+## Vérifier l'indépendance aux identifiants : `--ids-decales`
+
+Avec `--ids-decales` (ou `ADJUGO_TEST_PG_IDS_DECALES=1`), chaque table numérote à partir d'un point différent
+(1 000 007, 2 000 007…) au lieu de 1. Sur une base neuve, le compte n° 5, l'organisation n° 5 et le marché n° 5
+coexistent : un identifiant pris pour un autre passe inaperçu. En production, les compteurs ont divergé depuis
+longtemps. Avec cette option, une telle confusion fait échouer le test, et aucun test ne peut compter sur un
+identifiant précis : par exemple, le compte de démonstration n'a plus le n° 1.
+
+## Résultats de référence (21/10/2026, depuis la production 0afc1ed)
+
+À compléter par les chiffres de la dernière exécution.

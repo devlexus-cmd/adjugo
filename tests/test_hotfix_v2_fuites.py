@@ -58,11 +58,17 @@ def test_total_jamais_montre_au_sous_traitant(client, auth, mails):
 
 def test_fourche_historique_toleree_alteration_detectee(client):
     from app.core.database import SessionLocal
-    from app.models import AuditLog
+    from app.models import AuditLog, User
     from app.services import audit
-    oid = 970000 + uuid.uuid4().int % 9000
     db = SessionLocal()
     try:
+        # Journal d'un compte RÉEL : sous des clés étrangères appliquées (PostgreSQL, la production), une entrée
+        # rattachée à un compte inexistant est refusée (audit_logs.owner_id → users.id) et audit.record, qui
+        # l'avale, n'écrivait rien. Compte créé sans passer par l'API : aucune autre entrée dans sa chaîne.
+        u = User(email=f"journal_{uuid.uuid4().hex[:8]}@test.fr", hashed_password="!", full_name="Journal")
+        db.add(u)
+        db.commit()
+        oid = u.id
         for i in range(5):
             audit.record(db, action=f"e{i}", owner_id=oid, actor="x")
         rows = db.query(AuditLog).filter(AuditLog.owner_id == oid).order_by(AuditLog.id).all()

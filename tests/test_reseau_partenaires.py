@@ -166,7 +166,18 @@ _ADMIN = {}
 
 
 def _admin_headers(client):
-    """Compte administrateur Adjugo (User.is_admin) : valide les demandes de publication."""
+    """Compte administrateur Adjugo (User.is_admin) : valide les demandes de publication. Gardé d'un test à l'autre
+    (une inscription par session), mais seulement tant qu'il existe encore et reste administrateur : rien ne repose
+    sur un identifiant gardé d'un test à l'autre sans le revérifier (base vidée, compte effacé par un autre test…)."""
+    if _ADMIN:
+        from app.models import User
+        db = _db()
+        try:
+            u = db.query(User).filter(User.email == _ADMIN["email"]).first()
+            if u is None or not u.is_admin or u.id != _ADMIN["id"]:
+                _ADMIN.clear()
+        finally:
+            db.close()
     if not _ADMIN:
         email = f"admin_{uuid.uuid4().hex[:8]}@adjugo-test.fr"
         r = client.post("/api/auth/register", json={"email": email, "password": "motdepasse123",
@@ -178,6 +189,7 @@ def _admin_headers(client):
             u = db.query(User).filter(User.email == email).first()
             u.is_admin, u.email_verified = True, True
             db.commit()
+            _ADMIN["id"], _ADMIN["email"] = u.id, email
         finally:
             db.close()
         _ADMIN["h"] = {"Authorization": f"Bearer {r.json()['access_token']}"}
@@ -822,6 +834,19 @@ def test_cron_borne_et_jamais_de_depublication_sur_erreur(client, reg, monkeypat
     assert client.post("/api/admin/run-partner-network").status_code == 403
     b = _org(client, "Profil Ancien")
     _publish(client, reg, b)
+
+    def _en_tete_de_file():
+        # Le cron traite au plus 25 profils, du moins récemment regardé au plus récent : chaque passage de ce test
+        # doit porter sur CE profil, quel que soit le nombre de profils publiés laissés par les tests précédents
+        # (au-delà d'environ 37, il sortait du lot dès le 3e passage, sur les deux moteurs).
+        db = _db()
+        try:
+            p = db.query(PartnerProfile).filter(PartnerProfile.user_id == b["id"]).first()
+            p.verified_at = datetime(2000, 1, 1)
+            p.last_check_at = datetime(2000, 1, 1)     # dernier passage du cron : le plus ancien
+            db.commit()
+        finally:
+            db.close()
     db = _db()
     try:
         p = db.query(PartnerProfile).filter(PartnerProfile.user_id == b["id"]).first()
@@ -839,13 +864,17 @@ def test_cron_borne_et_jamais_de_depublication_sur_erreur(client, reg, monkeypat
     assert row.visible is True and row.verified_sirene == before
     reg.fail = set()
     del reg.sirene[b["siren"]]                                   # SIREN introuvable ≠ cessé
+    _en_tete_de_file()
     client.post("/api/admin/run-partner-network", headers=hdr)
+    assert _profile_row(b["id"]).last_check_at > datetime(2000, 1, 1)     # ce passage a bien porté sur lui
     assert _profile_row(b["id"]).visible is True
     reg.bodacc[b["siren"]] = {"jugement": {"famille": "Jugement d'ouverture", "nature": "Liquidation judiciaire",
                                            "date": "2026-09-01"}, "dateparution": "2026-09-05"}
     reg.sirene[b["siren"]] = {"nom": b["name"].upper(), "etat": "A"}
+    _en_tete_de_file()
     client.post("/api/admin/run-partner-network", headers=hdr)
     row = _profile_row(b["id"])
+    assert row.last_check_at > datetime(2000, 1, 1)
     assert row.visible is True and row.verified_bodacc["found"] is True    # avertir, pas dépublier
     db = _db()
     try:
