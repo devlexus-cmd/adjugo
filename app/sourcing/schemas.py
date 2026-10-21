@@ -124,8 +124,9 @@ class NormalizedCompany(BaseModel):
     resultat_net: Optional[float] = None
 
     # Historique des marchés publics attribués (DECP, titulaire 1, 2 ou 3) —
-    # signal de capacité déterministe : « cette entreprise a déjà gagné ce type de marché »
-    past_wins: int = 0
+    # signal de capacité déterministe : « cette entreprise a déjà gagné ce type de marché ».
+    # None = NON VÉRIFIÉ (DECP en panne, ou entreprise non consultée) : jamais lu « 0 marché » (lot 1, point 5).
+    past_wins: Optional[int] = None
     last_win_date: Optional[str] = None
     win_domains: list[str] = []                 # familles CPV (2 chiffres) déjà gagnées
 

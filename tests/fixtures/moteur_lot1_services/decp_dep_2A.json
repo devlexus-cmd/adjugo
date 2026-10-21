@@ -1,0 +1,72 @@
+{
+ "_requete": {
+  "url": "https://data.economie.gouv.fr/api/explore/v2.1/catalog/datasets/decp-2022-marches-valides/records",
+  "params": {
+   "limit": 4,
+   "order_by": "-datenotification",
+   "select": "objet,montant,datenotification,dureemois,nature,procedure,acheteur_id,lieuexecution_code,lieuexecution_typecode,codecpv,source,titulaire_id_1",
+   "where": "objet like \"travaux\" AND dureemois > 0 AND datenotification >= date'2022-10-01' AND datenotification <= date'2026-04-01' AND startswith(lieuexecution_code, \"2A\")"
+  },
+  "lu_le": "2026-10-21"
+ },
+ "total_count": 77,
+ "results": [
+  {
+   "objet": "Travaux courants de maintenance du patrimoine routier (hors enrobé) de la Collectivité de Corse.",
+   "montant": 12000000.0,
+   "datenotification": "2026-03-17",
+   "dureemois": 48,
+   "nature": "Marché",
+   "procedure": "Appel d'offres ouvert",
+   "acheteur_id": "20007695800012",
+   "lieuexecution_code": "2A",
+   "lieuexecution_typecode": "Code département",
+   "codecpv": "45233141-9",
+   "source": "AWS",
+   "titulaire_id_1": "90000001000034"
+  },
+  {
+   "objet": "Travaux courants de maintenance du patrimoine routier (hors enrobé) de la Collectivité de Corse.",
+   "montant": 12000000.0,
+   "datenotification": "2026-03-17",
+   "dureemois": 48,
+   "nature": "Marché",
+   "procedure": "Appel d'offres ouvert",
+   "acheteur_id": "20007695800012",
+   "lieuexecution_code": "2A",
+   "lieuexecution_typecode": "Code département",
+   "codecpv": "45233141-9",
+   "source": "AWS",
+   "titulaire_id_1": "90000000100019"
+  },
+  {
+   "objet": "Mise à niveau des infrastructures du Terminal Maritime Partie Travaux",
+   "montant": 342995.3,
+   "datenotification": "2026-02-24",
+   "dureemois": 23,
+   "nature": "Marché",
+   "procedure": "Procédure adaptée",
+   "acheteur_id": "18201003300013",
+   "lieuexecution_code": "2A",
+   "lieuexecution_typecode": "Code département",
+   "codecpv": "45311000-0",
+   "source": "AIFE_PLACE",
+   "titulaire_id_1": "90000001100019"
+  },
+  {
+   "objet": "Travaux courants de maintenance du patrimoine routier (hors enrobé) de la Collectivité de Corse.",
+   "montant": 12000000.0,
+   "datenotification": "2026-02-24",
+   "dureemois": 48,
+   "nature": "Marché",
+   "procedure": "Appel d'offres ouvert",
+   "acheteur_id": "20007695800012",
+   "lieuexecution_code": "2A",
+   "lieuexecution_typecode": "Code département",
+   "codecpv": "45233141-9",
+   "source": "AWS",
+   "titulaire_id_1": "90000000100019"
+  }
+ ],
+ "_note": "Réponse publique lue le 2026-10-21 (GET, en-tête AdjugoBot). Numéros des titulaires remplacés par des numéros fictifs ; le reste est tel que lu."
+}

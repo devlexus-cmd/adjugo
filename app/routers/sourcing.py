@@ -211,8 +211,10 @@ def optimize_groupement(request: Request, req: GroupementRequest,
             entry["couverture"], entry["role"] = "propre", "mandataire"
             n_propre += 1
         elif key:
+            # « PME seulement » (lot 1, point 5 ; moteur § 6.2 point 7), comme le verdict de groupement
+            # (app/services/groupement_verdict.py) : une TPE cherche des partenaires à sa mesure.
             res = svc.discover(activity=key, departement=dep, tender_departements=deps,
-                               need_label=trade_label.get(key, ""), limit=6)
+                               need_label=trade_label.get(key, ""), limit=6, pme_only=True)
             best = res["companies"][0] if res["companies"] else None
             if best:
                 entry["couverture"], entry["role"] = "co_traitance", "cotraitant"
@@ -315,18 +317,25 @@ def renewals(request: Request, req: RenewalRequest,
     if _is_demo(current_user):
         return _demo_renewals(req.departements)
     gonogo = _criteria_dict(current_user.id, db)
-    deps = [d.strip()[:2] for d in (req.departements or []) if d.strip()]
+    # Département sur son code COMPLET (lot 1, point 4 bis) : « 974 » ne voit plus 971 ; Corse inchangée.
+    from app.services.decp import code_departement
+    deps = list(dict.fromkeys(code_departement(d) for d in (req.departements or []) if d.strip()))
 
     # 1) DECP — déterministe, sans LLM, sans quota.
+    motif = "DECP sans résultat"
     try:
         from app.services.decp import detect_renewals_decp
         res = detect_renewals_decp(req.query or "travaux", deps, gonogo, domaines=req.domaines)
         if res.get("renewals"):
             return res
+        if res.get("errors"):
+            motif = "DECP indisponible"
     except Exception as e:
         logger.warning("Radar DECP en échec, repli BOAMP+IA : %s", e)
+        motif = "DECP en erreur"
 
-    # 2) Repli : BOAMP + enrichissement IA (consomme un quota, remboursé si rien).
+    # 2) Repli : BOAMP + enrichissement IA (consomme un quota, remboursé si rien). Gardé (décision 12) ;
+    # chaque repli est noté dans le journal avec ce qu'il trouve (_journal_repli_a_venir).
     from app.core.quota import consume_analysis, refund_analysis
     from app.services.renewal import detect_renewals
     consume_analysis(current_user, db, "renouvellements")
@@ -334,14 +343,31 @@ def renewals(request: Request, req: RenewalRequest,
     try:
         with tenant_scope(current_user.id):
             res = detect_renewals(req.query or "travaux", deps, gonogo, domaines=req.domaines)
-    except Exception:
+    except Exception as e:
         refund_analysis(current_user, db)
+        _journal_repli_a_venir(motif, deps, None, f"remboursée (repli en échec : {type(e).__name__})")
         raise
     # Remboursement dès que le repli ne produit AUCUN renouvellement (BOAMP vide, hors
     # fenêtre, ou erreur) : pas de valeur rendue = pas de quota débité.
     if not res.get("renewals"):
         refund_analysis(current_user, db)
+    _journal_repli_a_venir(motif, deps, res, "débitée" if res.get("renewals") else "remboursée")
     return res
+
+
+def _journal_repli_a_venir(motif: str, deps: list, res, analyse: str) -> None:
+    """Décision 12 (lot 1, point 8) : chaque repli payant de l'onglet « À venir » (BOAMP + IA) est noté dans le
+    journal, avec ce qu'il trouve, pour trancher à la vague 1 de la veille sur une mesure. AUCUNE donnée
+    personnelle : ni utilisateur, ni organisation, ni mots tapés ; le motif du repli, les départements (codes
+    de 2 ou 3 caractères), le compte des fins de contrat, la part de durées lues ou estimées par type de contrat,
+    le sort de l'analyse et les références publiques des avis d'attribution BOAMP (10 au plus)."""
+    fins = list((res or {}).get("renewals") or [])
+    estimees = sum(1 for r in fins if r.get("duree_estimee"))
+    refs = [str(r.get("idweb") or "")[:20] for r in fins if r.get("idweb")][:10]
+    logger.info("repli payant « À venir » (BOAMP + IA) : motif=%s ; départements=%s ; fins de contrat trouvées=%d "
+                "(durée lue %d, durée estimée %d) ; erreurs de source=%d ; analyse %s ; avis BOAMP=%s",
+                motif, ",".join(deps) or "aucun", len(fins), len(fins) - estimees, estimees,
+                len((res or {}).get("errors") or []), analyse, ",".join(refs) or "aucun")
 
 
 # ── Étape 2 : analyse profonde d'UN AO (LLM, quota) ──────────────────────────────
@@ -1368,6 +1394,8 @@ def ask_ao(request: Request, req: AskRequest,
 
 # ── Étape 3 : sourcing co-traitants réels (déterministe) ─────────────────────────
 
+NOTE_MARCHES_NON_VERIFIES = "Marchés publics gagnés non vérifiés en source DECP pour ce SIRET."
+
 class CotraitantsRequest(BaseModel):
     project_id: int
     activity: str = ""          # clé métier (ex 'electricite') ou texte
@@ -1387,7 +1415,7 @@ def source_cotraitants(request: Request, req: CotraitantsRequest,
     deps = [req.departement] if req.departement else []
     res = _company_service().discover(
         activity=req.activity, departement=req.departement, query=req.query,
-        tender_departements=deps, need_label=req.activity)
+        tender_departements=deps, need_label=req.activity, pme_only=True)   # « PME seulement » (lot 1, point 5)
     # Complementarity Graph : score de SYNERGIE vs l'entreprise pilote (ce que le
     # candidat APPORTE au groupement). On trie les partenaires par synergie décroissante.
     from app.sourcing.scoring import synergy_score
@@ -1396,6 +1424,10 @@ def source_cotraitants(request: Request, req: CotraitantsRequest,
     for c in res["companies"]:
         if not c.procedure_collective:   # un partenaire en procédure reste plafonné/en bas
             c.synergy = synergy_score(c, lead_data, deps, req.activity)
+            if c.past_wins is None:
+                # DECP en panne ou non consultée pour cette entreprise : le compte est INCONNU. On ne dit
+                # jamais « aucun marché gagné » sans l'avoir lu (lot 1, point 5 ; moteur § 7, règle 5).
+                c.synergy["note"] = NOTE_MARCHES_NON_VERIFIES
     res["companies"].sort(key=lambda c: (c.synergy or {}).get("total", 0) if not c.procedure_collective else -1,
                           reverse=True)
     return {

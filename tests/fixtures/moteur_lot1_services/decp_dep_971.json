@@ -1,0 +1,72 @@
+{
+ "_requete": {
+  "url": "https://data.economie.gouv.fr/api/explore/v2.1/catalog/datasets/decp-2022-marches-valides/records",
+  "params": {
+   "limit": 4,
+   "order_by": "-datenotification",
+   "select": "objet,montant,datenotification,dureemois,nature,procedure,acheteur_id,lieuexecution_code,lieuexecution_typecode,codecpv,source,titulaire_id_1",
+   "where": "objet like \"travaux\" AND dureemois > 0 AND datenotification >= date'2022-10-01' AND datenotification <= date'2026-04-01' AND startswith(lieuexecution_code, \"971\")"
+  },
+  "lu_le": "2026-10-21"
+ },
+ "total_count": 648,
+ "results": [
+  {
+   "objet": "Les marchés de travaux courants",
+   "montant": 75950.0,
+   "datenotification": "2026-03-25",
+   "dureemois": 12,
+   "nature": "Marché",
+   "procedure": "Procédure adaptée",
+   "acheteur_id": "20001865300010",
+   "lieuexecution_code": "97110",
+   "lieuexecution_typecode": "Code postal",
+   "codecpv": "75200000-8",
+   "source": "DGFIP – PES MARCHÉ",
+   "titulaire_id_1": "90000001200035"
+  },
+  {
+   "objet": "Les marchés de travaux courants - Assistance à Maîtrise d'Ouvrage (AMO) pour l'optimisation des procédures de la commande publiquen(RELANCE)",
+   "montant": 75.0,
+   "datenotification": "2026-03-25",
+   "dureemois": 12,
+   "nature": "Marché",
+   "procedure": "Procédure adaptée",
+   "acheteur_id": "20001865300010",
+   "lieuexecution_code": "97110",
+   "lieuexecution_typecode": "Code postal",
+   "codecpv": "37810000-9",
+   "source": "AIFE_ATLINE",
+   "titulaire_id_1": "90000001300017"
+  },
+  {
+   "objet": "Travaux de menuiseries extérieures en aluminium : Dépose et pose de fenêtres à l'école maternelle Marcelle BORIFAX de Valette",
+   "montant": 97602.18,
+   "datenotification": "2026-03-24",
+   "dureemois": 3,
+   "nature": "Marché",
+   "procedure": "Procédure adaptée",
+   "acheteur_id": "21971128000012",
+   "lieuexecution_code": "97180",
+   "lieuexecution_typecode": "Code postal",
+   "codecpv": "45421132-8",
+   "source": "DGFIP – PES MARCHÉ",
+   "titulaire_id_1": "90000001400054"
+  },
+  {
+   "objet": "TRAVAUX DE DEMOLITION PARCELLES AD6",
+   "montant": 89447.0,
+   "datenotification": "2026-03-17",
+   "dureemois": 3,
+   "nature": "Marché",
+   "procedure": "Marché passé sans publicité ni mise en concurrence préalable",
+   "acheteur_id": "21971115700012",
+   "lieuexecution_code": "97115",
+   "lieuexecution_typecode": "Code postal",
+   "codecpv": "45111100-9",
+   "source": "DGFIP – PES MARCHÉ",
+   "titulaire_id_1": "90000001500011"
+  }
+ ],
+ "_note": "Réponse publique lue le 2026-10-21 (GET, en-tête AdjugoBot). Numéros des titulaires remplacés par des numéros fictifs ; le reste est tel que lu."
+}
