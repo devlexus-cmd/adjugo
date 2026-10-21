@@ -10,7 +10,6 @@ import hashlib
 import io
 import json
 import logging
-import re
 import sys
 import types
 import uuid
@@ -23,6 +22,7 @@ from pypdf import PdfReader
 
 from app.core.config import get_settings
 from app.routers import google_auth as ga
+from tests.textes_visibles import compteur
 
 HOSTILE = "A & B <Sàrl>"
 
@@ -431,12 +431,6 @@ def _pdf_text(pdf: bytes) -> str:
     return "\n".join(p.extract_text() or "" for p in PdfReader(io.BytesIO(pdf)).pages)
 
 
-def _sans_dates(txt: str) -> str:
-    """Le texte sans ses dates (« édité le 05/12/2026 » contient « 2/2 », « figée le 22/10 » aussi) : l'absence d'un
-    « N/M » ne doit pas dépendre du jour ; tout autre « N/M » reste trouvé."""
-    return re.sub(r"\ble\s+\d{2}/\d{2}(?:/\d{4})?\b", "le ", txt)
-
-
 def _no_links(pdf: bytes) -> bool:
     return all(not p.get("/Annots") for p in PdfReader(io.BytesIO(pdf)).pages)
 
@@ -494,8 +488,9 @@ def test_pdf_compte_rendu_balisage_voulu_rendu():
     txt = _pdf_text(generate_consortium_report_pdf(
         "Marché X", "M", {"readiness": {"pct": 90, "submitted": 2, "invited": 2, "lots": 1}}, []))
     assert "<b>" not in txt and "<br/>" not in txt and "<font" not in txt
-    # Décision 8 (réorganisation) : « N sur M », plus de pourcentage ni de « N/M ».
-    assert "2 sur 2" in txt and "parts reçues" in txt and "%" not in txt and "2/2" not in _sans_dates(txt)
+    # Décision 8 (réorganisation) : « N sur M », plus de pourcentage ni de « N/M » (hors des dates du document :
+    # « édité le 05/12/2026 » contient « 2/2 » ; tests/textes_visibles.compteur).
+    assert "2 sur 2" in txt and "parts reçues" in txt and "%" not in txt and not compteur(txt, "2/2")
 
 
 def test_pdf_dume_via_l_api(client, auth):

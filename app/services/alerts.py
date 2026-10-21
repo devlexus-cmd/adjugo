@@ -35,7 +35,8 @@ def _comptes_non_confirmes(db: Session) -> set:
     atelier_groupement.relancer_parts, depuis la contre-relecture), comme l'invitation elle-même, qui ne part par courriel
     que si l'expéditeur a confirmé son adresse (anti-spam par comptes jetables, invites._create_invite) — sinon le
     rappel planifié, qui porte le lien, devenait l'invitation complète envoyée à la place du compte. Les comptes d'avant
-    la vérification d'email ont été confirmés par sa migration (j4k5l6m7n8o9)."""
+    la vérification d'email ont été confirmés par sa migration (j4k5l6m7n8o9). Les alertes de marchés (moteur, lot 1)
+    ne partent pas non plus vers ces comptes, et rien n'y est marqué « déjà vu » (run_tender_alerts)."""
     try:
         from sqlalchemy import or_
         return {uid for (uid,) in db.query(User.id).filter(
@@ -532,9 +533,10 @@ def run_tender_alerts(db: Session) -> dict:
     # Joignable = adresse CONFIRMÉE (relecture du lot 1) : une adresse jamais confirmée peut être celle d'un tiers,
     # et la décision 11 (plus aucun marché écarté par sa note) multipliait les courriels vers elle. Rien n'est
     # perdu : sans marquer « déjà vu », ces marchés partent au premier passage après la confirmation. Les comptes
-    # d'avant la vérification des adresses sont confirmés (migration j4k5l6m7n8o9).
-    emailed = {uid for (uid,) in db.query(User.id).filter(User.email.isnot(None),
-                                                          User.email_verified.is_(True)).all()}
+    # d'avant la vérification des adresses sont confirmés (migration j4k5l6m7n8o9). Réunion du 22/10 : les comptes non
+    # confirmés sont ceux de _comptes_non_confirmes, la même notion que les rappels de co-traitance (vague 2b).
+    emailed = ({uid for (uid,) in db.query(User.id).filter(User.email.isnot(None)).all()}
+               - _comptes_non_confirmes(db))
     by_user = defaultdict(list)   # user_id -> [(search_name, [tenders])]
     demo_ids = _demo_user_ids(db)
     from app.services.pieces_fin import jour_paris

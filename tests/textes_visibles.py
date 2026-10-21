@@ -44,6 +44,20 @@ def mots_bannis(texte: str) -> list:
     return [nom for nom, rx in MOTS_BANNIS if rx.search(t)]
 
 
+_DATE_JJ_MM = re.compile(r"\b\d{2}/\d{2}(?:/\d{4})?\b")
+
+
+def compteur(texte: str, n_sur_m: str) -> bool:
+    """Un compteur « N/M » (« 1/1 », « 2/2 ») écrit dans le texte, jamais un morceau de date (décision 8 de la
+    réorganisation : « N sur M », plus de « N/M »). Les dates du document (« édité le 21/10/2026 », « figée le 22/10 »,
+    toujours sur deux chiffres) sont retirées d'abord, puis le compteur est cherché tel quel : sans cela, ces contrôles
+    échouaient les jours dont la date contient le compteur (« 21/10 » contient « 1/1 », « 05/12/2026 » « 2/2 »).
+    Réunion du 22/10 : la seule fonction pour ce contrôle ; elle réunit les corrections de la vague 2b (_compteur),
+    des tests PostgreSQL (_sans_dates), du moteur lot 1 et des pages annexes (_fraction), et trouve tout ce que
+    chacune trouvait hors des dates."""
+    return n_sur_m in _DATE_JJ_MM.sub(" ", texte)
+
+
 def _regex_possible(src: str, i: int) -> bool:
     k = i - 1
     while k >= 0 and src[k] in " \t\r\n":

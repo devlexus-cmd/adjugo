@@ -105,7 +105,11 @@ reste est cherché comme avant. Des vérifications ont été ajoutées (points 1
    l'absence de « 1/1 », « 1/2 » ou « 2/2 » dans le compte-rendu PDF. Or les dates imprimées en contiennent selon
    le jour : « édité le 21/10/2026 », « figée le 21/10 », « 05/11/2026 », « 05/12/2026 ». La recherche se fait
    maintenant sur le texte privé de ses seules dates, celles qui suivent « le ». Tout autre « N/M » reste trouvé.
-   Une sonde l'a vérifié pour chaque jour de 2026 à 2028.
+   Une sonde l'a vérifié pour chaque jour de 2026 à 2028. *Réunion du 22/10 :* la vague 2b, le moteur (lot 1) et
+   les pages annexes avaient corrigé les mêmes contrôles chacun à sa façon ; une seule fonction les remplace,
+   `compteur` dans `tests/textes_visibles.py`. Elle retire toutes les dates sur deux chiffres (« 21/10 »,
+   « 05/12/2026 », avec ou sans « le » devant), puis cherche le « N/M » tel quel : elle trouve tout ce que
+   trouvaient les quatre corrections hors des dates.
 5. **Compte administrateur gardé d'un test à l'autre (`_admin_headers`, `test_reseau_partenaires.py`).** Avant de
    réutiliser ce compte, le test vérifie qu'il existe encore et reste administrateur. Sinon, il en recrée un.
    Rien ne repose plus sur un identifiant gardé entre deux tests sans revérification.

@@ -30,6 +30,7 @@ import pytest
 
 from tests.test_reseau_ecrans import _method
 from tests.textes_visibles import _CLE, _docstrings, _nom_appel, mots_bannis
+from tests.textes_visibles import compteur as _compteur
 from tests.zones import zone
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -58,12 +59,6 @@ def _pdf_text(pdf: bytes) -> str:
     from pypdf import PdfReader
     assert pdf[:4] == b"%PDF"
     return "\n".join(p.extract_text() or "" for p in PdfReader(io.BytesIO(pdf)).pages)
-
-
-def _sans_dates(txt: str) -> str:
-    """Le texte sans ses dates (« édité le 21/10/2026 », « figée le 21/10 ») : l'absence d'un « N/M » ne doit pas
-    dépendre du jour (« 21/10 » contient « 1/1 », « 05/11/2026 » contient « 1/2 ») ; tout autre « N/M » reste trouvé."""
-    return re.sub(r"\ble\s+\d{2}/\d{2}(?:/\d{4})?\b", "le ", txt)
 
 
 def _db():
@@ -388,17 +383,15 @@ def test_compte_rendu_de_la_demonstration(client, vitrine):
     assert "1 sur 1" in txt and "Partenaire du groupement" in txt
 
 
-def _compteur(txt, n_sur_m):
-    """Un compteur « N/M » (« 1/1 », « 1/2 ») dans le texte, jamais un morceau de date : relecture de la vague 2b, le
-    test échouait chaque jour dont la date d'édition du PDF contient « 1/1 » (« édité le 21/10/2026 », 11/11…)."""
-    return re.search(r"(?<![\d/])" + re.escape(n_sur_m) + r"(?![\d/])", txt) is not None
-
-
 def test_le_controle_du_compteur_ignore_les_dates():
     for date_edition in ("01/10/2026", "11/11/2026", "21/10/2026", "31/12/2026", "11/12/2026", "01/01/2027"):
         assert not _compteur(f"édité le {date_edition} 1 sur 1 part reçue", "1/1"), date_edition
         assert not _compteur(f"édité le {date_edition} 1 sur 2 parts reçues", "1/2"), date_edition
     assert _compteur("parts reçues 1/1", "1/1") and _compteur("(1/2) reçues", "1/2")
+    # Réunion du 22/10 (tests/textes_visibles.compteur) : une date sans « le » devant est aussi ignorée, et un « N/M »
+    # collé à un autre chiffre hors d'une date reste trouvé (ce que trouvait _sans_dates des tests PostgreSQL).
+    assert not _compteur("Date : 21/10/2026 — 1 sur 1", "1/1") and not _compteur("21/10 1 sur 2", "1/2")
+    assert _compteur("parts 1/12", "1/1") and _compteur("1/2/3", "1/2")
 
 
 def _ai(pid, analyse):
