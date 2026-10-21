@@ -15,7 +15,7 @@ from urllib.parse import urljoin
 import httpx
 
 from app.sourcing.base import ResultatsSource, TenderSource, TenderCriteria
-from app.sourcing.dates_fr import date_iso, date_unique
+from app.sourcing.dates_fr import date_iso, date_unique, mentions
 from app.sourcing.schemas import NormalizedTender, Provenance
 
 logger = logging.getLogger("adjugo")
@@ -513,20 +513,55 @@ _REPERE_DU_DELAI = re.compile(
 # « Au lieu de 21/10/2026 à 12h00, lire 05/11/2026 à 12h00 » : la date qui suit « lire ».
 _AU_LIEU_LIRE = re.compile(r"\bau\s+lieu\s+d(?:e|u|es)\b(.*?)\blire\b(.*?)(?=\bau\s+lieu\s+d(?:e|u|es)\b|$)",
                            re.I | re.S)
+# Une date ACCOLÉE à la date limite nommée derrière « avant / après » (« … offres à déposer avant la date limite de
+# remise des offres fixée au 05/11/2026 ») : c'est la date limite elle-même, plus un repère. Forme construite par la
+# contre-relecture, jamais observée (docs/MOTEUR_LOT1.md, C.1 : « non vérifié »).
+_DATE_ACCOLEE = re.compile(
+    r"\s*,?\s*(?:est\s+|a\s+[ée]t[ée]\s+)?"
+    r"(?:fix[ée]e?s?|pr[ée]vue?s?|report[ée]e?s?|repouss[ée]e?s?|arr[êe]t[ée]e?s?|port[ée]e?s?)\s+"
+    r"(?:au|le)\s+(?:(?:lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche)\s+)?"
+    r"(\d{1,2}/\d{1,2}(?:/\d{4})?|\d{1,2}(?:er)?\s+[^\W\d_]+\.?(?:\s+\d{4})?)", re.I)
 
 
-def _lire_texte(texte: str):
+def _dates_accolees(texte: str) -> set:
+    """Les dates accolées à la date limite nommée en repère dans `texte` ; None pour une date sans année ou
+    impossible (jamais complétée)."""
+    out = set()
+    for m in _REPERE_DU_DELAI.finditer(texte):
+        a = _DATE_ACCOLEE.match(texte, m.end())
+        if a:
+            out.add(date_unique(a.group(1)))
+    return out
+
+
+def _lire_texte(texte: str, lire: Optional[str] = None):
     """(concerne, date) d'un texte de rectificatif. Concerne : il parle de la date limite de réponse. Date :
-    celle qui suit « lire » dans « Au lieu de …, lire … », sinon la seule date citée (même jour, même mois,
-    avec son année). Plusieurs dates différentes ou une date sans année : None, jamais un choix."""
+    celle qui suit « lire » dans « Au lieu de …, lire … » (ou la partie `lire` d'une forme en champs), sinon la
+    seule date citée (même jour, même mois, avec son année). Plusieurs dates différentes ou une date sans année :
+    None, jamais un choix.
+
+    La date limite nommée SEULEMENT comme repère d'un autre délai (« … avant la date limite de remise des offres ») :
+    - texte sans aucune date : il ne la concerne pas (26-100865 : un autre délai, compté en jours) ;
+    - texte qui cite une date : il la concerne peut-être (contre-relecture du lot 1, forme jamais observée). La date
+      n'est lue que si elle est accolée à la date limite (« … fixée au 05/11/2026 »), dans la partie « lire » s'il y
+      en a une ; sinon « non précisée » : jamais l'ancienne date, ni celle d'un autre délai."""
     texte = str(texte or "")
-    if not _CONCERNE_DELAI.search(_REPERE_DU_DELAI.sub(" ", texte)):
+    if _CONCERNE_DELAI.search(_REPERE_DU_DELAI.sub(" ", texte)):
+        if lire is not None:
+            return True, date_unique(lire)
+        paires = _AU_LIEU_LIRE.findall(texte)
+        if paires:
+            dates = {date_unique(apres) for _, apres in paires}
+            return True, (dates.pop() if len(dates) == 1 else None)
+        return True, date_unique(texte)
+    if not _CONCERNE_DELAI.search(texte) or not mentions(texte):
         return False, None
-    paires = _AU_LIEU_LIRE.findall(texte)
-    if paires:
-        dates = {date_unique(apres) for _, apres in paires}
-        return True, (dates.pop() if len(dates) == 1 else None)
-    return True, date_unique(texte)
+    if lire is not None:
+        parties = [lire]
+    else:
+        parties = [apres for _, apres in _AU_LIEU_LIRE.findall(texte)] or [texte]
+    dates = set().union(*(_dates_accolees(p) for p in parties))
+    return True, (dates.pop() if len(dates) == 1 else None)
 
 
 def _date_iso_champ(v) -> Optional[str]:
@@ -567,9 +602,7 @@ def _lire_element(e):
                 return True, _date_iso_champ(e.get("lireDate")), "structurée"
             return True, None, "structurée, délai non vérifié"      # autre délai : jamais observé
         textes = " ".join(str(v) for v in e.values() if isinstance(v, str))
-        c, d = _lire_texte(textes)
-        if c and isinstance(e.get("lire"), str):
-            d = date_unique(e["lire"])
+        c, d = _lire_texte(textes, e["lire"] if isinstance(e.get("lire"), str) else None)
         return c, d, "texte"
     return True, None, "non vérifiée"
 

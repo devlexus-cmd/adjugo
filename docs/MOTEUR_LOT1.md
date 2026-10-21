@@ -20,8 +20,10 @@ Le lot a été mené en deux chantiers parallèles, « Sources » (points 1 à 4
 réunis : chacun garde sa section, telle qu'il l'a écrite (les rares compléments de la réunion y sont marqués
 *Réunion*), et la réunion a la sienne (vérifications de bout en bout sur des données réelles, deux défauts trouvés en
 les faisant, corrigés). Puis une relecture en quatre angles : ses dix remarques, toutes reproduites, ont leur section
-(« Relecture », à la fin) et sont marquées *Relecture* là où elles changent ce qui était écrit. Chaque point dit :
-**avant**, **après**, **preuve**, **ce qui change pour le client**.
+(« Relecture ») et sont marquées *Relecture* là où elles changent ce qui était écrit. Enfin une contre-relecture : ses
+deux remarques, reproduites, ont la leur (« Contre-relecture », à la fin) et sont marquées *Contre-relecture* là où
+elles changent ce qui était écrit. Chaque point dit : **avant**, **après**, **preuve**, **ce qui change pour le
+client**.
 
 ## Ce qui change pour le client : la liste complète
 
@@ -47,7 +49,10 @@ change (voir « Ce qui ne change pas », plus bas).*
 5. Un rectificatif dont la nouvelle date ne peut pas être lue sans doute : « limite non précisée » au lieu de
    l'ancienne date. [S.2, R.4] *Relecture* : un rectificatif qui ne change qu'un autre délai en citant la date
    limite comme repère (« … 10 jours avant la date limite fixée pour la réception des offres ») laisse la date de
-   l'avis, comme avant le lot (1 cas sur 173 rectificatifs réels lus : 26-100865). [V.3]
+   l'avis, comme avant le lot (1 cas sur les 127 rectificatifs réels des jeux d'essai : 26-100865). [V.3]
+   *Contre-relecture* : seulement si son texte ne cite aucune date. S'il en cite une, il n'est jamais écarté : la
+   nouvelle date si elle est accolée à la date limite (« … avant la date limite de remise des offres fixée au
+   05/11/2026 »), sinon « limite non précisée », jamais l'ancienne date (forme jamais observée). [C.1]
 6. Le lien « Voir l'annonce officielle » reste celui de l'avis initial ; sur un avis rectifié, la date de la carte
    peut différer de celle de cette page (c'est la date du rectificatif). Le lien du rectificatif et « modifiée le … »
    sont dans les données ; l'écran les montrera après la 2b. [S.2]
@@ -263,6 +268,8 @@ et simplifié, 355 rectificatifs au format européen, 14 annulations. Conséquen
   | Rectificatif qui ne parle pas de la date limite de réponse (numéros de lots, critères, visite, questions, ouverture des plis) | la date de l'avis reste | oui (26-102445, 26-100570, rubrique « Visite » de 26-102230) |
   | `rubDelais` autre que « ReceptionOffres » ; bloc `infosRectif` absent ; type inattendu | **non lue** (prudence) | **non vérifié** : jamais observé |
   | Rectificatif d'un format sans `infosRectif` connu (famille DSP, 1 en octobre) | `infosRectif` cherché où qu'il soit ; sinon **non lue** | **non vérifié** |
+  | *Relecture* : date limite nommée seulement comme repère d'un autre délai (« … 10 jours calendaires avant la date limite fixée pour la réception des offres »), texte **sans aucune date** | la date de l'avis reste | oui (26-100865) |
+  | *Contre-relecture* : date limite nommée seulement derrière « avant / après », texte qui cite une date (« … offres à déposer avant la date limite de remise des offres fixée au 05/11/2026 ») | la date **accolée** à la date limite (« fixée / prévue / reportée … au / le » + date), dans la partie « lire » s'il y en a une ; sinon **non lue** | **non vérifié** : jamais observé (C.1) |
 
   « Parle de la date limite de réponse » : remise, réception, dépôt ou transmission **des offres, plis, candidatures,
   réponses ou dossiers**, « DLRO », « date limite de réponse ». Jamais la date des questions, de la visite ou de
@@ -791,7 +798,8 @@ Aucune autre requête réseau.
 |---|---|
 | **Avant** | `_CONCERNE_DELAI` était cherché dans tout le texte : 26-100865 (16/10/2026), seul rectificatif de 26-100294 (limite le 23/10/2026), ne change que le délai des questions (« … 10 jours calendaires avant la date limite fixée pour la réception des offres », lire « 7 jours ») ; il était lu « concerne la date, date non lue » : « limite non précisée » au lieu du 23/10. Régression par rapport à la production, contraire à la table de S.2 (« questions … la date de l'avis reste »). |
 | **Après** | `_REPERE_DU_DELAI` : un passage « avant / après la date limite (fixée pour / de) la remise, réception, dépôt ou transmission des offres, plis… » (ou « avant la DLRO ») est retiré du texte avant de chercher s'il parle de la date limite. Une rubrique qui change la date ET cite ce repère pour un autre délai donne toujours la nouvelle date. La règle « Rubrique : X » seule, proposée par la relecture, n'est pas prise : 26-102243 porte une rubrique « Section 3 - Procédure » qui change la date dans son corps ; la lire sur l'intitulé seul garderait l'ancienne date. |
-| **Preuve** | `test_rectificatif_du_delai_des_questions_garde_la_date_de_l_avis` (les deux lignes réelles : date du 23/10, rectificatif listé, rien de « non lu » ; cas construit sur ces textes : la nouvelle date reste lue). Comparaison sur **173 rectificatifs réels** (jeux d'essai du lot et 100 rectificatifs parus du 12/10 au 21/10 lus par la relecture) : une seule lecture change, celle de 26-100865. |
+| **Preuve** | `test_rectificatif_du_delai_des_questions_garde_la_date_de_l_avis` (les deux lignes réelles : date du 23/10, rectificatif listé, rien de « non lu » ; cas construit sur ces textes : la nouvelle date reste lue). *Contre-relecture* : comparaison sur les **127 rectificatifs réels** distincts des jeux d'essai du dépôt (144 lignes de `tests/fixtures/**/*.json`, hors annulations, dont les 100 suites de la recherche « travaux » de la relecture ; 119 avec un corps `infosRectif`, 136 éléments ; 8 au format européen) : sans la règle du repère, une seule lecture change, celle de 26-100865. Rejouable : `test_comparaison_rejouable_sur_les_rectificatifs_reels_des_jeux_d_essai` (`tests/test_moteur_lot1_contre_relecture.py`). Le nombre « 173 » écrit ici auparavant ne se retrouvait pas dans le dépôt (C.2). |
+| **Non vérifié** | *Contre-relecture* : un texte qui nomme la date limite seulement derrière « avant / après » et cite une date (« … offres à déposer avant la date limite de remise des offres fixée au 05/11/2026 ») ; jamais observé sur les 127. Il n'est plus écarté par cette règle : C.1. |
 | **Pour le client** | Point 5 de la liste : la carte garde sa date (comme en production), le rectificatif est listé dans les données. |
 
 ### V.4 Corse : un code postal « 20… » couvre 2A et 2B
@@ -876,3 +884,47 @@ Aucune autre requête réseau.
   la Corse que « 20A » / « 20B » : elle ne trouve rien, comme en production ; la relecture des avis initiaux ne porte
   pas le type de marché (un avis SERVICES peut être relu pour une recherche TRAVAUX ; le filet de `search.py` le retire,
   rien ne s'affiche).
+
+---
+
+## Contre-relecture
+
+Une contre-relecture de l'état relu (`f86e510`). **Deux remarques mineures, toutes deux reproduites, aucune
+rejetée** : une corrigée dans le code (C.1), une dans ce contrat, avec un test qui la rend rejouable (C.2). Base :
+`feat/produit-acheteur-collectivites` toujours à `0afc1ed` (rien à fusionner).
+
+Fichiers touchés : `app/sourcing/sources/boamp.py` (lecture du texte d'un rectificatif : `_lire_texte`,
+`_DATE_ACCOLEE`, `_dates_accolees`, `_lire_element`) ; nouveau `tests/test_moteur_lot1_contre_relecture.py`
+(3 tests) ; ce contrat (introduction, point 5 de la liste, table de S.2, V.3). Aucun jeu d'essai ajouté, aucune
+requête réseau ; aucun fichier de l'écran, aucun changement de base de données, aucune IA, aucun prix ni quota, robot
+de Mégalis inchangé.
+
+### C.1 La date limite nommée derrière « avant » : un rectificatif qui la change n'est jamais écarté
+
+| | |
+|---|---|
+| **Avant** | La règle du repère de V.3 (`_REPERE_DU_DELAI`) retirait du texte tout passage « avant / après la date limite de remise des offres… » avant de chercher s'il parle de la date limite. Un rectificatif qui change la date en ne la nommant que dans un tel passage était lu « ne concerne pas » : la carte gardait l'**ancienne** date. Reproduit sur `f86e510` : « Rubrique : Délais, Au lieu de : offres à déposer avant la date limite de remise des offres fixée au 21/10/2026 à 12h00, lire : … fixée au 05/11/2026 à 12h00 » → `{"concerne": False, "date": None}` ; « Les offres devront être déposées avant la date limite de réception des offres fixée au 05/11/2026 à 12h00 » → `(False, None)`. Règle neutralisée (`ef5c096`) : `(True, "2026-11-05")`. Pas une régression par rapport à la production (`0afc1ed` ne lit aucun rectificatif), mais contraire à « jamais l'ancienne date » pour une forme jamais observée. |
+| **Après** | La règle du repère n'écarte plus un rectificatif que si son texte ne cite **aucune date** (26-100865 : un autre délai, compté en jours). Si la date limite n'y est nommée que comme repère et que le texte cite une date, il **concerne** la date limite. La date n'est lue que si elle est **accolée** à la date limite (« … des offres fixée / prévue / reportée / repoussée / arrêtée / portée au / le [jour] 05/11/2026 » ou « 5 novembre 2026 »), dans la partie « lire » s'il y en a une (« Au lieu de … lire … », ou le champ `lire`) : une seule date accolée, avec son année, sinon « non précisée ». Jamais l'ancienne date, jamais la date d'un autre délai : « questions au plus tard le 16/10/2026, soit 7 jours avant la date limite de réception des offres » donne « non précisée », pas le 16/10. Un texte qui nomme la date limite hors d'un repère est lu exactement comme avant. |
+| **Preuve** | `test_rectificatif_qui_nomme_la_date_limite_derriere_avant_n_est_jamais_ecarte`, sur l'avis réel 26-100294 (limite le 23/10/2026) et des textes construits à la place de son rectificatif : forme de la remarque → 05/11, 23/10 gardée comme date initiale ; date accolée sans année → « non précisée », jamais le 23/10 ; délai des questions daté → « non précisée », ni le 16/10 ni le 23/10 ; le rectificatif réel 26-100865 → date de l'avis ; écritures voisines (« date et heure limites … fixées au jeudi 5 novembre 2026 », deux dates accolées, forme en champs, visite). Échoue sur `0afc1ed` (`'2026-10-23' == '2026-11-05'` : aucun rectificatif lu) et sur `f86e510` (même échec : rectificatif lu « ne concerne pas »). Sur les 127 rectificatifs réels des jeux d'essai, les lectures de `f86e510` et de cet état sont **identiques** (aucun n'emprunte la nouvelle règle : C.2). |
+| **Non vérifié** | Toute la forme : jamais observée. Les verbes reconnus (fixée, prévue, reportée, repoussée, arrêtée, portée, suivis de « au » ou « le ») sont choisis, pas relevés ; derrière « avant / après », une autre écriture accolée (« … avant la date limite de remise des offres du 05/11/2026 », « … des offres : 05/11/2026 ») donne « non précisée » (prudence). Un texte qui ne change qu'un autre délai, cite une date et la date limite comme repère donne aussi « non précisée » alors que la date de l'avis reste juste : c'est le prix de « jamais l'ancienne date ». |
+| **Pour le client** | Aucun changement sur les rectificatifs observés. Sur cette forme, s'il en paraît : la nouvelle date (accolée), ou « limite non précisée », au lieu de l'ancienne date (point 5 de la liste). |
+
+### C.2 La comparaison de V.3, rejouable depuis le dépôt
+
+| | |
+|---|---|
+| **Avant** | La preuve de V.3 et le point 5 de la liste citaient « 173 rectificatifs réels ». Recompté sur `f86e510` : les jeux d'essai `tests/fixtures/**/*.json` contiennent 144 lignes de rectificatif hors annulations, **127 rectificatifs distincts**, dont 119 avec un corps `infosRectif` (136 éléments) et 8 au format européen. Aucun compte ne donne 173. Les seules suites enregistrées en plus de celles des chantiers sont les 100 de la recherche « travaux » de la relecture (parues du 06/10 au 21/10/2026), comprises dans ces 127 ; si la relecture en a lu d'autres (« 100 rectificatifs parus du 12/10 au 21/10 »), elles ne sont pas dans le dépôt et ne sont plus citées. La conclusion, elle, se vérifie sur les 127 : seule la lecture de 26-100865 change. |
+| **Après** | Le contrat cite le nombre rejouable (127 rectificatifs, dont 119 avec corps) et dit comment rejouer la comparaison. Aucun jeu d'essai ajouté. |
+| **Preuve** | `test_comparaison_rejouable_sur_les_rectificatifs_reels_des_jeux_d_essai` : parcourt tous les jeux d'essai, vérifie les comptes (144, 127, 119, 136, 8), lit chaque rectificatif avec et sans la règle du repère (une seule différence : 26-100865), vérifie qu'aucun n'emprunte la règle de C.1, et que le contrat cite ce nombre. Échoue sur `0afc1ed` (aucune lecture de rectificatif : `_est_suite` introuvable) et sur `f86e510` (règle de C.1 absente : `_dates_accolees` introuvable ; son contrat cite encore « 173 rectificatifs » au point 5 et en V.3). |
+| **Pour le client** | Rien. |
+
+### C.3 Vérifications
+
+- **Les 3 nouveaux tests** (`tests/test_moteur_lot1_contre_relecture.py`) échouent sur `0afc1ed` et sur `f86e510`
+  (exports `git archive`, nouveaux tests et jeux d'essai copiés, réseau coupé par un greffon), chacun sur le défaut
+  qu'il couvre : voir les preuves ci-dessus ; le test du contrat échoue faute de cette section.
+- **Suite complète** sur cet état (`TZ=UTC`, base SQLite d'essai, Python 3.12 depuis `requirements.lock`) : **2 255
+  tests, tous verts** (les 2 252 de la relecture, aucun adapté, et les 3 nouveaux).
+- **Lectures des rectificatifs réels inchangées** : les 127 des jeux d'essai, lus par `lire_rectificatif` de `f86e510`
+  et de cet état, donnent les mêmes résultats (aucune différence).
+- **Aucun changement de base de données** : rien à vérifier sur Postgres.
