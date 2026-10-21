@@ -29,6 +29,20 @@ logger = logging.getLogger("adjugo")
 router = APIRouter(prefix="/api/amont", tags=["Veille amont (signaux d'investissement)"])
 
 
+FERMEE = "« Projets à venir » n'est pas encore ouvert : rien n'a été analysé ni décompté."
+FERMEE_AUTO = ("« Projets à venir » n'est pas encore ouvert : la veille automatique ne peut pas être activée "
+               "pour le moment.")
+
+
+def _exiger_ouverte() -> None:
+    """Lot 1, point 7 : tant que l'interrupteur PROJETS_A_VENIR est éteint (app/core/interrupteurs.py), les adresses
+    de la veille masquée refusent proprement (404 et une phrase claire), AVANT toute lecture de fichier, tout appel
+    à l'IA et tout débit d'analyse. Aucun écran n'y mène ; un appel direct ne coûte plus rien au client."""
+    from app.core.interrupteurs import projets_a_venir_actif
+    if not projets_a_venir_actif():
+        raise HTTPException(404, FERMEE)
+
+
 def _country(user, db) -> str:
     if getattr(user, "org_id", None):
         org = db.query(Organization).filter(Organization.id == user.org_id).first()
@@ -123,6 +137,7 @@ def _analyze_text(text: str, source_name: str, current_user: User, db: Session, 
 @limiter.limit("30/hour")
 async def analyze_upload(request: Request, file: UploadFile = File(...), domaines: str = Form(""),
                          current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    _exiger_ouverte()                            # veille masquée : 404, rien lu, rien débité
     exiger_ia(current_user, db)                  # essai terminé sans forfait : 402 avant de lire le fichier
     content = await aread_upload_limited(file)   # lecture bornée : 413 au-delà de 50 Mo
     try:
@@ -140,6 +155,7 @@ async def analyze_upload(request: Request, file: UploadFile = File(...), domaine
 @limiter.limit("30/hour")
 def analyze_text(request: Request, payload: dict,
                  current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    _exiger_ouverte()                            # veille masquée : 404, rien lu, rien débité
     text = (payload or {}).get("text", "")
     if not isinstance(text, str):   # payload {"text": null} ou nombre → 422 propre, pas un 500
         text = ""
@@ -162,6 +178,7 @@ def scan(request: Request, req: ScanRequest = ScanRequest(),
     """Adjugo VA CHERCHER les délibérations récentes des collectivités (open data),
     pré-filtre l'investissement, puis l'IA détecte les projets futurs.
     Si des départements sont ciblés, on ne garde que ces zones."""
+    _exiger_ouverte()                            # veille masquée : 404, aucune lecture, aucun débit
     exiger_ia(current_user, db)                  # essai terminé sans forfait : 402 avant toute recherche
     country = _country(current_user, db)
     deps = {d.strip()[:3] for d in (req.departements or []) if d.strip()}
@@ -205,8 +222,13 @@ def auto_status(current_user: User = Depends(get_current_user), db: Session = De
 @router.post("/auto")
 def set_auto(req: AutoRequest, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Active/désactive la veille amont automatique : un scan régulier détecte les
-    nouveaux projets et envoie un email des nouveautés pertinentes."""
+    nouveaux projets et envoie un email des nouveautés pertinentes.
+    Veille masquée (PROJETS_A_VENIR éteint) : l'activation est refusée (404) ; la désactivation reste
+    toujours possible (retirer son accord aux courriels ne coûte rien et ne doit jamais être bloqué)."""
     if req.enabled:
+        from app.core.interrupteurs import projets_a_venir_actif
+        if not projets_a_venir_actif():
+            raise HTTPException(404, FERMEE_AUTO)
         exiger_ia(current_user, db)              # essai terminé sans forfait : la veille par l'IA est en pause
     current_user.amont_alerts_enabled = bool(req.enabled)
     db.commit()

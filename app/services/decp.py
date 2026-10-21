@@ -20,6 +20,38 @@ from app.services.renewal import _score, _parse  # scoring + parsing partagés
 logger = logging.getLogger("adjugo")
 
 
+class DecpIndisponible(Exception):
+    """La DECP n'a pas répondu (ou a répondu sans compte lisible) : le résultat est INCONNU, jamais
+    « 0 marché » (moteur § 7, règle 5 : jamais d'absence affirmée sans vérification)."""
+
+
+def code_departement(code) -> str:
+    """Département d'un code de lieu (code du département, code postal ou code commune), sur son code
+    COMPLET : deux chiffres en métropole (« 6 » → « 06 », « 29232 » → « 29 »), trois en outre-mer
+    (« 97432 » → « 974 », jamais « 97 »), Corse « 2A » / « 2B » inchangée. Un code postal corse
+    (« 20110 ») reste « 20 », comme avant : il ne dit pas 2A ou 2B, on ne le devine pas."""
+    s = str(code or "").strip().upper()
+    if not s:
+        return ""
+    if s.isdigit() and len(s) == 1:
+        return s.zfill(2)
+    if s[:2] in ("2A", "2B"):
+        return s[:2]
+    if s[:2] in ("97", "98") and len(s) >= 3 and s[:3].isdigit():
+        return s[:3]
+    return s[:2]
+
+
+def dans_les_departements(code_lieu, departements) -> bool:
+    """Le lieu d'exécution DECP est-il dans un des départements voulus ? Même règle que le filtre envoyé
+    à la DECP (startswith sur le code lieu) : « 974 » garde 97432 et écarte 97110 ; « 29 » garde 29, 29232
+    et 29000. Sans département voulu, tout lieu convient."""
+    if not departements:
+        return True
+    lieu = str(code_lieu or "").strip().upper()
+    return any(lieu.startswith(str(d)) for d in departements if str(d))
+
+
 @lru_cache(maxsize=4096)
 def _acheteur_name(siren: str) -> str:
     """SIREN (9 chiffres) → raison sociale via l'annuaire public des entreprises
@@ -69,7 +101,8 @@ def _fetch(query: str, departements, cpv=None, per: int = 100) -> list:
 def detect_renewals_decp(query: str, departements, criteria: dict, domaines=None) -> dict:
     """Marchés attribués (DECP) dont le contrat arrive bientôt à terme → fenêtre d'attaque.
     Déterministe : fin = date_notification + durée réelle. Aucun LLM."""
-    deps = [str(d).strip()[:2] for d in (departements or []) if str(d).strip()]
+    # Outre-mer : code COMPLET (974 ≠ 971) ; la Corse (« 2A ») et la métropole ne changent pas.
+    deps = list(dict.fromkeys(code_departement(d) for d in (departements or []) if str(d).strip()))
     try:
         rows = _fetch(query, deps, cpv=(criteria or {}).get("codes_cpv"))
     except Exception as e:
@@ -108,9 +141,10 @@ def detect_renewals_decp(query: str, departements, criteria: dict, domaines=None
         # ignore juste ce row (240 mois = 20 ans, plafond réaliste des marchés publics).
         if not notif or not isinstance(duree, (int, float)) or not (0 < duree <= 240):
             continue
-        dep = (str(row.get("lieuexecution_code") or "")[:2])
-        if deps and dep not in deps:                       # filtre département côté client
+        code_lieu = str(row.get("lieuexecution_code") or "")
+        if not dans_les_departements(code_lieu, deps):     # filtre département côté client
             continue
+        dep = code_departement(code_lieu)
         fin = notif + timedelta(days=int(duree * 30.4))
         renouv = fin - timedelta(days=120)                  # republication ~4 mois avant la fin
         if not (win_start <= renouv <= win_end):
@@ -150,7 +184,8 @@ def wins_by_siren(siren: str) -> dict:
     """Marchés publics attribués à une entreprise (via DECP, titulaire 1, 2 ou 3). Signal de capacité
     déterministe et sourcé — « cette entreprise a déjà remporté ce type de marché » (l'attribution ne
     prouve ni l'exécution ni sa qualité). Retourne {count, last_date, domains} (familles CPV
-    2 chiffres). Échec = compte 0 (jamais inventé)."""
+    2 chiffres) quand la DECP a répondu. Une panne lève DecpIndisponible : le compte est alors
+    INCONNU (« non vérifié »), jamais un « 0 marché » (lot 1 « Dire juste », point 5)."""
     siren = "".join(ch for ch in str(siren or "") if ch.isdigit())[:9]
     if len(siren) != 9:
         return {"count": 0, "last_date": "", "domains": []}
@@ -160,8 +195,12 @@ def wins_by_siren(siren: str) -> dict:
                   "order_by": "-datenotification"}
         data = get_with_retry(API, params=params, timeout=8).json()
     except Exception as e:
-        logger.info("DECP wins_by_siren indisponible (%s) : %s", siren, e)
-        return {"count": 0, "last_date": "", "domains": []}
+        # Le numéro n'est pas écrit dans le journal : celui d'un entrepreneur individuel est une donnée personnelle.
+        logger.info("DECP wins_by_siren indisponible : %s", type(e).__name__)
+        raise DecpIndisponible(type(e).__name__) from e
+    if not isinstance(data, dict) or not isinstance(data.get("total_count"), int):
+        logger.info("DECP wins_by_siren : réponse sans compte lisible")
+        raise DecpIndisponible("réponse sans compte")
     rows = data.get("results", []) or []
     fams = set()
     for row in rows:
@@ -169,4 +208,4 @@ def wins_by_siren(siren: str) -> dict:
         if len(digits) >= 2:
             fams.add(digits[:2])
     last = str((rows[0].get("datenotification") if rows else "") or "")[:10]
-    return {"count": int(data.get("total_count") or 0), "last_date": last, "domains": sorted(fams)}
+    return {"count": int(data["total_count"]), "last_date": last, "domains": sorted(fams)}

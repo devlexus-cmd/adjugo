@@ -375,9 +375,11 @@ def test_compte_rendu_de_la_demonstration(client, vitrine):
     r = client.get(f"/api/projects/{kerhel['id']}/consortium/report", headers=vitrine)
     assert r.status_code == 200, r.text
     txt = " ".join(_pdf_text(r.content).split())
-    # « 1/1 » comme fraction seulement : la date d'édition du compte-rendu (« édité le 21/10/2026 ») contient aussi
-    # « 1/1 » les jours en 1 d'octobre à décembre ; ce test échouait ces jours-là (moteur, lot 1, docs/MOTEUR_LOT1.md).
-    assert not mots_bannis(txt) and "%" not in txt and not re.search(r"(?<![\d/])1/1(?![\d/])", txt), txt[:400]
+    # Les dates du compte-rendu (« édité le 21/10/2026 », « figée le 21/10 ») ne sont pas des « N/M » : sans les
+    # retirer, ce test échouait certains jours (« 21/10 » contient « 1/1 »). Une date s'écrit sur 2 chiffres ; et
+    # « 1/1 » n'est compté que comme fraction isolée (moteur, lot 1, docs/MOTEUR_LOT1.md, réunion des deux corrections).
+    sans_dates = re.sub(r"\b\d{2}/\d{2}(?:/\d{4})?\b", " ", txt)
+    assert not mots_bannis(txt) and "%" not in txt and not re.search(r"(?<![\d/])1/1(?![\d/])", sans_dates), txt[:400]
     assert "1 sur 1" in txt and "Partenaire du groupement" in txt
 
 

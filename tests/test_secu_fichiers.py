@@ -256,8 +256,11 @@ def test_coffre_fort_413_au_dela_de_la_limite(client, auth):
     assert "volumineux" in r.json()["detail"]
 
 
-def test_routes_dossier_413_au_dela_de_50mo(client, auth):
+def test_routes_dossier_413_au_dela_de_50mo(client, auth, monkeypatch):
     big = b"PK" + b"0" * (50 * MB + 10)
+    # /api/amont/analyze-upload refuse tout (404, rien lu) tant que « Projets à venir » est éteint (moteur, lot 1,
+    # point 7) : la lecture bornée se vérifie veille ouverte.
+    monkeypatch.setenv("PROJETS_A_VENIR", "1")
     # (/api/knowledge/memoire-upload ne lit plus de fichier : le dossier se rédige dans l'atelier.)
     for url, data in (("/api/knowledge/upload", {}), ("/api/amont/analyze-upload", {})):
         r = client.post(url, headers=auth["headers"], data=data,

@@ -10,12 +10,13 @@ extraite du texte quand elle est citée, sinon ESTIMÉE par type de contrat — 
 labellisée « estimation ». Aucune date ni titulaire inventé (anti-hallucination).
 """
 import logging
+import re
 from datetime import date, timedelta
 
 import httpx
 
 from app.services.llm import complete_json
-from app.services.agents.amont import _words, _deps, _dep_of  # helpers de scoring partagés
+from app.services.agents.amont import _words  # helper de scoring partagé
 
 logger = logging.getLogger("adjugo")
 API = "https://www.boamp.fr/api/explore/v2.1/catalog/datasets/boamp/records"
@@ -145,11 +146,20 @@ def _score(r, criteria, domaines, renouv, today) -> int:
         metier = 27
     else:
         metier = 10
-    deps = _deps(criteria.get("departements"))
-    zone = 25 if (deps and r.get("dept") in deps) else (15 if not deps else 6)
+    deps = _departements_voulus(criteria.get("departements"))
+    dep = str(r.get("dept") or "").strip().upper()
+    zone = 25 if (deps and any(dep.startswith(d) for d in deps)) else (15 if not deps else 6)
     days = (renouv - today).days
     imminence = 30 if days <= 90 else (24 if days <= 270 else 16)  # plus c'est proche, plus c'est chaud
     return min(100, metier + zone + imminence)
+
+
+def _departements_voulus(v) -> list:
+    """Départements de « Ce que je cherche », sur leur code COMPLET (outre-mer « 974 », jamais « 97 » ;
+    Corse « 2A » ; « 6 » → « 06 ») : la même règle que le filtre des fins de contrat (decp.code_departement)."""
+    from app.services.decp import code_departement     # import local : decp importe ce module
+    items = v if isinstance(v, (list, tuple)) else re.split(r"[,;\s]+", str(v or ""))
+    return [c for c in (code_departement(x) for x in items) if c]
 
 
 def _parse(s):
