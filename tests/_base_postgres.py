@@ -103,11 +103,9 @@ def supprimer() -> None:
     if not _ETAT["nom"] or os.environ.get("ADJUGO_TEST_PG_GARDER", "").strip() in ("1", "true", "oui"):
         return
     from sqlalchemy import text
-    try:
-        from app.core.database import engine
-        engine.dispose()
-    except Exception:       # app pas encore importée (échec des migrations)
-        pass
+    base_app = sys.modules.get("app.core.database")      # absente si les migrations ont échoué (app jamais importée)
+    if base_app is not None:
+        base_app.engine.dispose()
     moteur = _admin(_ETAT["serveur"])
     try:
         with moteur.connect() as c:

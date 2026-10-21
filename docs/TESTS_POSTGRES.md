@@ -54,18 +54,22 @@ La variable suffit, avec n'importe quel serveur PostgreSQL 13 ou plus récent do
 
 Chaque lancement part donc d'une base vide, comme le fichier SQLite effacé au lancement. Sans cette base neuve,
 une base réutilisée verrait ses données s'accumuler et ses compteurs d'identifiants continuer, car PostgreSQL ne
-réutilise jamais un identifiant. L'en-tête de pytest indique le moteur utilisé, sauf avec `-q`.
+réutilise jamais un identifiant. L'en-tête de pytest indique le moteur et la base utilisés ; il est masqué par
+`-q`, donc visible seulement avec `-o addopts=`.
 
 `pytest.ini` contient déjà `-q`. Un `-q` de plus masque la ligne de total : lancez avec `-o addopts=` ou lisez
 le fichier `--junitxml`.
 
 ## Ce qui a été corrigé
 
-Aucun défaut du logiciel n'a été trouvé : sur PostgreSQL, tous les échecs venaient des tests. Aucune assertion
-n'a été retirée ou relâchée, aucun test n'a été supprimé ni marqué skip ou xfail. Le comportement pour les
-clients ne change pas.
+Aucun défaut du logiciel n'a été trouvé : sur PostgreSQL, tous les échecs venaient des tests. Le code de
+l'application, les migrations et les pages juridiques ne changent pas, ni le comportement pour les clients.
 
-1. **Clés étrangères (`fk_on`), dans 5 fichiers.** `test_secu_rgpd.py`, `test_secu2_donnees.py`,
+Aucune assertion n'a été retirée et aucun test n'a été supprimé ni marqué skip ou xfail. Deux recherches de texte
+ne confondent plus une date (point 4) ou un morceau d'identifiant (point 6) avec ce qu'elles cherchent ; tout le
+reste est cherché comme avant. Des vérifications ont été ajoutées (points 1 et 3).
+
+1. **Clés étrangères (`fk_on`), dans 4 fichiers.** `test_secu_rgpd.py`, `test_secu2_donnees.py`,
    `test_secu4_final.py` et `test_secu5_sauvegardes_ancrage.py` avaient chacun leur propre fixture `fk_on`, qui
    lançait `PRAGMA foreign_keys=ON`. Cette commande n'existe que sur SQLite. Les 4 copies sont remplacées par une
    seule fixture, dans `tests/conftest.py`, qui vérifie la même garantie sur les deux moteurs :
@@ -88,8 +92,9 @@ clients ne change pas.
    `test_reseau_partenaires.py::test_cron_borne_et_jamais_de_depublication_sur_erreur`.** Le cron traite au plus
    25 profils, du moins récemment regardé au plus récent. Au-delà d'environ 37 profils publiés par les tests
    précédents, le profil du test sortait du lot dès le 3e passage, sur les deux moteurs. Le test le remet
-   maintenant en tête de file avant chaque passage, comme il le faisait déjà avant le 4e. Il vérifie aussi, en
-   plus, que chaque passage a bien porté sur ce profil. Avant, une absence de traitement passait pour un succès.
+   maintenant en tête de file avant chaque passage, comme il le faisait déjà avant le 4e. Seule la clé de tri
+   (`last_check_at`) change. Le test vérifie aussi que chaque passage a bien porté sur ce profil : avant, une
+   absence de traitement passait pour un succès.
 4. **Dépendance à la date, dans 3 tests.** Il s'agit de `test_compte_rendu_de_la_demonstration`,
    `test_compte_rendu_du_groupement_dit_juste` et `test_pdf_compte_rendu_balisage_voulu_rendu`. Ils vérifient
    l'absence de « 1/1 », « 1/2 » ou « 2/2 » dans le compte-rendu PDF. Or les dates imprimées en contiennent selon
@@ -118,4 +123,36 @@ identifiant précis : par exemple, le compte de démonstration n'a plus le n° 1
 
 ## Résultats de référence (21/10/2026, depuis la production 0afc1ed)
 
-À compléter par les chiffres de la dernière exécution.
+Suite complète, ordre naturel, `TZ=UTC`, venv Python 3.12 installé depuis `requirements.lock` :
+
+| Moteur | Tests | Réussis | Échecs | Erreurs | Ignorés |
+|---|---|---|---|---|---|
+| SQLite (défaut) | 2 205 | 2 205 | 0 | 0 | 0 |
+| PostgreSQL 16.2 jetable (`scripts/tests_postgres.py`) | 2 205 | 2 205 | 0 | 0 | 0 |
+
+Avant ces corrections, sur la même suite : SQLite donnait 1 échec (la date du jour) ; PostgreSQL donnait 20 échecs
+et 24 erreurs.
+
+Contrôles d'indépendance, suite complète, tous réussis (2 205 sur 2 205) :
+
+- fichiers en ordre inverse : sur SQLite et sur PostgreSQL ;
+- fichiers mélangés : sur SQLite ;
+- tous les tests mélangés d'un fichier à l'autre : sur SQLite ;
+- tous les tests mélangés d'un fichier à l'autre, avec `--ids-decales` : sur PostgreSQL.
+
+D'autres contrôles ont été faits sur une partie de la suite :
+
+- **Cron :** dans l'ordre de fichiers qui faisait échouer le test du cron, ce test échoue sur le code de production
+  (1 échec sur 295) et passe après correction (295 sur 295), sur SQLite comme sur PostgreSQL.
+- **Clés étrangères :** une fois la clé `audit_logs_owner_id_fkey` retirée de la base de test PostgreSQL, la
+  fixture `fk_on` échoue (« DID NOT RAISE »). Son contrôle détecte donc bien des clés étrangères absentes.
+- **Dates :** les 3 tests du compte-rendu passent avec 7 dates d'édition simulées (21/10, 05/11, 05/12, 11/01,
+  22/02, 11/11 et 12/12).
+
+La première exécution avec `--ids-decales` a révélé l'assertion décrite au point 6.
+
+Deux tests dépendent du temps de calcul, pas du moteur : `test_dpgf_csv_volumineux_borne` et
+`test_dpgf_csv_borne_avant_le_travail_sur_les_cellules`. Ils mesurent en secondes un contrôle de CSV, sans aucune
+base. Une fois, la machine était très chargée par d'autres suites (charge 25) : ils ont échoué sur PostgreSQL, et
+de la même façon sur SQLite (2,05 s mesurées pour une limite de 2 s). À charge normale, ils passent sur les deux
+moteurs. Ils n'ont pas été modifiés.
