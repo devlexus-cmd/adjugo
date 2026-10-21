@@ -12,7 +12,7 @@ from datetime import date, datetime
 from typing import Optional
 
 from app.sourcing.base import (TenderSource, TenderCriteria, CompanySource, SourceIndisponible,
-                               dans_departements)
+                               dans_departements, lignes_lues)
 from app.sourcing.schemas import NormalizedTender, NormalizedCompany, SourceError
 from app.sourcing.scoring import score_tender, score_company
 
@@ -61,6 +61,7 @@ class TenderSearchService:
                gonogo: Optional[dict] = None) -> dict:
         tenders: list[NormalizedTender] = []
         errors: list[SourceError] = []
+        brut = 0        # lignes reçues des sources pour cette page (avant rattachement, dédup et filtres)
 
         # Disjoncteur : on saute les sources en panne (fail-fast, pas de réattente).
         active = [s for s in self.sources if not _cb_open(s.name)]
@@ -76,7 +77,9 @@ class TenderSearchService:
                 src = futs[fut]
                 processed.add(fut)
                 try:
-                    tenders.extend(fut.result())
+                    res = fut.result()
+                    tenders.extend(res)
+                    brut += lignes_lues(res)
                     _cb_ok(src.name)
                 except SourceIndisponible as e:
                     errors.append(SourceError(source=src.name, message=str(e)[:200]))
@@ -92,7 +95,9 @@ class TenderSearchService:
                 # Terminée JUSTE après la deadline globale : on récupère son résultat valide
                 # au lieu de le jeter (sinon une source utile mais lente perdait tout).
                 try:
-                    tenders.extend(fut.result())
+                    res = fut.result()
+                    tenders.extend(res)
+                    brut += lignes_lues(res)
                     _cb_ok(src.name)
                 except SourceIndisponible as e:
                     errors.append(SourceError(source=src.name, message=str(e)[:200]))
@@ -109,7 +114,10 @@ class TenderSearchService:
         # « has_more » se calcule sur le BRUT récupéré (avant dédup/filtres) : si au moins
         # une source a rempli une page, il reste probablement des résultats — sinon le
         # filtrage serveur (date passée, montant) faisait croire à tort qu'on était au bout.
-        raw_more = len(tenders) >= max(1, getattr(criteria, "limit", 20))
+        # Brut = les LIGNES reçues des sources (base.lignes_lues), pas leurs fiches : une page du BOAMP dont un avis
+        # annulé est retiré, ou dont un rectificatif européen rejoint son avis, reste une page pleine (relecture du
+        # lot 1) ; et les avis repris par leur rectificatif ne font pas croire qu'une page de plus existe.
+        raw_more = brut >= max(1, getattr(criteria, "limit", 20))
 
         deduped = _dedup_tenders(tenders)
         # On n'affiche JAMAIS un AO dont la date limite de réponse est passée

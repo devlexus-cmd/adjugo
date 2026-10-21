@@ -19,7 +19,9 @@ refus) ; un seul processus ; cloisonnement de la co-traitance intact ; aucun fic
 Le lot a été mené en deux chantiers parallèles, « Sources » (points 1 à 4) et « Services » (points 4 bis, 5 à 9), puis
 réunis : chacun garde sa section, telle qu'il l'a écrite (les rares compléments de la réunion y sont marqués
 *Réunion*), et la réunion a la sienne (vérifications de bout en bout sur des données réelles, deux défauts trouvés en
-les faisant, corrigés). Chaque point dit : **avant**, **après**, **preuve**, **ce qui change pour le client**.
+les faisant, corrigés). Puis une relecture en quatre angles : ses dix remarques, toutes reproduites, ont leur section
+(« Relecture », à la fin) et sont marquées *Relecture* là où elles changent ce qui était écrit. Chaque point dit :
+**avant**, **après**, **preuve**, **ce qui change pour le client**.
 
 ## Ce qui change pour le client : la liste complète
 
@@ -35,9 +37,17 @@ change (voir « Ce qui ne change pas », plus bas).*
    consultations restent en deux cartes, comme avant. [S.1, R.4]
 3. BOAMP, avis rectifié : la nouvelle date limite ; un avis repoussé reste visible après son ancienne date ; un avis
    européen rectifié n'apparaît plus deux fois. [S.2, R.3]
+3 bis. *Relecture* : ces avis repoussés (date publiée passée, nouvelle date lue et pas encore passée) sont repris en
+   première page, en plus des 15 lignes de l'écran ou des 25 des alertes : sur la recherche réelle « travaux » du
+   21/10/2026 sans département, 16 de plus pour 25 lignes (41 cartes). Un avis encore ouvert sous sa date publiée
+   n'est jamais repris ainsi : il reste à sa place dans les pages, avec son rectificatif (avant la relecture : 75
+   cartes, dont 35 avis déjà présents plus loin). « Charger plus » reste proposé tant que la source a rempli sa
+   page. [V.1, V.2]
 4. BOAMP, avis annulé ou déclaré sans suite : il disparaît. [S.2, R.3]
 5. Un rectificatif dont la nouvelle date ne peut pas être lue sans doute : « limite non précisée » au lieu de
-   l'ancienne date. [S.2, R.4]
+   l'ancienne date. [S.2, R.4] *Relecture* : un rectificatif qui ne change qu'un autre délai en citant la date
+   limite comme repère (« … 10 jours avant la date limite fixée pour la réception des offres ») laisse la date de
+   l'avis, comme avant le lot (1 cas sur 173 rectificatifs réels lus : 26-100865). [V.3]
 6. Le lien « Voir l'annonce officielle » reste celui de l'avis initial ; sur un avis rectifié, la date de la carte
    peut différer de celle de cette page (c'est la date du rectificatif). Le lien du rectificatif et « modifiée le … »
    sont dans les données ; l'écran les montrera après la 2b. [S.2]
@@ -48,7 +58,10 @@ change (voir « Ce qui ne change pas », plus bas).*
    Guadeloupe n'est plus « dans votre zone » pour une entreprise de La Réunion). [S.4, R.3]
 9. **Corse (ajouté à la réunion)** : une recherche « 2A » ou « 2B » montre enfin les avis du BOAMP, qui écrit la Corse
    « 20A » et « 20B » (19 avis ouverts le 21/10/2026 ; avant : aucun, sur toutes les recherches corses) ; une
-   entreprise qui a saisi « 2A » ou « 2B » les voit « dans votre zone ». [R.1]
+   entreprise qui a saisi « 2A » ou « 2B » les voit « dans votre zone ». [R.1] *Relecture* : une entreprise au code
+   postal corse (« 20… ») qui n'a saisi aucun département voit, comme avant, tous les avis corses « dans votre
+   zone » (le code postal donne « 20 », qui couvre 2A et 2B ; avant la relecture : « Hors zone (2A) », 33 points de
+   moins). [V.4]
 10. Une recherche fait une ou deux requêtes de plus au BOAMP (entre 0,37 et 0,64 s chacune le 21/10/2026 ; 2,0 s pour
     la recherche complète mesurée par le chantier Sources). [S.2, R.3]
 
@@ -59,6 +72,16 @@ change (voir « Ce qui ne change pas », plus bas).*
     désormais les avis d'attribution corses du BOAMP ; avant, il ne trouvait jamais rien en Corse et l'analyse était
     toujours remboursée. Il peut maintenant trouver des fins de contrat, et l'analyse est alors débitée, selon la même
     règle que partout ailleurs (remboursée s'il ne trouve rien). La règle de débit ne change pas. [R.1]
+12 bis. **Outre-mer, repli payant (relevé à la relecture)** : avant, le repli demandait « 97 » au BOAMP, qui n'écrit
+    jamais l'outre-mer ainsi : il ne trouvait rien et l'analyse était toujours remboursée. Désormais il demande « 974 »
+    (ou 971, 972, 973, 976), peut trouver des fins de contrat, et l'analyse est alors débitée, selon la règle
+    habituelle. Et la DECP ne rend plus les fins de contrat des autres départements d'outre-mer (point 11) : quand le
+    département demandé n'en a aucune, le repli payant part là où, avant, la DECP montrait celles d'un autre
+    département, sans crédit. Code inchangé (la recherche sur « 974 » est juste). **À valider par Eliot**, comme la
+    Corse (point 12). [V.5]
+12 ter. *Relecture* : une durée que l'IA n'a pas vraiment rendue (0, « 36 » en texte) est remplacée par la durée par
+    défaut du type de contrat ET dite estimée : la carte affiche « (estimée) » au lieu de « (réelle) », et le journal
+    du repli la compte en « durée estimée ». Défaut antérieur au lot. [V.6]
 13. Chaque repli payant est noté dans le journal : rien de visible. [Services 8]
 
 **Partenaires**
@@ -70,8 +93,19 @@ change (voir « Ce qui ne change pas », plus bas).*
 16. Plus aucun marché écarté par sa note d'avant dossier : les courriels contiennent plus de marchés. Sur l'alerte
     réelle « voirie » dans le 29 (21/10/2026), 7 marchés partent (5 du BOAMP, 2 de Mégalis), tous notés de 60 à 67,
     sous le seuil de 75 de « Ce que je cherche » : avant, cette alerte n'envoyait rien. [Services 6 a, R.3]
+16 bis. **Adresse non confirmée (relevé à la relecture)** : un compte dont l'adresse n'est pas confirmée ne reçoit
+    plus de courriel d'alerte de marchés (une adresse jamais prouvée peut être celle d'un tiers, et le point 16 en
+    multipliait les envois : sur l'alerte réelle « voirie » 29, 0 courriel avant le lot, 1 de 7 marchés après). Ses
+    marchés ne sont pas marqués « déjà vus » : ils partent au premier passage après la confirmation. Les comptes
+    créés avant la vérification des adresses sont confirmés (migration de juin) : non concernés. **À valider par
+    Eliot.** [V.7]
 17. Au-delà de 10 marchés par alerte, la ligne « … et N autres marchés : relancez cette recherche dans Adjugo pour les
-    voir tous. » « Tester » une alerte annonce plus de nouveaux marchés. [Services 6 a]
+    voir tous. » « Tester » une alerte annonce plus de nouveaux marchés ; la référence qu'il rend dans l'API reste
+    celle de l'avis (« 26-98235 »), comme avant (*Relecture*). [Services 6 a, V.10]
+17 bis. *Relecture*, partie écran : la bulle de « Mes alertes » dit « … qui vous correspondent (au-dessus de votre
+    seuil de compatibilité) » ; aucun seuil n'écarte plus rien. Elle est à corriger avec la partie écran du lot, après
+    la 2b (proposition : « Recevez par email les nouveaux marchés de cette recherche, 10 au plus par alerte, les autres
+    comptés »). Jusque-là, elle dit le contraire du comportement. [V.8]
 18. Les dates des consultations Mégalis apparaissent dans le courriel (« — clôture 2026-12-07 »). [S.1, R.3]
 19. Moins de marchés reçus deux fois. Aucun marché déjà reçu n'est renvoyé au passage à la nouvelle forme de mémoire ;
     un avis rectifié garde sa référence ; un avis repris par son rectificatif n'est pas renvoyé s'il avait déjà été
@@ -89,11 +123,12 @@ change (voir « Ce qui ne change pas », plus bas).*
 **Veille des projets à venir (masquée)**
 22. Rien à l'écran ; un appel direct à ses anciennes adresses répond 404 et ne coûte plus d'analyse. [Services 7]
 
-**Ce qui ne change pas** : les prix, les quotas, les débits et les remboursements ; la démo (sa recherche, ses fins de
+**Ce qui ne change pas** : les prix, les quotas, la règle de débit et de remboursement (le repli payant peut
+désormais trouver, donc débiter, en Corse et en outre-mer : points 12 et 12 bis) ; la démo (sa recherche, ses fins de
 contrat et l'aperçu de ses alertes sont servis à part, sans réseau ni IA : 194 tests de la démo verts, § R.5) ; aucune
 IA ajoutée ; le robot de Mégalis ; un seul processus, aucun nouveau planificateur ; le cloisonnement de la
-co-traitance ; aucune base de données modifiée ; les alertes lisent toujours 25 résultats par recherche, et le courriel
-ne donne aucune note sur 100.
+co-traitance ; aucune base de données modifiée ; les alertes lisent toujours 25 lignes par source et par recherche
+(plus, au BOAMP, les avis repris par leur rectificatif : point 3 bis), et le courriel ne donne aucune note sur 100.
 
 ---
 
@@ -202,6 +237,9 @@ et simplifié, 355 rectificatifs au format européen, 14 annulations. Conséquen
   rectificatifs ne portent pas), pour retrouver un avis dont seule l'ancienne date est passée. 100 lignes au plus.
 - *Une requête encore*, seulement s'il y a lieu : l'avis initial d'un tel rectificatif, relu par sa référence, avec
   les annulations qui le visent. Il n'est repris que si la nouvelle date est **lue** et pas encore passée.
+  *Relecture (§ V.1)* : et seulement si sa date limite publiée est déjà passée (`datelimitereponse < aujourd'hui`,
+  dans la requête et après lecture) ; tous les avis visés sont demandés (100 au plus, une ligne de journal au-delà),
+  et non plus les 50 premiers en silence.
 - *Rattacher.* Une suite vise son avis par `annonce_lie` (un rectificatif de rectificatif remonte jusqu'à l'avis) ;
   à défaut, au format européen, par le dossier commun (`contractfolderid`). Un rectificatif d'avis d'attribution
   (ou d'une autre nature) n'est jamais appliqué à un avis ouvert.
@@ -328,6 +366,8 @@ postal. La zone de la note comparait aussi en minuscules (« 2a » ≠ « 2A »)
 - La Corse : « 2A » reste « 2A », « 2B » reste « 2B », jamais coupés ni confondus ; un code postal corse donne « 20 »
   comme avant (la correspondance 2A/2B par code postal n'est pas ajoutée). *Réunion (§ R.1) : le BOAMP écrit la
   Corse « 20A » / « 20B » ; ses avis sont désormais demandés sous les deux formes et lus « 2A » / « 2B ».*
+  *Relecture (§ V.4) : « comme avant » n'était plus vrai pour la zone de la note (« 2A » ≠ « 20 ») ; « 20 » couvre
+  désormais 2A et 2B dans `dans_departements`, comme « 97 » couvre l'outre-mer.*
 - Hors chantier (autre chantier du lot) : les fins de contrat (`app/services/decp.py`, `app/routers/sourcing.py`).
 
 **Preuve.** `test_recherche_departements_outre_mer_code_complet` (« 974 » ne garde plus le 971 ; « 2A », « 2B »
@@ -480,7 +520,7 @@ planificateur. Le robot de Mégalis n'est pas touché.*
 | | |
 |---|---|
 | **Avant** | Quand la DECP ne donnait rien ou ne répondait pas, le repli BOAMP + IA débitait une analyse (remboursée s'il ne trouvait rien), sans aucune trace de ce qu'il trouvait (`app/routers/sourcing.py:329-344` de `0afc1ed`). |
-| **Après** | Le repli est gardé tel quel (même débit, même remboursement). Chaque repli écrit UNE ligne dans le journal (`_journal_repli_a_venir`, `app/routers/sourcing.py:358`) : son motif (« DECP sans résultat », « DECP indisponible » ou « DECP en erreur »), les départements (codes de 2 ou 3 caractères), le nombre de fins de contrat trouvées, combien ont une durée lue et combien une durée estimée par type de contrat, le nombre d'erreurs de source, le sort de l'analyse (« débitée », « remboursée », ou « remboursée (repli en échec : …) ») et les références publiques des avis d'attribution du BOAMP (10 au plus). **Sans donnée personnelle** : ni utilisateur, ni organisation, ni adresse, ni mots tapés. Exemple : `repli payant « À venir » (BOAMP + IA) : motif=DECP indisponible ; départements=29 ; fins de contrat trouvées=3 (durée lue 1, durée estimée 2) ; erreurs de source=0 ; analyse débitée ; avis BOAMP=25-34232,25-10734,25-8460`. Niveau INFO, écrit en production (`LOG_LEVEL` vaut INFO par défaut, `app/core/config.py:41` ; la valeur posée dans Railway n'est pas vérifiée). |
+| **Après** | Le repli est gardé tel quel (même débit, même remboursement). Chaque repli écrit UNE ligne dans le journal (`_journal_repli_a_venir`, `app/routers/sourcing.py:358`) : son motif (« DECP sans résultat », « DECP indisponible » ou « DECP en erreur »), les départements (codes de 2 ou 3 caractères), le nombre de fins de contrat trouvées, combien ont une durée lue et combien une durée estimée par type de contrat (*Relecture*, § V.6 : « lue » = un nombre de mois strictement positif rendu par l'IA, qui la lit dans l'objet de l'avis, non revérifié), le nombre d'erreurs de source, le sort de l'analyse (« débitée », « remboursée », ou « remboursée (repli en échec : …) ») et les références publiques des avis d'attribution du BOAMP (10 au plus). **Sans donnée personnelle** : ni utilisateur, ni organisation, ni adresse, ni mots tapés. Exemple : `repli payant « À venir » (BOAMP + IA) : motif=DECP indisponible ; départements=29 ; fins de contrat trouvées=3 (durée lue 1, durée estimée 2) ; erreurs de source=0 ; analyse débitée ; avis BOAMP=25-34232,25-10734,25-8460`. Niveau INFO, écrit en production (`LOG_LEVEL` vaut INFO par défaut, `app/core/config.py:41` ; la valeur posée dans Railway n'est pas vérifiée). |
 | **Preuve** | `test_repli_payant_note_dans_le_journal_sans_donnee_personnelle` (vrais avis d'attribution du BOAMP, IA simulée ; repli qui trouve : débité ; repli vide : remboursé). |
 | **Pour le client** | Rien. L'annonce du crédit avant le clic est un point de la partie écran (point 12), après la 2b. |
 
@@ -497,9 +537,11 @@ planificateur. Le robot de Mégalis n'est pas touché.*
 ### Ce qui ne change pas
 
 - La démo : ses fins de contrat, sa recherche et l'aperçu de ses alertes sont servis à part (`app/services/demo_search.py`, `app/routers/saved_searches.py:95-103`), sans réseau ni IA ; l'aperçu de la démo garde son propre seuil fictif.
-- Prix, quotas, débits et remboursements (le repli payant débite et rembourse comme avant).
+- Prix, quotas, et la règle de débit et de remboursement du repli payant (débité s'il trouve, remboursé sinon). *Relecture
+  (§ V.5)* : en outre-mer, il peut désormais trouver, donc débiter (avant : toujours remboursé) ; point 12 bis.
 - Aucune IA ajoutée ; le robot de Mégalis, ses limites et son refus sans contournement ; un seul processus, aucun nouveau planificateur ; aucune nouvelle route de données, cloisonnement de la co-traitance intact.
-- Les alertes lisent toujours 25 résultats par recherche ; le courriel ne donne aucune note sur 100.
+- Les alertes lisent toujours 25 lignes par source et par recherche (*Relecture* : plus, au BOAMP, les avis repris par
+  leur rectificatif, § V.1) ; le courriel ne donne aucune note sur 100.
 
 ### Relevé en passant, non corrigé (hors du périmètre de ce chantier)
 
@@ -566,7 +608,8 @@ le BOAMP écrit la Corse **« 20A »** (142 avis) et **« 20B »** (112 avis), j
 il demandait déjà « 06 » et « 6 » ; `dept_canonique` ramène « 20A » / « 20B » à « 2A » / « 2B », la forme unique
 d'Adjugo. Rien d'autre : « 20 » saisi seul ne couvre pas la Corse (il n'est pas une forme d'Adjugo, comme avant), un
 code postal corse donne toujours « 20 » (on ne devine pas 2A ou 2B), et la DECP (fins de contrat), qui écrit « 2A »,
-n'est pas concernée.
+n'est pas concernée. *Relecture (§ V.4) : dans la zone de la note, « 20 » (le code postal) couvre 2A et 2B, comme
+avant ; la requête au BOAMP d'une recherche « 20 » ne change pas.*
 
 **Preuve.** `test_corse_les_avis_du_boamp_enfin_trouves_sous_2A_et_2B`, sur la recherche réelle du 21/10/2026 faite par
 le code de la réunion (19 avis ouverts) : « 2A » rend les 13 fiches de Corse-du-Sud (dont 26-88364, rectifié par sa
@@ -698,3 +741,138 @@ fusion. La phrase du point 2 de la liste complète le dit.
   et 56 y sont cherchés) ; un département tapé « 20A » est ignoré par la recherche (seuls « 2A » et « 2B » sont
   des formes d'Adjugo) ; l'historique d'un acheteur (`app/sourcing/sources/buyer.py`, ses « zones ») montre les codes
   du BOAMP tels quels (« 20A », « 6 »).
+
+---
+
+## Relecture
+
+Quatre relectures de l'état réuni (`ef5c096`) : lecture des sources, alertes et services, suite et production, plus
+une remarque sur l'écran. **Dix remarques, toutes reproduites, aucune rejetée** : sept corrigées dans le code (V.1 à
+V.4, V.6, V.7, V.10), une dans un test (V.9), deux dans ce contrat seulement (V.5, code juste ; V.8, fichier de
+l'écran, après la 2b). Base : `feat/produit-acheteur-collectivites` toujours à `0afc1ed` (rien à fusionner).
+
+Fichiers touchés : `app/sourcing/sources/boamp.py` (relecture des avis initiaux, lecture des rectificatifs, nombre de
+lignes lues), `app/sourcing/base.py` (`ResultatsSource`, `lignes_lues`, Corse « 20 »), `app/sourcing/search.py`
+(« Charger plus »), `app/services/renewal.py` (durée lue), `app/services/alerts.py` (adresse confirmée, référence de
+« Tester ») ; tests : nouveau `tests/test_moteur_lot1_relecture.py` (9 tests) et `tests/fixtures/moteur_lot1_relecture/`,
+simulations de l'API adaptées à la nouvelle relecture dans `tests/test_moteur_lot1_sources.py` et
+`tests/test_moteur_lot1_reunion.py`, trois assertions de la référence et le test hebdomadaire dans
+`tests/test_moteur_lot1_services.py`, une assertion corse dans `tests/test_moteur_lot1_sources.py`. Aucun fichier de
+l'écran, aucun changement de base de données, aucune IA, aucun prix ni quota, robot de Mégalis inchangé.
+
+**Jeux d'essai** (réels, sans réseau pendant les tests) : la recherche « travaux » du 21/10/2026 faite par le code de
+la réunion (3 requêtes à l'API du BOAMP, en-tête AdjugoBot, lues par la relecture ; un nom et une adresse électronique
+de contact d'un rectificatif retirés, corps réduit au bloc « rectificatif ») ; l'avis 26-100294 et son rectificatif
+26-100865, relus en **une** requête GET au BOAMP le 21/10/2026 (en-tête AdjugoBot ; contacts de l'acheteur retirés).
+Aucune autre requête réseau.
+
+### V.1 La relecture des avis initiaux ne reprend que ceux dont la date publiée est passée
+
+| | |
+|---|---|
+| **Avant** | La relecture (S.2, « Une requête encore ») relisait tout avis rectifié dont la nouvelle date n'est pas passée, même encore ouvert sous sa date publiée : il était déjà trouvé par la requête principale, sur sa propre page. Recherche réelle « travaux » sans département : 64 avis à relire, 50 relus (`a_relire[:50]`, sans ligne de journal), dont 35 encore ouverts sous leur ancienne date ; **75 cartes pour une limite de 25** (alertes ; 0afc1ed : 25), 65 pour 15 (écran). Les 14 non relus comptaient au moins 6 avis dont la date publiée est passée, exactement ceux que le point 2 doit reprendre, dont 26-82275 (30/09, repoussé au 07/10 puis au 21/10). Le contrat disait le contraire (S.2 : « pour retrouver un avis dont seule l'ancienne date est passée » ; « les alertes lisent toujours 25 résultats »). |
+| **Après** | `boamp._avec_suites` : la relecture demande `(idweb in (…) AND datelimitereponse < date'aujourd'hui') OR (annulations qui les visent)`, et écarte après lecture toute ligne encore ouverte (même si l'API ne bornait pas) ; tous les avis visés sont demandés, 100 au plus (`_MAX_RELUS`, autant que de rectificatifs lus) ; au-delà, une ligne de journal dit combien ne sont pas relus ; une autre si la réponse atteint son plafond. Même recherche : **41 cartes** pour 25 lignes (25 + 16 repris, dont 26-82275 au 21/10), aucune des 35. |
+| **Preuve** | `test_relecture_ne_reprend_que_les_avis_dont_la_date_publiee_est_passee` (réponses réelles ; la ligne réelle de 26-82275 vient du jeu de la réunion) ; `test_relecture_plafonnee_jamais_en_silence` (120 avis visés, construits : 100 demandés, « 20 non relus » au journal). Les deux échouent sur `0afc1ed` (aucune relecture) et sur `ef5c096` (les 35 repris ; 50 demandés). Les simulations des tests Sources et réunion acceptent la nouvelle forme ; `test_outre_mer_974_n_est_plus_971_sur_la_recherche_reelle` vérifie que la requête est celle du 21/10, bornée. |
+| **Pour le client** | Point 3 bis de la liste. Première page : les seuls avis repris sont ceux qu'aucune page ne montrerait ; plus de doublon d'une page à l'autre. Alertes : 25 lignes, plus ces avis repris. Une recherche très large peut compter plus de 100 avis à relire : les plus anciens rectificatifs ne sont alors pas relus (dit au journal), comme une page de résultats plus loin. |
+| **Non vérifié** | L'opérateur `<` sur `datelimitereponse` avec `date'…'` n'a pas été envoyé au BOAMP réel (aucune requête de plus) ; `>=` sur ce champ l'est à chaque recherche. Si l'API l'ignorait, le filtre après lecture rend le même résultat ; si elle refusait la requête, la relecture est perdue (journal « avis initiaux des rectificatifs non relus »), la recherche non. |
+
+### V.2 « Charger plus » se juge sur les lignes reçues, pas sur les fiches
+
+| | |
+|---|---|
+| **Avant** | `search.py` calculait `has_more` sur le nombre de fiches rendues par les sources, après le rattachement des suites : une page du BOAMP qui perd un avis annulé ou qui réunit un avis et son rectificatif européen n'était plus « pleine ». Recherche réelle 971 + 974 (BOAMP seul), 15 par page, par la route de l'écran : `0afc1ed` (15, oui) (15, oui) (13, non), avec l'avis annulé 26-99092 ; `ef5c096` (16, oui) (14, **non**) : les 13 avis ouverts de la page 3 n'étaient plus atteignables. Aucune ligne du contrat n'en parlait. |
+| **Après** | `BoampSource.search` rend un `ResultatsSource` (liste de fiches + `lignes_lues`, le nombre de lignes reçues de l'API pour la page) ; `search.py` additionne `base.lignes_lues(…)` des sources (une autre source : son nombre de fiches, inchangé). La garde des liens assainit la liste en place, pour garder ce nombre. Même recherche : (16, oui) (14, oui) (13, non), 26-99092 retiré, aucun avis montré deux fois. |
+| **Preuve** | `test_charger_plus_reste_propose_quand_une_page_perd_un_avis_annule` (route `/api/sourcing/search`, offsets 0, 15, 30) ; échoue sur `0afc1ed` (26-99092 affiché) et sur `ef5c096` (page 2 sans suite). |
+| **Pour le client** | Rien de nouveau par rapport à la production : « Charger plus » reste proposé tant que la source a rempli sa page. |
+
+### V.3 Un rectificatif qui cite la date limite comme repère ne la change pas
+
+| | |
+|---|---|
+| **Avant** | `_CONCERNE_DELAI` était cherché dans tout le texte : 26-100865 (16/10/2026), seul rectificatif de 26-100294 (limite le 23/10/2026), ne change que le délai des questions (« … 10 jours calendaires avant la date limite fixée pour la réception des offres », lire « 7 jours ») ; il était lu « concerne la date, date non lue » : « limite non précisée » au lieu du 23/10. Régression par rapport à la production, contraire à la table de S.2 (« questions … la date de l'avis reste »). |
+| **Après** | `_REPERE_DU_DELAI` : un passage « avant / après la date limite (fixée pour / de) la remise, réception, dépôt ou transmission des offres, plis… » (ou « avant la DLRO ») est retiré du texte avant de chercher s'il parle de la date limite. Une rubrique qui change la date ET cite ce repère pour un autre délai donne toujours la nouvelle date. La règle « Rubrique : X » seule, proposée par la relecture, n'est pas prise : 26-102243 porte une rubrique « Section 3 - Procédure » qui change la date dans son corps ; la lire sur l'intitulé seul garderait l'ancienne date. |
+| **Preuve** | `test_rectificatif_du_delai_des_questions_garde_la_date_de_l_avis` (les deux lignes réelles : date du 23/10, rectificatif listé, rien de « non lu » ; cas construit sur ces textes : la nouvelle date reste lue). Comparaison sur **173 rectificatifs réels** (jeux d'essai du lot et 100 rectificatifs parus du 12/10 au 21/10 lus par la relecture) : une seule lecture change, celle de 26-100865. |
+| **Pour le client** | Point 5 de la liste : la carte garde sa date (comme en production), le rectificatif est listé dans les données. |
+
+### V.4 Corse : un code postal « 20… » couvre 2A et 2B
+
+| | |
+|---|---|
+| **Avant** | Pour une entreprise au code postal corse sans département saisi, les avis corses du BOAMP passaient de « dans votre zone » (`0afc1ed` : « 20A »[:2] == « 20 ») à « Hors zone (2A) », 33 points de moins (26-101468, 26-101638, 26-100536 ; codes postaux 20090 et 20200). S.4 et R.1 disaient « comme avant ». |
+| **Après** | `base.dans_departements` : « 20 » couvre « 2A » et « 2B », comme « 97 » couvre l'outre-mer. On ne devine toujours pas 2A ou 2B ; « 2A » saisi reste distinct de « 2B » ; la requête au BOAMP d'une recherche « 20 » ne change pas. Le test Sources qui disait « 2A » hors zone pour le code postal 20000 est corrigé : il décrivait un avis écrit « 2A », que seul le lot produit. |
+| **Preuve** | `test_corse_entreprise_au_code_postal_corse_voit_les_avis_corses_dans_sa_zone` (avis réels) ; échoue sur `0afc1ed` (l'avis garde « 20A ») et sur `ef5c096` (« partiel »). |
+| **Pour le client** | Comme en production (point 9 de la liste). |
+
+### V.5 Outre-mer : le repli payant peut désormais trouver, donc débiter
+
+| | |
+|---|---|
+| **Avant** | `0afc1ed` coupait le département à 2 caractères : le repli demandait `code_departement like "97"` au BOAMP. Lu par la relecture le 21/10/2026 (avis d'attribution, fenêtre du repli) : « 97 » rend 0 avis, « 974 » en rend 2 042. Le repli ne trouvait donc jamais rien en outre-mer, et l'analyse était toujours remboursée. Le contrat disait « le repli payant débite et rembourse comme avant ». |
+| **Après** | Code inchangé (la recherche sur « 974 » est juste, point 4 bis). Rejoué sans réseau sur 8 avis réels du 974 (DECP sans résultat, IA simulée), par `/api/sourcing/renewals` : `0afc1ed` demande `["97"]`, 0 fin de contrat, rien de débité ; après le lot, `["974"]`, 8 fins de contrat, analyse débitée. Second effet : la DECP ne rend plus les fins de contrat des autres départements d'outre-mer ; quand le département demandé n'en a aucune, le repli payant part. |
+| **Preuve** | Reproduction de la relecture, rejouée ici sur `0afc1ed` et sur cet état (`DEPARTEMENTS_DEMANDES_AU_BOAMP = [['97']] … ANALYSES_DEBITEES = 0` contre `[['974']] … FINS_DE_CONTRAT = 8`, débit). Pas de test : rien n'est corrigé. |
+| **Pour le client** | Point 12 bis de la liste. **À valider par Eliot**, avec la Corse (point 12) : garder ce débit, ou rembourser le repli en Corse et en outre-mer jusqu'à l'annonce du crédit avant le clic (partie écran, point 12 de la note). |
+
+### V.6 « Durée lue » : seulement un nombre de mois rendu par l'IA
+
+| | |
+|---|---|
+| **Avant** | `renewal.detect_renewals` posait `estimated = duree is None`, puis remplaçait par la durée par défaut toute durée qui n'est pas un nombre positif, sans la dire estimée : une IA qui répond 0 ou « 36 » donnait « durée 36 mois (réelle) » à l'écran et « durée lue » au journal du repli (point 8), la mesure que la décision 12 doit trancher. Défaut antérieur au lot. |
+| **Après** | Une durée n'est lue que si l'IA rend un nombre strictement positif (pas un booléen) ; sinon la durée par défaut du type de contrat, **estimée**. Une durée lue reste celle que l'IA dit lire dans l'objet de l'avis (non revérifiée). |
+| **Preuve** | `test_duree_lue_seulement_si_l_ia_rend_un_nombre_de_mois` (vrais avis d'attribution du 29 ; réponses 0, « 36 », null, 24, et un booléen) ; échoue sur `0afc1ed` et `ef5c096` (`[False, False, True]`). |
+| **Pour le client** | Point 12 ter : « (estimée) » au lieu de « (réelle) » dans ces cas. |
+
+### V.7 Alertes : jamais vers une adresse non confirmée, rien de perdu
+
+| | |
+|---|---|
+| **Avant** | `run_tender_alerts` servait tout compte qui a une adresse, confirmée ou non. Antérieur au lot, mais la décision 11 multipliait ces envois : alerte réelle « voirie » 29, compte non confirmé : `0afc1ed` 0 courriel (marchés sous le seuil, mais marqués « déjà vus », donc jamais envoyés ensuite), `ef5c096` 1 courriel de 7 marchés vers l'adresse non prouvée. La vague 2b applique déjà la règle « un compte non confirmé ne fait pas écrire Adjugo à un tiers » aux invitations. |
+| **Après** | Joignable = adresse **confirmée** (`User.email_verified`), dans le choix des alertes qui marquent « déjà vu » et à l'envoi. Un compte non confirmé n'est pas servi, et ses marchés ne sont pas marqués : ils partent au premier passage après la confirmation. Comptes d'avant la vérification des adresses : confirmés par la migration `j4k5l6m7n8o9`. Un membre d'équipe créé par son administrateur confirme son adresse comme tout compte (sans quoi il ne peut déjà pas lancer d'analyse). « Tester » une alerte n'envoie rien : inchangé. |
+| **Preuve** | `test_alerte_jamais_vers_une_adresse_non_confirmee_rien_de_perdu` (marchés réels ; non confirmé : 0 courriel, mémoire vide ; confirmé : 1 courriel de 7 marchés) ; échoue sur `0afc1ed` (mémoire marquée) et sur `ef5c096` (courriel envoyé). |
+| **Pour le client** | Point 16 bis. **À valider par Eliot** (la relecture proposait de lui soumettre la règle ; elle est en place, son retrait tient en deux lignes de `alerts.py`). |
+
+### V.8 La bulle « Mes alertes » parle encore d'un seuil
+
+| | |
+|---|---|
+| **Avant** | `app/static/app.html` (1576 sur `0afc1ed`, 1615 sur la 2b) : « Recevez par email les nouveaux marchés qui vous correspondent (au-dessus de votre seuil de compatibilité) », traduite dans `i18n.js`. Après la décision 11, aucun seuil n'écarte plus rien ; ni la liste du client ni les points 10 à 13 ne le prévoyaient. |
+| **Après** | Rien dans le code (fichier de l'écran, vague 2b en cours). Ajouté à la partie écran du lot, après la 2b : bulle à corriger (proposition : « Recevez par email les nouveaux marchés de cette recherche, 10 au plus par alerte, les autres comptés »), traductions comprises. |
+| **Preuve** | Lu dans `app.html` de `0afc1ed` et de `deploy/reorga-v2b` (`52e0d59`). |
+| **Pour le client** | Point 17 bis : jusqu'à la partie écran, la bulle dit le contraire du comportement. |
+
+### V.9 Le test hebdomadaire ne dépend plus du changement d'heure
+
+| | |
+|---|---|
+| **Avant** | `test_hebdomadaire_reellement_applique` posait `last_run = maintenant - 7 jours` en temps absolu, alors que la règle compte en jours de Paris : chaque automne, du 25/10 au 01/11 entre 22 h et 23 h UTC, 7 × 24 h ne font que 6 jours de Paris, et le test échouait. |
+| **Après** | Le test pose `last_run` à midi, heure de Paris, 2, 1 et 7 jours de Paris avant `jour_paris()` ; le code de l'alerte ne change pas (la règle « 7 jours de Paris » est juste). |
+| **Preuve** | Instant figé (greffon de la relecture) : ancien test, 26/10/2026 22:30 UTC : échec ; 21/10 10:00 : vert. Nouveau test vert le 26/10 22:30, le 25/10 22:30, le 01/11 22:45, le 29/03 22:30 (passage à l'heure d'été) et le 21/10 10:00. |
+| **Pour le client** | Rien. |
+
+### V.10 « Tester » une alerte rend la référence de l'avis, comme avant
+
+| | |
+|---|---|
+| **Avant** | Depuis le point 6 c, `fresh[].ref` valait « BOAMP\|26-… » (ou « Mégalis Bretagne\|242387 ») : `POST /api/saved-searches/{id}/run` le rendait tel quel, changement d'API non listé (l'écran ne lit que `new_matches`). |
+| **Après** | `ref` = la référence de l'avis (ou sa clé de fusion), comme avant ; la forme « SOURCE\|référence » ne sert qu'à la mémoire `last_seen_refs`. Les trois tests Services qui lisaient `ref` lisent `(source, ref)`. |
+| **Preuve** | `test_tester_une_alerte_rend_la_reference_nue` (deux marchés, dont un sous le seuil : les deux, références nues) ; échoue sur `0afc1ed` (un seul marché) et sur `ef5c096` (« BOAMP\|26-90336 »). |
+| **Pour le client** | Rien (API inchangée par rapport à la production). |
+
+### V.11 Vérifications
+
+- **Les 9 nouveaux tests** (`tests/test_moteur_lot1_relecture.py`) échouent tous sur `0afc1ed` et sur `ef5c096` (exports
+  `git archive`, nouveaux tests et jeux d'essai copiés, réseau coupé par un greffon), chacun sur le défaut qu'il couvre :
+  voir les preuves ci-dessus ; le test du contrat échoue faute de cette section.
+- **Suite complète** sur cet état (`TZ=UTC`, base SQLite d'essai, Python 3.12 depuis `requirements.lock`) : **2 252
+  tests, tous verts** (2 243 de la réunion, dont 5 adaptés, et les 9 nouveaux).
+- **Aucun changement de base de données** : rien à vérifier sur Postgres (`users.email_verified` existe depuis juin).
+- **Fusion à venir avec la 2b** : `app/services/alerts.py` est touché des deux côtés (la 2b : rappels d'invitation et
+  `_comptes_non_confirmes` ; ici : `run_tender_alerts` et `run_one_saved_search`) ; à résoudre bloc par bloc.
+
+### V.12 Ce qui reste, et ce que j'ai vu en passant
+
+- **À valider par Eliot** : V.5 (outre-mer, repli payant) avec R.1 (Corse) ; V.7 (alertes et adresse non confirmée).
+- **Partie écran, après la 2b** : la bulle « Mes alertes » (V.8), en plus des points 10 à 13 de la note.
+- **Vu, non corrigé** : une recherche « 20 » (forme que le formulaire accepte) demande « 20 » au BOAMP, qui n'écrit
+  la Corse que « 20A » / « 20B » : elle ne trouve rien, comme en production ; la relecture des avis initiaux ne porte
+  pas le type de marché (un avis SERVICES peut être relu pour une recherche TRAVAUX ; le filet de `search.py` le retire,
+  rien ne s'affiche).

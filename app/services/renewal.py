@@ -112,8 +112,12 @@ LISTE :
             continue
         duree = info.get("duree_mois")
         ctype = info.get("type") if info.get("type") in ("accord-cadre", "marché") else None
-        estimated = duree is None
-        if not isinstance(duree, (int, float)) or duree <= 0:
+        # Une durée n'est « lue » (« réelle » à l'écran, « durée lue » au journal du repli) que si l'IA a rendu un
+        # nombre de mois strictement positif ; 0, une chaîne (« 36 »), un booléen ou null : la durée par défaut du
+        # type de contrat, marquée estimée (avant : 0 ou « 36 » remplacés par la durée par défaut mais dits
+        # « réels » ; relecture du lot 1, docs/MOTEUR_LOT1.md).
+        estimated = not (isinstance(duree, (int, float)) and not isinstance(duree, bool) and duree > 0)
+        if estimated:
             duree = _DEFAULT_DUREE.get(ctype, 36)
         # Borne HAUTE : une durée LLM absurde (ex. duree_mois=999999999) ferait planter
         # timedelta (OverflowError → 500). On plafonne à 240 mois (20 ans).

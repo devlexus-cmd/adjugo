@@ -61,6 +61,32 @@ def _deps_demandes(where: str) -> set:
     return set(re.findall(r'code_departement like "([^"]+)"', where))
 
 
+# Relecture des avis initiaux : « (idweb in (…) AND datelimitereponse < date'…') OR (annulations) » depuis la
+# relecture du lot 1 (seuls les avis dont la date publiée est passée), « idweb in (…) OR (annulations) » le 21/10.
+_RELECTURE = re.compile(r"^\(?idweb in \(([^)]*)\)(?: AND datelimitereponse < date'(\d{4}-\d{2}-\d{2})'\))? OR ")
+
+
+def _relecture(w: str):
+    """(références relues, borne de date ou None, la même requête sous sa forme du 21/10) ou None."""
+    m = _RELECTURE.match(w)
+    if not m:
+        return None
+    return (set(re.findall(r'"(\d{2}-\d+)"', m.group(1))), m.group(2),
+            f'idweb in ({m.group(1)}) OR ((nature="ANNULATION" OR etat="ANNULATION") AND annonce_lie in ({m.group(1)}))')
+
+
+def _avant(r: dict, borne) -> bool:
+    """Ce que rend la borne « datelimitereponse < date'…' » du BOAMP (une annulation n'est pas bornée ici)."""
+    d = (r.get("datelimitereponse") or "")[:10]
+    return borne is None or r.get("nature") == "ANNULATION" or r.get("etat") == "ANNULATION" or (bool(d) and d < borne)
+
+
+def _forme_du_21_10(w: str) -> str:
+    """La requête telle que le code du 21/10/2026 l'écrivait (relecture sans borne de date)."""
+    rel = _relecture(w)
+    return rel[2] if rel else w
+
+
 def _api(monkeypatch, avis, suites, jour=LE_21_10, enregistrees=None):
     """API BOAMP simulée sur des lignes réelles. `enregistrees` : {where: lignes} des requêtes réellement faites par le
     code (réponse rendue telle quelle). Sinon : avis encore ouverts au jour dit et du département demandé ; suites
@@ -78,8 +104,11 @@ def _api(monkeypatch, avis, suites, jour=LE_21_10, enregistrees=None):
         p = dict(params or {})
         appels.append(p)
         w = p.get("where", "")
-        if enregistrees and w in enregistrees:
-            return _Rep([dict(r) for r in enregistrees[w]])
+        rel = _relecture(w)
+        if enregistrees and _forme_du_21_10(w) in enregistrees:
+            # Réponse réelle du 21/10 ; la borne de date de la relecture est appliquée comme le ferait le BOAMP.
+            borne = rel[1] if rel else None
+            return _Rep([dict(r) for r in enregistrees[_forme_du_21_10(w)] if _avant(r, borne)])
         deps = _deps_demandes(w)
 
         def dans(r):
@@ -87,9 +116,10 @@ def _api(monkeypatch, avis, suites, jour=LE_21_10, enregistrees=None):
         if "datelimitereponse >=" in w:
             borne = re.search(r"datelimitereponse >= date'(\d{4}-\d{2}-\d{2})'", w).group(1)
             return _Rep([r for r in parues(avis) if dans(r) and (r.get("datelimitereponse") or "")[:10] >= borne])
-        if w.startswith("idweb in"):
-            ids = set(re.findall(r'"(\d{2}-\d+)"', w.split(" OR ")[0]))
-            rows = [r for r in parues(lignes.values()) if r["idweb"] in ids and r.get("nature") != "ANNULATION"]
+        if rel:
+            ids, borne = rel[0], rel[1]
+            rows = [r for r in parues(lignes.values()) if r["idweb"] in ids and r.get("nature") != "ANNULATION"
+                    and _avant(r, borne)]
             rows += [r for r in parues(suites) if (r.get("nature") == "ANNULATION" or r.get("etat") == "ANNULATION")
                      and set(r.get("annonce_lie") or []) & ids]
             return _Rep(rows)
@@ -199,7 +229,11 @@ def test_outre_mer_974_n_est_plus_971_sur_la_recherche_reelle(client, auth, monk
     assert _zone(t["26-100178"]) == "partiel"            # Guyane, Martinique, Guadeloupe
     # Les suites du BOAMP, sur les mêmes avis réels :
     assert "26-99092" not in t and "26-101552" in t      # annulé le 14/10 (26-99478) ; relancé le 19/10
-    assert [a["where"] for a in appels] == [q["params"]["where"] for q in RECHERCHES["outremer_971_974"]["requetes"]]
+    # Les requêtes du code sont celles du 21/10, la relecture bornée en plus aux avis dont la date publiée est passée
+    # (relecture du lot 1) : 26-82275 (limite publiée le 07/10).
+    assert [_forme_du_21_10(a["where"]) for a in appels] == [q["params"]["where"]
+                                                             for q in RECHERCHES["outremer_971_974"]["requetes"]]
+    assert "AND datelimitereponse < date'2026-10-21')" in appels[2]["where"]
     assert t["26-92595"]["date_limite"] == "2026-10-30"  # « fixée au 30 octobre 2026 à 12H00 » (26-99887)
     assert t["26-92595"]["date_limite_initiale"] == "2026-10-23"
     assert t["26-82275"]["date_limite"] == "2026-10-21"  # repoussé deux fois (26-93361, 26-96200), repris

@@ -320,7 +320,8 @@ def test_references_avec_leur_source_anciennes_reconnues_rien_renvoye_deux_fois(
 
     _recherche(monkeypatch, _tenders)
     fresh, memoire = _rejouer(sid)
-    assert [f["ref"] for f in fresh] == ["BOAMP|26-98235"]
+    # « ref » rendu par « Tester » : la référence de l'avis, comme avant le lot (relecture du lot 1) ; la source à part.
+    assert [(f["source"], f["ref"]) for f in fresh] == [("BOAMP", "26-98235")]
     # Une entrée par marché, chaque référence avec le nom de sa source, l'ancienne forme fusionnée dans son entrée,
     # l'ordre gardé (plus ancien d'abord) et les marchés vus aujourd'hui en fin de liste.
     assert memoire[:40] == [f"25-{i}" for i in range(1, 41)]
@@ -335,7 +336,7 @@ def test_references_avec_leur_source_anciennes_reconnues_rien_renvoye_deux_fois(
     # Une référence Mégalis égale à un ancien numéro nu d'un AUTRE marché ne le masque plus une fois migré.
     _recherche(monkeypatch, lambda: [_marche("26-98235", 60, source="TED", objet="Fourniture de mobilier scolaire")])
     fresh, _ = _rejouer(sid, mark=False)
-    assert [f["ref"] for f in fresh] == ["TED|26-98235"]
+    assert [(f["source"], f["ref"]) for f in fresh] == [("TED", "26-98235")]
 
 
 def test_memoire_bornee_aux_plus_anciens_jamais_au_hasard(auth, monkeypatch):
@@ -352,23 +353,32 @@ def test_memoire_bornee_aux_plus_anciens_jamais_au_hasard(auth, monkeypatch):
     # « 26-1 », le plus ancien, est encore ouvert : il reste en mémoire ; « 25-2 », le suivant, sort.
     _recherche(monkeypatch, lambda: [_marche("26-1", 50), _marche("26-2", 50)])
     fresh, memoire = _rejouer(sid)
-    assert [f["ref"] for f in fresh] == ["BOAMP|26-2"]
+    assert [(f["source"], f["ref"]) for f in fresh] == [("BOAMP", "26-2")]
     assert len(memoire) == borne
     assert memoire[-2:] == ["BOAMP|26-1 + 26-1", "BOAMP|26-2"]
     assert memoire[0] == "25-3" and "25-2" not in memoire
 
 
+def _midi_a_paris_il_y_a(jours: int) -> datetime:
+    """Midi à Paris, `jours` jours de Paris avant aujourd'hui, en UTC : la règle de l'alerte hebdomadaire compte en
+    jours de Paris, et « maintenant moins 7 × 24 h » n'en fait que 6 la semaine qui suit le passage à l'heure d'hiver,
+    entre 22 h et 23 h UTC (relecture du lot 1)."""
+    from app.services.pieces_fin import _tz_paris, jour_paris
+    tz = _tz_paris() or timezone.utc
+    jour = jour_paris() - timedelta(days=jours)
+    return datetime(jour.year, jour.month, jour.day, 12, tzinfo=tz).astimezone(timezone.utc)
+
+
 def test_hebdomadaire_reellement_applique(auth, monkeypatch):
     from app.models import SavedSearch
     from app.services import alerts
-    maintenant = datetime.now(timezone.utc)
     hebdo = _alerte(auth["email"], name="Hebdo", frequency="hebdomadaire")
     quoti = _alerte(auth["email"], name="Quotidienne", frequency="quotidienne")
     jamais = _alerte(auth["email"], name="Hebdo neuve", frequency="hebdomadaire")
     db = SessionLocal()
     try:
-        db.get(SavedSearch, hebdo).last_run = maintenant - timedelta(days=2)
-        db.get(SavedSearch, quoti).last_run = maintenant - timedelta(days=1)
+        db.get(SavedSearch, hebdo).last_run = _midi_a_paris_il_y_a(2)
+        db.get(SavedSearch, quoti).last_run = _midi_a_paris_il_y_a(1)
         db.commit()
     finally:
         db.close()
@@ -381,7 +391,7 @@ def test_hebdomadaire_reellement_applique(auth, monkeypatch):
     assert res["weekly_not_due"] >= 1
     db = SessionLocal()
     try:
-        db.get(SavedSearch, hebdo).last_run = maintenant - timedelta(days=7)
+        db.get(SavedSearch, hebdo).last_run = _midi_a_paris_il_y_a(7)
         db.commit()
     finally:
         db.close()

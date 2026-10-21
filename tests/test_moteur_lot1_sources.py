@@ -44,6 +44,22 @@ class _Rep:
         return {"results": self._rows}
 
 
+# Relecture des avis initiaux : « (idweb in (…) AND datelimitereponse < date'…') OR (annulations) » (relecture du
+# lot 1 : seuls les avis dont la date publiée est passée), ou la forme d'avant, sans la borne.
+_RELECTURE = re.compile(r"^\(?idweb in \(([^)]*)\)(?: AND datelimitereponse < date'(\d{4}-\d{2}-\d{2})'\))? OR ")
+
+
+def _relecture(w: str):
+    """(références relues, borne de date ou None) d'une requête de relecture, sinon None."""
+    m = _RELECTURE.match(w)
+    return (set(re.findall(r'"(\d{2}-\d+)"', m.group(1))), m.group(2)) if m else None
+
+
+def _avant(r: dict, borne) -> bool:
+    d = (r.get("datelimitereponse") or "")[:10]
+    return borne is None or (bool(d) and d < borne)
+
+
 def _api(monkeypatch, avis, suites=(), initiaux=(), panne_suites=False):
     """API BOAMP simulée sur le jeu réel. Requête principale (`datelimitereponse >=`) : `avis`. Requête des
     suites : celles dont `annonce_lie` vise un avis demandé, plus, si la partie « rectificatifs récents » est
@@ -58,9 +74,10 @@ def _api(monkeypatch, avis, suites=(), initiaux=(), panne_suites=False):
         w = p.get("where", "")
         if "datelimitereponse >=" in w:
             return _Rep([dict(r) for r in avis])
-        if w.startswith("idweb in"):
-            ids = set(re.findall(r'"(\d{2}-\d+)"', w.split(" OR ")[0]))
-            rows = [dict(r) for r in initiaux if r["idweb"] in ids]
+        rel = _relecture(w)
+        if rel:
+            ids, borne = rel
+            rows = [dict(r) for r in initiaux if r["idweb"] in ids and _avant(r, borne)]
             rows += [dict(s) for s in suites if s.get("nature") == "ANNULATION" and set(s.get("annonce_lie") or []) & ids]
             return _Rep(rows)
         if panne_suites:
@@ -285,7 +302,9 @@ def test_boamp_rectificatifs_et_annulations_rattaches(monkeypatch, caplog):
     w = appels[1]["where"]
     assert "annonce_lie in (" in w and '"26-90521"' in w and '"26-93829"' in w
     assert "nature=\"RECTIFICATIF\" AND dateparution >= date'2026-08-22'" in w     # 60 jours
-    assert appels[2]["where"].startswith("idweb in (") and '"26-90336"' in appels[2]["where"].split(" OR ")[0]
+    # Relecture : seulement un avis dont la date limite publiée est passée (relecture du lot 1).
+    assert appels[2]["where"].startswith("(idweb in (") and '"26-90336"' in appels[2]["where"].split(" OR ")[0]
+    assert "datelimitereponse < date'2026-10-21'" in appels[2]["where"].split(" OR ")[0]
     assert any("annulé(s) retiré(s)" in r.getMessage() for r in caplog.records)
     # Le navigateur reçoit les nouveaux champs (sans le corps brut).
     carte = t["26-90521"].model_dump(exclude={"raw"})
@@ -429,7 +448,10 @@ def test_score_zone_outre_mer_et_corse():
     assert zone("971", {"departements": ["974"]}) == "partiel"
     assert zone("974", cp="97400") == "ok" and zone("971", cp="97400") == "partiel"   # avant : 971 « dans la zone »
     assert zone("2A", {"departements": ["2A"]}) == "ok" and zone("2B", {"departements": ["2A"]}) == "partiel"
-    assert zone("29", cp="29200") == "ok" and zone("2A", cp="20000") == "partiel"     # Corse par code postal : inchangé
+    # Corse par code postal : « 20 » couvre 2A et 2B, comme avant pour les avis du BOAMP (« 20A »[:2] == « 20 ») ;
+    # on ne devine pas 2A ou 2B (relecture du lot 1). Saisi, « 2A » reste distinct de « 2B ».
+    assert zone("29", cp="29200") == "ok" and zone("2A", cp="20000") == "ok" and zone("2B", cp="20200") == "ok"
+    assert zone("2B", {"departements": ["2A"]}, cp="") == "partiel" and zone("13", cp="20000") == "partiel"
 
 
 # ═══ Contrat ════════════════════════════════════════════════════════════════════════════════════════

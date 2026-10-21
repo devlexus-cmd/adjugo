@@ -14,7 +14,7 @@ from urllib.parse import urljoin
 
 import httpx
 
-from app.sourcing.base import TenderSource, TenderCriteria
+from app.sourcing.base import ResultatsSource, TenderSource, TenderCriteria
 from app.sourcing.dates_fr import date_iso, date_unique
 from app.sourcing.schemas import NormalizedTender, Provenance
 
@@ -40,6 +40,8 @@ _URL_AVIS = "https://www.boamp.fr/pages/avis/?q=idweb:{}"
 # depuis) : fenêtre de parution en jours, et nombre de lignes au plus (une page de l'API).
 _FENETRE_RECTIFICATIFS = 60
 _MAX_SUITES = 100
+# Avis initiaux relus par leur référence, au plus (autant que de rectificatifs lus : une page de l'API).
+_MAX_RELUS = 100
 # Temps laissé aux requêtes complémentaires, compté depuis le début de la recherche BOAMP, sous le délai global
 # de la recherche (14 s, app/sourcing/search.py) : au-delà, les avis sont rendus tels que publiés, comme avant.
 _BUDGET_SUITES = 9.0
@@ -98,12 +100,15 @@ class BoampSource(TenderSource):
             raise
         # Rectificatifs et annulations rattachés à leur avis (lot 1, point 2). Une erreur ici ne coûte jamais
         # la recherche : les avis sont alors rendus tels que publiés, comme avant, et le journal le dit.
+        # Le nombre de lignes reçues accompagne les fiches (ResultatsSource) : « Charger plus » se juge sur lui, car
+        # les fiches d'une page peuvent être moins nombreuses (avis annulé retiré, rectificatif européen réuni à son
+        # avis) ou plus nombreuses (avis repris par leur rectificatif).
         try:
-            return self._avec_suites(rows, kw, deps, criteria, debut)
+            return ResultatsSource(self._avec_suites(rows, kw, deps, criteria, debut), lignes_lues=len(rows))
         except Exception as e:      # noqa: BLE001
             logger.warning("BOAMP : rectificatifs et annulations non vérifiés (%s) ; avis rendus tels que "
                            "publiés", type(e).__name__)
-            return [self._normalize(row) for row in rows]
+            return ResultatsSource([self._normalize(row) for row in rows], lignes_lues=len(rows))
 
     # ── Rectificatifs et annulations (lot 1 « Dire juste », point 2 ; docs/MOTEUR_LOT1.md § Sources) ──────────
     # Une procédure, une fiche : la fiche garde la référence et le lien de l'avis INITIAL ; un rectificatif
@@ -163,7 +168,11 @@ class BoampSource(TenderSource):
         par_id = {_idweb(r): r for r in affiches}
 
         # 2) Un avis initial que seul son rectificatif rend encore ouvert (première page) : relu par sa
-        #    référence, avec les annulations qui le visent. Rien n'est repêché sur une date non lue.
+        #    référence, avec les annulations qui le visent. Rien n'est repêché sur une date non lue. Seul un avis
+        #    dont la date limite PUBLIÉE est déjà passée est repris (`datelimitereponse < aujourd'hui`, dans la
+        #    requête et après lecture) : un avis encore ouvert sous son ancienne date est déjà trouvé par la requête
+        #    principale, sur sa propre page, avec son rectificatif ; le reprendre ici gonflait la première page
+        #    (jusqu'à 50 fiches de plus) et le montrait deux fois en paginant (relecture du lot 1, docs/MOTEUR_LOT1.md).
         a_relire = []
         if premiere_page:
             for racine, rects in par_racine.items():
@@ -176,14 +185,26 @@ class BoampSource(TenderSource):
                     a_relire.append(racine)
         repeches = []
         if a_relire:
-            ids = ", ".join(f'"{i}"' for i in a_relire[:50])
+            if len(a_relire) > _MAX_RELUS:
+                # Jamais en silence : le journal dit combien d'avis ne sont pas relus (les plus anciens rectificatifs).
+                logger.info("BOAMP : %d avis initiaux de rectificatifs à relire, plafond de %d atteint ; %d non relus",
+                            len(a_relire), _MAX_RELUS, len(a_relire) - _MAX_RELUS)
+            a_relire = a_relire[:_MAX_RELUS]
+            ids = ", ".join(f'"{i}"' for i in a_relire)
             try:
-                lignes = self._get_suites(f'idweb in ({ids}) OR ((nature="ANNULATION" OR etat="ANNULATION") '
-                                          f'AND annonce_lie in ({ids}))', SELECT, 100, debut)
+                lignes = self._get_suites(f"(idweb in ({ids}) AND datelimitereponse < date'{today}') OR "
+                                          f'((nature="ANNULATION" OR etat="ANNULATION") AND annonce_lie in ({ids}))',
+                                          SELECT, _MAX_SUITES, debut)
+                if len(lignes) >= _MAX_SUITES:
+                    logger.info("BOAMP : %d lignes relues pour les avis initiaux des rectificatifs, plafond atteint",
+                                len(lignes))
                 for r in lignes:
                     if _est_annulation(r):
                         annules.update(_liens(r))
-                    elif not _est_suite(r) and _idweb(r) in a_relire and _idweb(r) not in par_id:
+                        continue
+                    publiee = _date_iso_champ(r.get("datelimitereponse"))
+                    if (not _est_suite(r) and _idweb(r) in a_relire and _idweb(r) not in par_id
+                            and publiee and publiee < today):
                         repeches.append(r)
             except Exception as e:      # noqa: BLE001
                 logger.warning("BOAMP : avis initiaux des rectificatifs non relus (%s)", type(e).__name__)
@@ -480,6 +501,15 @@ _CONCERNE_DELAI = re.compile(
     r"\bDLRO\b"
     r"|(?:remise|r[ée]ception|d[ée]p[ôo]t|transmission)\s+des\s+(?:offres|plis|candidatures|r[ée]ponses|dossiers)"
     r"|date\s+limite\s+de\s+r[ée]ponse", re.I)
+# La date limite citée comme REPÈRE d'un autre délai (« … 10 jours calendaires avant la date limite fixée pour la
+# réception des offres », « … après la date limite de remise des plis ») ne la change jamais : un tel passage ne
+# compte pas comme parlant de la date limite (26-100865, du 16/10/2026, ne change que le délai des questions de
+# 26-100294 ; relecture du lot 1, docs/MOTEUR_LOT1.md).
+_REPERE_DU_DELAI = re.compile(
+    r"\b(?:avant|apr[èe]s)\s+(?:la\s+|le\s+)?"
+    r"(?:(?:date|jour)\s+(?:et\s+(?:l['’]\s*)?heure\s+)?limites?\s+(?:fix[ée]e?s?\s+)?(?:pour|de|d['’])\s*(?:la\s+|le\s+)?)?"
+    r"(?:remise|r[ée]ception|d[ée]p[ôo]t|transmission)\s+des\s+(?:offres|plis|candidatures|r[ée]ponses|dossiers)"
+    r"|\b(?:avant|apr[èe]s)\s+(?:la\s+)?(?:date\s+limite\s+de\s+r[ée]ponse|DLRO)\b", re.I)
 # « Au lieu de 21/10/2026 à 12h00, lire 05/11/2026 à 12h00 » : la date qui suit « lire ».
 _AU_LIEU_LIRE = re.compile(r"\bau\s+lieu\s+d(?:e|u|es)\b(.*?)\blire\b(.*?)(?=\bau\s+lieu\s+d(?:e|u|es)\b|$)",
                            re.I | re.S)
@@ -490,7 +520,7 @@ def _lire_texte(texte: str):
     celle qui suit « lire » dans « Au lieu de …, lire … », sinon la seule date citée (même jour, même mois,
     avec son année). Plusieurs dates différentes ou une date sans année : None, jamais un choix."""
     texte = str(texte or "")
-    if not _CONCERNE_DELAI.search(texte):
+    if not _CONCERNE_DELAI.search(_REPERE_DU_DELAI.sub(" ", texte)):
         return False, None
     paires = _AU_LIEU_LIRE.findall(texte)
     if paires:

@@ -460,10 +460,13 @@ def run_one_saved_search(s: SavedSearch, db: Session, mark: bool = True) -> list
         if cles & seen:
             continue
         seen |= cles                    # un même marché rendu deux fois par la recherche n'est listé qu'une fois
+        # « ref » : la référence de l'avis telle qu'avant le lot 1 (rendue par « Tester » une alerte, API
+        # inchangée) ; la forme « SOURCE|référence » ne sert qu'à la mémoire (last_seen_refs).
         fresh.append({
             "objet": t.objet, "acheteur": t.acheteur, "score": t.score.total if t.score else 0,
             "date_limite": t.date_limite, "lieu": t.lieu,
-            "source": t.provenance.source, "url": t.provenance.source_url, "ref": nouvelles[0],
+            "source": t.provenance.source, "url": t.provenance.source_url,
+            "ref": t.provenance.official_ref or t.dedup_key,
         })
 
     if mark:
@@ -503,7 +506,12 @@ def run_tender_alerts(db: Session) -> dict:
     searches = db.query(SavedSearch).filter(SavedSearch.active.is_(True)).all()
     # On ne marque « déjà vu » QUE pour les users joignables par email : sinon les marchés d'un
     # user sans email étaient marqués vus puis jamais notifiés (perdus quand il ajoute son email).
-    emailed = {uid for (uid,) in db.query(User.id).filter(User.email.isnot(None)).all()}
+    # Joignable = adresse CONFIRMÉE (relecture du lot 1) : une adresse jamais confirmée peut être celle d'un tiers,
+    # et la décision 11 (plus aucun marché écarté par sa note) multipliait les courriels vers elle. Rien n'est
+    # perdu : sans marquer « déjà vu », ces marchés partent au premier passage après la confirmation. Les comptes
+    # d'avant la vérification des adresses sont confirmés (migration j4k5l6m7n8o9).
+    emailed = {uid for (uid,) in db.query(User.id).filter(User.email.isnot(None),
+                                                          User.email_verified.is_(True)).all()}
     by_user = defaultdict(list)   # user_id -> [(search_name, [tenders])]
     demo_ids = _demo_user_ids(db)
     from app.services.pieces_fin import jour_paris
@@ -522,7 +530,7 @@ def run_tender_alerts(db: Session) -> dict:
     notified, total = 0, 0
     for user_id, blocks in by_user.items():
         user = db.query(User).filter(User.id == user_id).first()
-        if not user or not user.email:
+        if not user or not user.email or not user.email_verified:
             continue
         lines = ["Bonjour,\n\nVotre veille Adjugo a repéré de nouveaux appels d'offres :\n"]
         for name, tenders in blocks:

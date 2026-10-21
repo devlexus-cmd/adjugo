@@ -45,16 +45,39 @@ def dept_cle(d) -> str:
     return _un_chiffre(str(d or "").strip().upper())
 
 
+class ResultatsSource(list):
+    """Fiches rendues par une source, avec le nombre de LIGNES reçues de la plateforme pour la page demandée
+    (`lignes_lues`). Elles peuvent différer : le BOAMP retire un avis annulé et réunit un avis et son rectificatif
+    européen en une seule fiche (lot 1, point 2). « Il reste des résultats » (has_more, bouton « Charger plus ») se
+    juge sur les lignes reçues, jamais sur les fiches après rattachement (app/sourcing/search.py)."""
+
+    def __init__(self, fiches=(), lignes_lues: int = None):
+        super().__init__(fiches)
+        self.lignes_lues = len(self) if lignes_lues is None else int(lignes_lues)
+
+
+def lignes_lues(resultats) -> int:
+    """Lignes reçues par une source pour la page demandée : `lignes_lues` d'un ResultatsSource, sinon le nombre de
+    fiches (toute autre source, inchangée)."""
+    return int(getattr(resultats, "lignes_lues", len(resultats or [])))
+
+
 def dans_departements(dept, voulus) -> bool:
     """Le département `dept` (d'un avis) fait-il partie des départements `voulus` ? Comparaison sur le code
-    COMPLET (« 974 » ≠ « 971 », « 2A » ≠ « 2B »). Seule tolérance, inchangée : « 97 » ou « 98 » saisis sur
-    deux chiffres couvrent tout leur outre-mer (971 à 976, 984 à 988), comme avant cette correction."""
+    COMPLET (« 974 » ≠ « 971 », « 2A » ≠ « 2B »). Tolérances, inchangées : « 97 » ou « 98 » saisis sur deux
+    chiffres couvrent tout leur outre-mer (971 à 976, 984 à 988), et « 20 » couvre la Corse (2A et 2B), comme
+    avant cette correction."""
     d = dept_cle(dept)
     if not d:
         return False
     for v in voulus or ():
         v = dept_cle(v)
         if d == v or (v in ("97", "98") and len(d) == 3 and d.startswith(v)):
+            return True
+        if v == "20" and d in ("2A", "2B"):
+            # « 20 » (le département que donne un code postal corse « 20… », ou saisi tel quel) couvre toute la
+            # Corse, comme avant le lot 1 (« 20A »[:2] == « 20 ») : on ne devine pas 2A ou 2B, et une entreprise
+            # corse voit les avis corses « dans votre zone » (relecture du lot 1, docs/MOTEUR_LOT1.md).
             return True
     return False
 
@@ -109,7 +132,9 @@ class TenderSource(ABC):
         def search(self, *args, **kw):
             res = fn(self, *args, **kw)
             if isinstance(res, list):
-                return [sanitize_tender_links(t) for t in res]
+                # Liens assainis EN PLACE : la liste rendue reste celle de la source (et son nombre de lignes lues,
+                # ResultatsSource, qui sert à « Charger plus »).
+                res[:] = [sanitize_tender_links(t) for t in res]
             return res
 
         search._links_guarded = True
