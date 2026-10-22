@@ -1394,3 +1394,65 @@ Vérifié dans l'application réelle, cloche et accueil, en néerlandais, en esp
 - **Un nom pris pour un libellé** : un nom de marché ou d'entreprise identique à un libellé du dictionnaire (un
   marché nommé « Accueil ») est traduit comme lui ; c'était déjà le cas pour une ligne sans chef de file, la règle de
   la traduction n'a pas changé.
+
+## P. Contrôle des bugs (22/10/2026), groupe « demo-public »
+
+Cinq défauts de la page publique `/acheteur` et de l'espace collectivités `/acheteur/app` (signalements 25 à 29).
+Chacun a été **reproduit** sur `cfe04e1` avant d'être corrigé ; aucun n'est rejeté. Tests :
+`tests/test_controle_bugs_demo_public.py` (6 tests, tous en échec sur `cfe04e1`, chacun sur son défaut ; la page
+servie par l'application, un serveur en configuration de production dans un sous-processus, le code de
+`acheteur.html` exécuté sous Node, et une mesure du premier écran dans un vrai Chromium quand Playwright est
+installé, sans aucune requête vers l'extérieur, police du titre lue dans `app/static/fonts`). Aucun prix, quota ni
+offre ne change ; ni page juridique, ni démonstration, ni serveur touchés.
+
+### P.1 `/acheteur` se déclare à l'adresse officielle (25)
+
+**Reproduit** : l'adresse canonique, `og:url` et `og:image` de la page étaient sur l'adresse technique de
+l'hébergeur (`https://adjugo-api-production.up.railway.app/…`), alors que le domaine officiel est
+`https://adjugo.pro` (`APP_BASE_URL`, mentions légales). Les moteurs de recherche pouvaient prendre
+`adjugo.pro/acheteur` pour un doublon, et un partage sur un réseau social montrait l'adresse technique. **Corrigé** :
+`https://adjugo.pro/acheteur` et `https://adjugo.pro/static/favicon.svg`. Aucune autre page servie ne cite cette
+adresse.
+
+### P.2 Plus de lien vers une page fermée en production (26)
+
+**Reproduit** (serveur en configuration de production) : le pied de page de `/acheteur`, colonne « Développeurs »,
+menait à « API · /docs » et « OpenAPI », qui répondent 404 en production (fermeture voulue,
+`docs/AUDIT_CYBER_2026-10.md`, `test_docs_coupees_en_production`). **Corrigé** : la colonne est retirée ; la
+fermeture des pages techniques reste. Le test suit chaque lien interne de la page en production : tous répondent.
+
+### P.3 Estimation du budget : pas de démo promise (27)
+
+**Reproduit** dans un navigateur : sur `/acheteur/app` sans session, « Estimer (DECP) » répond 401 et la note disait
+« Connectez-vous (ou lancez la démo) pour utiliser cette fonction. », alors que la page n'a aucun moyen de lancer la
+démo (démo publique fermée le 08/10/2026, seul le lien privé l'ouvre, `docs/DEMO_LIEN_PRIVE.md`). **Corrigé** :
+« Connectez-vous pour utiliser cette fonction. »
+
+### P.4 Premier écran de `/acheteur` sur ordinateur (28)
+
+**Reproduit** dans Chromium, police de Google Fonts : à 1 280 px, « Trouvez qui peut y répondre. » (68 px, sur une
+ligne) imposait 840 px à la colonne du titre ; la carte d'exemple n'avait plus que 301 px (« 850 000 € » sur trois
+lignes, « Quimper (29) » sur deux) et la carte « Pièces générées » sortait de l'écran (bord droit à 1 291 px). Même
+défaut à toutes les largeurs sur deux colonnes (mesuré de 960 à 1 920 px), la carte « Pièces générées » sortant aussi
+de l'écran à 960, 1 000 et 1 024 px. **Corrigé** : les cellules de la grille peuvent rétrécir (`min-width:0`), et sur deux colonnes le
+titre fait `clamp(32px,3.5vw,44px)`. Mesuré après correction : colonnes de 587 et 500 px à 1 280 px et au-delà
+(rapport 1.08 / .92), titre fini à 631 px pour une colonne finie à 656 px, trois chiffres sur une ligne, carte
+« Pièces générées » dans l'écran ; à 960 et 1 000 px, « Quimper (29) » passe sur deux lignes dans une carte de
+400 px. Tablette et téléphone inchangés (41,5 px à 768 px, 34 px à 375 px).
+
+**Choix écrit pour Eliot** : le titre passe de 68 px à 44 px au plus sur ordinateur. Le signalement proposait 48 px :
+mesuré avec la police de Google Fonts, la ligne fait alors 600 px pour une colonne de 587 px (point compris). Garder
+68 px voudrait dire couper « Trouvez qui peut y répondre » sur deux lignes, et le trait bleu dessous ne suit pas un
+titre sur deux lignes (il est déjà masqué sur téléphone pour cette raison).
+
+### P.5 « Mes DCE » : date de diffusion au réseau en JJ/MM/AAAA (29)
+
+**Reproduit** : la ligne d'une consultation diffusée au réseau disait « modifié le 22/10/2026 · signalé au réseau le
+2026-10-22 », visible dans la démo (son premier DCE d'exemple est diffusé). **Corrigé** : `jourFr`, comme « modifié
+le ». Vérifié dans un navigateur par le lien privé de démonstration, sur un serveur local à base jetable : « modifié
+le 22/10/2026 · signalé au réseau le 22/10/2026 ».
+
+### P.6 Laissé, avec sa raison
+
+- **La carte « API & développeurs » du logiciel** (`app.html`, écran « Abonnement ») mène aussi à `/docs` et
+  `/openapi.json`, fermés en production. Hors de la liste de ce groupe : signalé, non corrigé.
