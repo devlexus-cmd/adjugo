@@ -565,6 +565,21 @@ function montantSeulValide(v) {
   const n = Number(v);
   return Number.isFinite(n) && n >= 0 && n <= MONTANT_SEUL_MAX;
 }
+// Département d'un code postal (revue de la réunion du 22/10) : la règle du serveur (app/services/decp.code_departement,
+// app/sourcing/scoring._dep_du_code_postal) — deux chiffres, outre-mer sur trois (« 97400 » → « 974 », jamais « 97 », qui
+// couvre tout l'outre-mer). Un code postal corse (« 20… ») donne « 20 » : il ne dit pas 2A ou 2B, on ne le devine pas.
+function depDuCodePostal(cp) {
+  const s = String(cp || "").trim();
+  if (!/^\d{2}/.test(s)) return "";
+  return (/^9[78]\d/.test(s)) ? s.slice(0, 3) : s.slice(0, 2);
+}
+// La zone pré-remplie depuis le code postal (fenêtre du SIRET, « Voir les marchés pour mon entreprise ») : ce département,
+// sauf la Corse, qui devient « 2A, 2B », toute la Corse sous les formes d'Adjugo que lisent le BOAMP (« 20A », « 20B »)
+// et la DECP ; « 20 » n'y trouve aucun avis (docs/MOTEUR_LOT1.md, V.12).
+function zoneDuCodePostal(cp) {
+  const d = depDuCodePostal(cp);
+  return d === "20" ? "2A, 2B" : d;
+}
 // Confirmation d'email vivante (décision 12 (a)) : l'écran revérifie seul, sans marteler le serveur — toutes les 5 s
 // pendant 2 minutes, puis toutes les 15 s jusqu'à 15 minutes, puis chaque minute ; seulement quand l'onglet est visible,
 // et tout de suite quand on y revient. `ecouleMs` : depuis l'affichage de l'écran (ou le dernier retour sur l'onglet).
@@ -2452,9 +2467,10 @@ const __adjApp = createApp({
         ["name", "siret", "code_ape", "forme_juridique", "address", "postal_code", "city", "effectif", "tva_intracom"].forEach(k => { if (r[k] && !this.company[k]) this.company[k] = r[k]; });
         if (r.dirigeant && !this.company.representant_legal) this.company.representant_legal = r.dirigeant;
         await this.api("PUT", "/api/company/", this.company);
-        // 2) Critères pré-réglés : spécialité (dérivée du NAF) + département (du code postal).
+        // 2) Critères pré-réglés : spécialité (dérivée du NAF) + département (du code postal, outre-mer sur 3 chiffres,
+        // Corse « 2A, 2B » : zoneDuCodePostal).
         const spec = r.specialite || r.naf_label || "";
-        const dep = (r.postal_code || this.company.postal_code || "").slice(0, 2);
+        const dep = zoneDuCodePostal(r.postal_code || this.company.postal_code);
         if (spec && !((this.criteria.specialites || "").trim())) this.criteria.specialites = spec;
         if (dep && !((this.criteria.departements || "").trim())) this.criteria.departements = dep;
         // Vague 2b (B1) : la réponse à « Jusqu'à quel montant répondez-vous seul ? », seulement si elle a été donnée (un
@@ -2477,7 +2493,7 @@ const __adjApp = createApp({
       } catch (e) { this.notify("Entreprise introuvable — vérifiez le SIRET", "err"); }
       finally { this.welcome.busy = false; }
     },
-    openDiscover() { this.discover.open = true; this.discover.results = []; this.loadTrades(); if (!this.discover.dept) this.discover.dept = (this.company.postal_code || "").slice(0, 2); },
+    openDiscover() { this.discover.open = true; this.discover.results = []; this.loadTrades(); if (!this.discover.dept) this.discover.dept = depDuCodePostal(this.company.postal_code); },
     amontFindPartners(s) {
       // Pré-AO : constituer le groupement DÈS le signal amont, AVANT la publication de l'AO.
       const trade = (s && s.metiers && s.metiers.length) ? s.metiers[0] : ((s && s.domaine) || "");
@@ -4589,6 +4605,16 @@ const __adjApp = createApp({
         return d.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" }) + " à " + d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
       } catch (e) { return String(s); }
     },
+    // Le jour d'un horodatage du serveur, à l'heure locale, comme convWhen et la page du partenaire sans compte
+    // (invite.html, fmtShort). Revue de la réunion du 22/10 : « Offre commune figée le … » passait par fmtDate, qui lit le
+    // jour de la chaîne ISO (celui de l'UTC) ; une offre figée entre minuit et 2 h (heure de Paris) y datait de la veille.
+    convJour(s) {
+      if (!s) return "";
+      try {
+        const d = new Date(_isoUtc(s)); if (isNaN(d.getTime())) return String(s);
+        return d.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" });
+      } catch (e) { return String(s); }
+    },
     _convMergeState(st) {   // le stepper et « Prêt à déposer » suivent la convention sans recharger la fiche
       if (!st || typeof st !== "object") return;
       if (this.ao.grp.state) Object.assign(this.ao.grp.state, st); else this.ao.grp.state = st;
@@ -5778,7 +5804,7 @@ const __adjApp = createApp({
       const c = this.company || {};
       const spec = (c.specialites || "").split(/[,;]/).map(s => s.trim()).filter(Boolean)[0];
       if (spec && !this.src.query) this.src.query = spec;
-      const dep = (c.postal_code || "").slice(0, 2);
+      const dep = zoneDuCodePostal(c.postal_code);
       if (dep && !this.src.dept) this.src.dept = dep;
       this.src.prefilled = true;
     },

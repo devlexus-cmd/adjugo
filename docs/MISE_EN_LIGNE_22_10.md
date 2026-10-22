@@ -41,6 +41,11 @@ données, `c5priseenmain` (section 4).
   n'entre dans aucun calcul.
 - Un montant trop grand est refusé dans la fenêtre, avec un message. Le bandeau des cookies ne passe plus
   par-dessus la fenêtre.
+- **La zone tirée du code postal suit la règle du serveur** (revue de la réunion) : outre-mer sur 3 chiffres
+  (« 97400 » donne « 974 » ; avant, « 97 », qui couvre tout l'outre-mer), Corse « 2A, 2B » (avant, « 20 », qui ne
+  trouve aucun avis du BOAMP). Même règle pour « Voir les marchés pour mon entreprise ». « Chercher » des
+  partenaires prend aussi « 974 » ; la Corse y reste « 20 », comme avant. Une entreprise déjà inscrite garde la
+  zone enregistrée : rien n'est réécrit (décision 1).
 
 ### Accueil
 
@@ -70,14 +75,16 @@ données, `c5priseenmain` (section 4).
 - **Faux « métier correspondant »** : le vocabulaire interne du BOAMP n'est plus lu comme un code métier. La note
   d'adéquation de certaines cartes BOAMP baisse. Une recherche par codes CPV ne ramène plus d'avis sans rapport.
 - **Outre-mer** : « 974 » ne montre plus les avis de la Guadeloupe ou de la Martinique, et la zone de la note est
-  juste pour une entreprise d'outre-mer.
+  juste pour une entreprise d'outre-mer dont la zone est sur 3 chiffres. C'est le cas d'une entreprise inscrite par la
+  fenêtre du SIRET depuis la revue de la réunion. Une zone « 97 » couvre toujours tout l'outre-mer.
 - **Corse** : « 2A » et « 2B » trouvent enfin les avis du BOAMP, qui écrit « 20A » et « 20B ». Le 21/10, 19 avis
-  ouverts étaient concernés ; avant, aucun n'était trouvé.
+  ouverts étaient concernés ; avant, aucun n'était trouvé. Une zone « 20 » ne trouve toujours rien au BOAMP.
 - Une recherche fait une ou deux requêtes de plus au BOAMP, soit 0,4 à 0,6 seconde chacune.
 
 ### Trouver des marchés › À venir (fins de contrat)
 
-- **Outre-mer** : seules les fins de contrat du département demandé, affiché sur 3 chiffres (« 974 »).
+- **Outre-mer** : seules les fins de contrat du département demandé, affiché sur 3 chiffres (« 974 »). Une zone
+  « 97 » garde celles de tout l'outre-mer.
 - **Corse et outre-mer, repli payant** : quand la base des marchés attribués (DECP) ne donne rien, le repli par le
   BOAMP et l'IA peut désormais trouver des fins de contrat dans ces deux zones. L'analyse est alors **débitée**.
   Avant, il ne trouvait jamais rien, et l'analyse était toujours remboursée. **C'est la décision 1 de la
@@ -98,8 +105,9 @@ données, `c5priseenmain` (section 4).
 - Les dates des consultations Mégalis apparaissent dans le courriel.
 - Moins de marchés reçus deux fois. Aucun marché déjà reçu n'est renvoyé au passage à la nouvelle mémoire des
   alertes (vérifié depuis une base remplie par la production, section 5).
-- **Un compte dont l'adresse n'est pas confirmée ne reçoit plus d'alerte.** Ses marchés partent au premier
-  passage après la confirmation (décision 2 de la section 3).
+- **Un compte dont l'adresse n'est pas confirmée ne reçoit plus d'alerte de marchés.** Ses marchés partent au
+  premier passage après la confirmation. Il reçoit toujours, comme avant, « Demandez vos notes » et « pièces à
+  renouveler » (décision 2 de la section 3).
 - **Attention** : la bulle (i) de « Mes alertes » dit encore « au-dessus de votre seuil de compatibilité ». C'est
   faux depuis ce lot (décision 3).
 
@@ -118,6 +126,10 @@ données, `c5priseenmain` (section 4).
   entreprises et les ETI n'y apparaissent plus.
 - Au rechargement d'une adresse (par exemple `/app/marches/12`), l'accueil ne s'affiche plus une seconde avant la
   page demandée. Le gabarit brut n'apparaît plus avant le chargement.
+- **« Offre commune figée le … »** donne le même jour partout : page du marché, « Voir ce que verra votre
+  partenaire », espace du partenaire avec ou sans compte. C'est le jour à l'heure de l'ordinateur, comme « Offre
+  figée le … à … ». Avant, les trois premiers écrans prenaient le jour UTC : la veille, pour une offre figée entre
+  minuit et 2 h, heure de Paris (revue de la réunion).
 
 ### Marché d'exemple (`/app/exemple`, nouveau)
 
@@ -217,6 +229,11 @@ contrats).
     bas). (V2B § B3.1)
 14. **Tests** : 20 échecs et 24 erreurs sur PostgreSQL, et un test qui échouait certains jours selon la date. Ils
     venaient tous des tests, pas du logiciel. (TESTS_POSTGRES ; V2B § S.14)
+15. **Fenêtre du SIRET et « Voir les marchés pour mon entreprise »** : le département était coupé à 2 chiffres. Une
+    entreprise de La Réunion recevait « 97 », donc les avis et les fins de contrat de tout l'outre-mer « dans votre
+    zone ». Une entreprise corse recevait « 20 », qui ne trouve aucun avis du BOAMP. (Revue de la réunion, section 5)
+16. **« Offre commune figée le … »** prenait le jour UTC sur la page du marché et dans l'espace du partenaire avec
+    compte. La page du partenaire sans compte prenait le jour local. (Revue de la réunion, section 5)
 
 ---
 
@@ -235,11 +252,31 @@ contrats).
    Effet de bord à connaître : comme la DECP ne mélange plus les DOM entre eux, un département d'outre-mer sans
    fin de contrat déclenche le repli payant, là où la DECP montrait avant (à tort) celles d'un autre DOM.
    (Moteur, points 12 et 12 bis, § R.1 et V.5)
-2. **Alertes de marchés refusées aux adresses non confirmées.** C'est en place : aucun courriel, et rien n'est
-   marqué « déjà vu », donc les marchés partent au premier passage après la confirmation. Les comptes créés avant
-   la vérification des adresses ont été confirmés par la migration de juin et ne sont pas concernés. Garder
-   (recommandé : c'est la règle du reste de l'application), ou retirer, ce qui tient en deux lignes. (Moteur
-   § V.7)
+
+   Qui est concerné : les entreprises dont la zone est « 971 » à « 976 », « 2A » ou « 2B ». C'est le cas d'une
+   entreprise qui les a saisis, ou qui s'inscrit par la fenêtre du SIRET après cette mise en ligne (section 1). Une
+   entreprise déjà inscrite par cette fenêtre a « 97 » ou « 20 ». Rien n'est réécrit, donc elle garde l'ancien
+   comportement (repli remboursé faute de trouver) tant qu'elle ne corrige pas sa zone dans Ce que je cherche.
+2. **Adresses non confirmées : une règle qui ne couvre pas encore tous les courriels.** Ce qui est en place :
+   - aucune alerte de marchés ne part vers une adresse non confirmée (moteur). Rien n'est marqué « déjà vu », donc
+     les marchés partent au premier passage après la confirmation (Moteur § V.7) ;
+   - aucune tâche planifiée n'écrit à un partenaire pour un compte non confirmé (vague 2b, section 2, point 2).
+
+   Ce n'est pas encore la règle de tous les courriels vers le compte lui-même. La même tournée planifiée envoie à
+   une adresse non confirmée « Demandez vos notes », dont le texte dit « parce que vous avez des alertes actives ».
+   Le récapitulatif « pièces à renouveler » y part aussi. C'était déjà le cas en production, et c'est vérifié sur le
+   code réuni. Le cas réel : un compte confirmé qui change d'adresse redevient non confirmé, et la nouvelle adresse
+   peut être une faute de frappe. Les comptes créés avant la vérification des adresses ont été confirmés par la
+   migration de juin. Trois choix :
+   - **(a)** garder tel quel : c'est ce que fait le code ;
+   - **(b)** étendre la règle à ces deux courriels, avec la même fonction (`_comptes_non_confirmes`). Rien ne
+     serait marqué comme envoyé, donc ils partiraient après la confirmation, « Demandez vos notes » seulement dans
+     ses 14 jours. C'est un petit changement de code, testé avant la mise en ligne. Recommandé, pour qu'il n'y ait
+     qu'une règle ;
+   - **(c)** retirer la règle des alertes de marchés, ce qui tient en deux lignes.
+
+   La règle telle qu'elle est est fixée par `tests/test_mise_en_ligne_22_10.py`
+   (`test_r1_adresse_non_confirmee_ce_qui_part_et_ce_qui_ne_part_pas`).
 3. **La bulle (i) de « Mes alertes »** dit encore « au-dessus de votre seuil de compatibilité ». Deux choix :
    - **(a)** la laisser jusqu'à la partie écran du lot ;
    - **(b)** la corriger maintenant, avec ses traductions. Proposition : « Recevez par email les nouveaux marchés
@@ -296,13 +333,29 @@ sans migration.
 
 1. **Avant** : prenez les décisions 1 à 4 de la section 3, puis faites une sauvegarde de la base juste avant
    (instantané Railway ou sauvegarde R2).
-2. **Mettre la branche de production à jour** : avancez `feat/produit-acheteur-collectivites` de `0afc1ed` au
-   commit de cette réunion (avance rapide, sans fusion), puis poussez. Railway construit l'image ;
-   `entrypoint.sh` lance `alembic upgrade head` (`c4montantseul` → `c5priseenmain`), puis démarre.
-3. **Pendant le démarrage**, l'ancien conteneur sert encore le trafic sur la base déjà migrée. C'est vérifié :
+2. **Mettre la branche de production à jour, en local** : avancez `feat/produit-acheteur-collectivites` de
+   `0afc1ed` au commit de cette réunion (la tête de la branche `worktree-wf_08701d74-77f-1`), par avance rapide
+   (`git merge --ff-only <commit>`), sans fusion. Ne
+   poussez pas pour mettre en ligne : la production ne part pas de GitHub. `origin/feat/produit-acheteur-collectivites`
+   est resté au 29/06 (`e483f0c`), 287 commits avant `0afc1ed`, et `github.com/devlexus-cmd/adjugo` était noté
+   public en juin. Pousser est un geste à part, à votre choix, qui ne met rien en ligne.
+3. **Mettre en ligne par `railway up`**, comme les mises en ligne d'octobre. Railway construit l'image avec les
+   fichiers du dossier d'où part la commande, tels qu'ils sont sur le disque, modifications non commitées
+   comprises. Deux façons :
+   - **(recommandé)** une copie propre : `git worktree add <dossier> -b deploy/reunion-22-10 <commit>`, puis, depuis
+     ce dossier, `npx -y @railway/cli@latest up -c -p <projet « adjugo »> -e production -s adjugo-api`.
+     L'identifiant du projet est dans `~/.railway/config.json` ;
+   - ou `cd /Users/eliot/Downloads/adjugo-backend && npx -y @railway/cli@latest up -c -s adjugo-api`, seulement si
+     la copie principale est sur ce commit et sans aucune modification (`git status` vide). Ce dossier est un lien
+     vers `/Users/eliot/ADJUGO/01_Code/adjugo-backend`, qui a aujourd'hui des modifications (`.gitignore`,
+     `.claude/launch.json`) et des fichiers non suivis. Ils partiraient avec l'image.
+
+   Attention au dossier : lancé depuis un dossier non lié au projet, `railway up` a déjà créé un projet parasite
+   (07/10). `entrypoint.sh` lance ensuite `alembic upgrade head` (`c4montantseul` → `c5priseenmain`), puis démarre.
+4. **Pendant le démarrage**, l'ancien conteneur sert encore le trafic sur la base déjà migrée. C'est vérifié :
    le code de production y lit et y écrit (critères, marchés, invitations, vue du partenaire, alertes,
    inscription).
-4. **Après** :
+5. **Après** :
    - dans le terminal Railway, `alembic current` doit dire `c5priseenmain (head)` ;
    - `/api/health` doit répondre ;
    - ouvrez le lien privé de la démo et un vrai compte (accueil, un marché, « Voir ce que verra votre
@@ -312,22 +365,41 @@ sans migration.
 
 ### Revenir en arrière
 
-L'ancienne image ne connaît pas `c5priseenmain`. Si elle démarre sur la base migrée, son `entrypoint.sh` s'arrête
-sur « Can't locate revision ». Il faut donc **d'abord redescendre la base, depuis la NOUVELLE image, puis
-seulement relancer l'ancienne** :
+L'ancienne image ne connaît pas `c5priseenmain`. Si elle démarre sur une base notée `c5priseenmain`, son
+`entrypoint.sh` s'arrête sur « Can't locate revision » (vérifié), et rien n'est remis en arrière. Il faut donc
+**d'abord changer la version notée dans la base, depuis la NOUVELLE image, puis seulement relancer l'ancienne**.
+La façon recommandée n'a ni coupure ni perte :
 
-1. dans le terminal Railway du déploiement actuel (nouvelle image) : **`alembic downgrade c4montantseul`**. Cela
-   retire les trois colonnes. On perd l'état replié des premiers pas, la carte « Faites-vous trouver » et les
-   réponses « Je ne sais pas », rien d'autre ;
-2. vérifiez `alembic current` : `c4montantseul (head)` ;
-3. redéployez l'image précédente (`0afc1ed`, bouton « Redeploy » du déploiement précédent dans Railway) ;
+1. dans le terminal Railway du déploiement actuel (nouvelle image) : **`alembic stamp c4montantseul`**. Seule la
+   version notée change. Les trois colonnes restent, avec l'état replié des premiers pas, la carte « Faites-vous
+   trouver » et les réponses « Je ne sais pas ». La nouvelle image continue de servir normalement (vérifié :
+   connexion, inscription, pages d'un utilisateur connecté) ;
+2. vérifiez `alembic current` : il affiche `c4montantseul`, **sans « (head) »**, car la tête de la nouvelle image
+   est `c5priseenmain`. L'ancienne image, une fois relancée, affichera `c4montantseul (head)` ;
+3. redéployez l'image précédente (`0afc1ed`, bouton « Redeploy » du déploiement précédent dans Railway). Son
+   `alembic upgrade head` n'a rien à faire. Elle lit et écrit sur une base qui a ces colonnes, comme pendant la
+   mise en ligne (vérifié) ; les lignes qu'elle crée prennent les valeurs par défaut ;
 4. **à savoir** : l'ancien code ne lit pas la nouvelle mémoire des alertes. À sa première tournée, il renverra
-   **une fois** les marchés déjà envoyés depuis la mise en ligne qui passent son seuil. Dans la vérification, 3
-   marchés sur 7 ont été renvoyés à l'alerte du chef de file. Ensuite, plus rien n'est renvoyé. Si vous remettez
-   la nouvelle version, elle relit cette mémoire mêlée sans rien renvoyer (vérifié). Toutes les autres données
-   écrites par la nouvelle version restent lisibles par l'ancienne (vérifié).
+   **une fois tous les marchés que la nouvelle version a revus et qui passent son seuil, même ceux envoyés avant
+   la mise en ligne**. Dans la vérification, 3 marchés ont été renvoyés à l'alerte du chef de file, dont 2 envoyés
+   avant la mise en ligne. En production, chaque alerte peut ainsi renvoyer jusqu'à 25 marchés, dont 10 sont
+   affichés dans le courriel. Ensuite, plus rien n'est renvoyé. Toutes les autres données écrites par la nouvelle
+   version restent lisibles par l'ancienne (vérifié) ;
+5. pour remettre la nouvelle version ensuite, redéployez-la : `alembic upgrade head` rejoue `c5priseenmain` sans
+   effet (les colonnes sont là), et tout est retrouvé. Elle relit la mémoire mêlée des alertes sans rien renvoyer
+   (vérifié). Un seul cas reste : une entreprise qui avait coché « Je ne sais pas », puis saisi un montant sous
+   l'ancienne version, garde la case cochée jusqu'à son prochain enregistrement, où le montant l'emporte.
 
 Ne relancez jamais l'ancienne image avant l'étape 1.
+
+**Pour retirer aussi les trois colonnes**, remplacez `stamp` par **`alembic downgrade c4montantseul`** à
+l'étape 1. On perd alors l'état replié des premiers pas, la carte « Faites-vous trouver » et les réponses « Je ne
+sais pas », rien d'autre. `alembic current` affiche de même `c4montantseul` sans « (head) » dans la nouvelle image.
+**Ce choix coupe le service** : de cette commande jusqu'à ce que l'ancienne image serve (étape 3), la nouvelle image
+encore en service répond « erreur 500 » à toute connexion, à toute inscription et à toute page d'un utilisateur
+connecté, car elle lit ces colonnes. `/api/health` reste à 200, donc Railway ne voit rien (vérifié). La coupure
+dure le temps que Railway démarre l'ancienne image ; au dernier démarrage réel, le démarrage de l'application seul
+prenait environ 11 secondes.
 
 ---
 
@@ -362,11 +434,12 @@ appels, chacun à sa place. Aucun test n'a été affaibli ni retiré, et une seu
 
 | Moteur | Tests | Réussis | Échecs | Erreurs | Ignorés |
 |---|---|---|---|---|---|
-| SQLite | 2 381 | 2 381 | 0 | 0 | 0 |
-| PostgreSQL 16.2 jetable (`scripts/tests_postgres.py`) | 2 381 | 2 381 | 0 | 0 | 0 |
+| SQLite | 2 391 | 2 391 | 0 | 0 | 0 |
+| PostgreSQL 16.2 jetable (`scripts/tests_postgres.py`) | 2 391 | 2 391 | 0 | 0 | 0 |
 
-Le total vaut 2 205 (production) + 126 (vague 2b) + 50 (moteur). La première suite réunie, avant l'alignement du
-test cité plus haut, donnait 2 380 sur 2 381.
+Le total vaut 2 205 (production) + 126 (vague 2b) + 50 (moteur) + 10 (revue de la réunion, plus bas). La première
+suite réunie, avant l'alignement du test cité plus haut, donnait 2 380 sur 2 381. Avant la revue : 2 381 sur 2 381
+sur les deux moteurs.
 
 **Migration depuis l'état exact de la production, PostgreSQL 16.2 : 38 contrôles sur 38.** Le code `0afc1ed` a
 été extrait par `git archive`. La base a été montée par ce code (tête `c4montantseul`) et remplie par lui :
@@ -395,6 +468,8 @@ Les défauts 1 et 3 de la section 2 ont été constatés avec le code de product
 - **Retour arrière réel** (`alembic downgrade c4montantseul`) : les trois colonnes sont retirées et la production
   lit et écrit. Sa tournée d'alertes renvoie une fois 3 marchés (section 4). La remontée puis le rejeu forcé
   sont sans effet, et le nouveau code relit la mémoire mêlée sans rien renvoyer.
+- **Revue de la réunion, rejouée sur le code corrigé : 53 contrôles sur 53** (les 38 ci-dessus et 15 de plus,
+  section « Revue de la réunion » plus bas).
 
 **Fichiers servis :**
 
@@ -405,8 +480,8 @@ Les défauts 1 et 3 de la section 2 ont été constatés avec le code de product
 
 **Démo de pitch.** Toutes les réponses de lecture de la démo, plus le lien du partenaire de Kerhel, ont été
 relevées avec le code de production puis avec le code réuni, sur une base neuve. Les jetons et les dates sont
-neutralisés. Sur **190 réponses, 186 sont identiques** et 2 ne diffèrent que par l'ordre de deux éléments créés
-dans la même seconde. Les 4 autres ont seulement des champs ajoutés :
+neutralisés. Sur **190 réponses, 184 sont identiques**, 2 ne diffèrent que par l'ordre de deux éléments créés
+dans la même seconde, et les 4 autres ont seulement des champs ajoutés (184 + 2 + 4 = 190) :
 
 - `montant_porte_seul_inconnu` dans les critères et dans l'export RGPD ;
 - `essai_jours` dans la configuration publique ;
@@ -431,3 +506,49 @@ tenté.
 
 **Pages annexes** (branche `reunion-22-10-avec-annexes`, pas dans cette mise en ligne) : voir le dernier commit
 de cette branche pour ses résultats.
+
+### Revue de la réunion (22/10/2026)
+
+Une revue de la réunion (`85e5809`) a fait 8 remarques : 3 majeures et 5 mineures. Toutes ont été reproduites, et
+aucune n'est rejetée. Six portaient sur ce document, deux sur le code. Les tests de
+`tests/test_mise_en_ligne_22_10.py` (10 tests) échouaient tous sur `85e5809` et passent sur le code corrigé.
+
+| | Remarque | Reproduction | Correction |
+|---|---|---|---|
+| R1 | La décision 2 disait que refuser les alertes aux adresses non confirmées était « la règle du reste de l'application ». | Sur `85e5809`, une adresse non confirmée ne reçoit pas l'alerte de marchés, mais la même tournée lui envoie « Demandez vos notes ». Le récapitulatif « pièces à renouveler » part aussi vers elle. | Décision 2 récrite, avec trois choix. Le code ne change pas : le test fixe la règle telle qu'elle est. |
+| R2 | « puis poussez » : la production ne part pas d'un push. | `origin` est à `e483f0c` (29/06), 287 commits avant `0afc1ed`. Les mises en ligne d'octobre sont parties par `railway up`. | Section 4 : la vraie procédure, le bon dossier, et le push présenté comme un geste à part. |
+| R3 | Le retour arrière ne renvoie pas que les marchés « envoyés depuis la mise en ligne ». | PostgreSQL : 26-900001, 26-900002 et 26-900007 renvoyés, dont les 2 premiers envoyés avant la mise en ligne. | Section 4, étape 4, et un test du mécanisme de la mémoire. |
+| R4 | Le downgrade coupait le service sans le dire. | PostgreSQL, application en service pendant le downgrade : connexion 500, inscription 500, pages d'un utilisateur connecté 500, santé 200. | `alembic stamp c4montantseul` recommandé, sans coupure ni perte (vérifié) ; le downgrade reste possible, avec la coupure annoncée. |
+| R5 | `alembic current` n'affiche pas « (head) » dans la nouvelle image. | `c4montantseul` dans la nouvelle image, `c4montantseul (head)` dans l'ancienne, après `stamp` comme après `downgrade`. | Section 4, étape 2. |
+| R6 | 186 + 2 + 4 faisait 192. | Le comparateur relancé donne 184 identiques, 2 dans un autre ordre et 4 avec des champs ajoutés. | Chiffres corrigés. |
+| R7 | La fenêtre du SIRET coupait le département à 2 chiffres (« 97 », « 20 »). | Avec le code postal 97400, un avis de la Guadeloupe passait « dans votre zone ». Une recherche « 20 » demande « 20 » au BOAMP, qui n'écrit que « 20A » et « 20B ». | `depDuCodePostal` reprend la règle du serveur, et `zoneDuCodePostal` donne « 2A, 2B » pour la Corse. Corrigé dans la fenêtre du SIRET, « Voir les marchés pour mon entreprise » et « Chercher » des partenaires. |
+| R8 | L'aperçu datait l'offre figée en UTC. | Navigateur (Chromium, Paris), offre figée le 21/10 à 23:41 UTC : l'aperçu affichait « 21/10/2026 », la page du partenaire « 22/10/2026 ». | Un seul formateur, `convJour` (jour local), pour les trois « Offre commune figée le ». Après correction, les trois écrans affichent « 22/10/2026 ». |
+
+Vérifications des corrections :
+
+- **PostgreSQL 16.2 depuis l'état exact de la production, 53 contrôles sur 53**
+  (`scratchpad/corr2210/run_corr_pg.py`, sur le code corrigé). Ce sont les 38 contrôles de la réunion, plus :
+  - l'ancienne image s'arrête sur une base notée `c5priseenmain` ;
+  - le retour par `stamp` : la nouvelle image continue de servir pendant le changement, les colonnes restent,
+    l'ancienne image démarre, lit et écrit, et les lignes qu'elle crée prennent les valeurs par défaut ;
+  - le renvoi de 3 marchés, dont 2 envoyés avant la mise en ligne, avec `stamp` comme avec `downgrade` ;
+  - la remontée après `stamp`, sans effet, avec un schéma identique à une base neuve. L'état replié, les « Je ne
+    sais pas » et la carte sont retrouvés, le montant saisi sous l'ancienne version l'emporte au prochain
+    enregistrement, et rien n'est renvoyé ;
+  - la coupure du `downgrade`, mesurée l'application en service ;
+  - ce qu'affiche `alembic current` dans chaque image.
+- **Navigateur réel (Chromium sans fenêtre, fuseau Europe/Paris)**, démo par lien privé (clé de test locale dans un
+  fichier, jamais affichée, `DEMO_PUBLIC=0`). Vu à 1 280 et 375 px, en clair et en sombre : accueil, Mes marchés,
+  marché de Kerhel, « Voir ce que verra votre partenaire », `/app/exemple`, Trouver (Publiés, À venir),
+  Partenaires, Mes documents, Ce que je cherche, `/app/marches/partenaire` et la page du partenaire sans
+  compte. Il n'y a aucun défilement horizontal ni aucune erreur de script, et aucun courriel n'a été tenté. L'offre
+  de Kerhel a été figée le 21/10 à 23:41 UTC. Sur `85e5809`, l'aperçu affichait « 21/10/2026 » et la page du
+  partenaire « 22/10/2026 ». Sur le code corrigé, les trois écrans affichent « 22/10/2026 ».
+- **Démo de pitch relevée de nouveau**, production et code corrigé le même jour : sur 190 réponses, 185 sont
+  identiques, 1 ne diffère que par l'ordre et 4 ont les mêmes champs ajoutés. Le nombre de réponses dans un autre
+  ordre change d'un relevé à l'autre.
+- `scripts/sri_update.py --check`, `node --check` (8 fichiers et 9 scripts intégrés, 0 erreur) et
+  `scripts/i18n_ajouter.py --check` (789 clés) : verts. Aucune phrase nouvelle à traduire.
+
+Vu en passant, non corrigé : le rapport PDF du groupement (`app/services/consortium_report.py`) date lui aussi l'offre
+figée par le jour UTC (« Offre commune figée le 21/10 »). C'est un document à part, inchangé depuis la production.

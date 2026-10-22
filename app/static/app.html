@@ -1187,7 +1187,7 @@
                     <div class="row" style="gap:6px;align-items:center"><i data-lucide="badge-euro" style="width:15px;height:15px;color:var(--accent-text)"></i><b class="small">Offre commune</b><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Total = prix de vente de la partie de chaque partenaire + votre part.</span></button></div>
                     <div v-if="ao.share.consortium.offre.frozen" class="offre-box" style="flex-wrap:wrap">
                       <i data-lucide="lock" style="width:18px;height:18px;color:var(--accent-text);flex:none"></i>
-                      <div style="flex:1;min-width:140px"><div class="small"><b>Offre commune figée</b> le {{ fmtDate(ao.share.consortium.offre.frozen_at) }}</div><div class="muted small">Chaque partenaire voit maintenant le total.</div></div>
+                      <div style="flex:1;min-width:140px"><div class="small"><b>Offre commune figée</b> le {{ convJour(ao.share.consortium.offre.frozen_at) }}</div><div class="muted small">Chaque partenaire voit maintenant le total.</div></div>
                       <div class="offre-total">{{ eur(ao.share.consortium.offre.total_ht) }} HT</div>
                       <button class="btn sm" @click="aoUnfreezeOffer()" :disabled="ao.share.freezing"><i data-lucide="lock-open"></i>Défiger</button>
                     </div>
@@ -3944,7 +3944,7 @@
               <div class="muted small" style="font-weight:600;margin-bottom:3px">Membres du groupement</div>
               <div class="row wrap" style="gap:6px"><span class="pill neutral" style="font-size:10px">{{ sharedAo.mandataire ? sharedAo.mandataire + ' · chef de file' : 'Chef de file' }}</span><span v-for="(m,i) in sfmState().members" :key="'fm'+i" class="pill" :class="m.status==='submitted'?'go':'neutral'" style="font-size:10px">{{ m.company }} · {{ m.role==='sous_traitant'?'sous-traitant':'partenaire' }} · {{ memberStatusLabel(m.status) }}</span></div>
             </div>
-            <div v-if="sfmState().offer_frozen" class="offre-box" style="flex-wrap:wrap"><i data-lucide="lock" style="width:18px;height:18px;color:var(--accent-text);flex:none"></i><div style="flex:1;min-width:140px"><div class="small"><b>Offre commune figée</b> le {{ fmtDate(sfmState().frozen_at) }}</div><div v-if="sfm().warning_two_members" class="muted small">À deux, le total révèle mécaniquement la part de l'autre.</div></div><div class="offre-total">{{ eur(sfmState().total_offre_ht) }} HT</div></div>
+            <div v-if="sfmState().offer_frozen" class="offre-box" style="flex-wrap:wrap"><i data-lucide="lock" style="width:18px;height:18px;color:var(--accent-text);flex:none"></i><div style="flex:1;min-width:140px"><div class="small"><b>Offre commune figée</b> le {{ convJour(sfmState().frozen_at) }}</div><div v-if="sfm().warning_two_members" class="muted small">À deux, le total révèle mécaniquement la part de l'autre.</div></div><div class="offre-total">{{ eur(sfmState().total_offre_ht) }} HT</div></div>
           </div>
 
           <!-- Convention de groupement (vague 2), vue du partenaire depuis son compte : même texte et même empreinte
@@ -4204,7 +4204,7 @@
                   <li v-else-if="!v.can_contribute"><i data-lucide="eye"></i><span>Ce lien est en lecture seule : aucune part à renseigner ni convention à valider.</span></li>
                 </ul>
               </div>
-              <div v-if="apercuTotal()" data-test="apercu-offre" class="offre-box" style="flex-wrap:wrap;margin-bottom:14px"><i data-lucide="lock" style="width:18px;height:18px;color:var(--accent-text);flex:none"></i><div style="flex:1;min-width:140px"><div class="small"><b>Offre commune figée</b><template v-if="apercuTotal().frozen_at"> le {{ fmtDate(apercuTotal().frozen_at) }}</template></div><div v-if="v.for_member.warning_two_members" class="muted small">À deux, le total révèle mécaniquement la part de l'autre.</div></div><div class="offre-total">{{ eur(apercuTotal().total_offre_ht) }} HT</div></div>
+              <div v-if="apercuTotal()" data-test="apercu-offre" class="offre-box" style="flex-wrap:wrap;margin-bottom:14px"><i data-lucide="lock" style="width:18px;height:18px;color:var(--accent-text);flex:none"></i><div style="flex:1;min-width:140px"><div class="small"><b>Offre commune figée</b><template v-if="apercuTotal().frozen_at"> le {{ convJour(apercuTotal().frozen_at) }}</template></div><div v-if="v.for_member.warning_two_members" class="muted small">À deux, le total révèle mécaniquement la part de l'autre.</div></div><div class="offre-total">{{ eur(apercuTotal().total_offre_ht) }} HT</div></div>
               <div v-if="v.documents.length" class="card pad" style="margin-bottom:14px">
                 <b style="font-size:13.5px">Pièces partagées</b>
                 <div v-for="(d,i) in v.documents" :key="'apd'+i" class="row" style="padding:8px 0;border-bottom:1px solid var(--hairline);gap:10px;align-items:center">
@@ -4632,6 +4632,6 @@
 <script src="/static/redaction-partenaire.js" integrity="sha384-0jgm5b/r+FlC5YZVhiyqvLZyxecxtCABbOw03QuJfDDsfua5T9wxISR2Hfis2Dh+" defer></script>
 <script src="/static/sources-publiques.js" integrity="sha384-/0soYF6qmMI5KHOb/uzkHBoYNeOr5+R784XFb0c0+HjUkhtEyVBgunl6Xo08Dok+" defer></script>
 <script src="/static/carnet-notes.js" integrity="sha384-/jbwJaEiImCDEsYHkGeIht+znVCg4i9vSGuAfG6SRpjAST+OI5nP9fPwr8Py0NPV" defer></script>
-<script src="/static/app.js" integrity="sha384-ei70PVTErDu4O3K/WaaL5LF0XVOdf0+E8qmtoMkejhpzCawnb6EtgfuZtxmFNzJA" defer></script>
+<script src="/static/app.js" integrity="sha384-lcSg8Ov/Q57pQcEXsJtyEouyNkpRqcnmhxsLnk7TkfvW5a+qrgaD3Qpvgbz+rouv" defer></script>
 </body>
 </html>

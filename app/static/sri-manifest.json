@@ -2,9 +2,9 @@
  "algorithme": "sha384",
  "fichiers": {
   "/static/app.js": {
-   "integrity": "sha384-ei70PVTErDu4O3K/WaaL5LF0XVOdf0+E8qmtoMkejhpzCawnb6EtgfuZtxmFNzJA",
-   "octets": 569518,
-   "sha256": "ee1ff1a2262dc1d8dbd476190f06b1dd20a88d9d933624030fa8d5d2ada5d314"
+   "integrity": "sha384-lcSg8Ov/Q57pQcEXsJtyEouyNkpRqcnmhxsLnk7TkfvW5a+qrgaD3Qpvgbz+rouv",
+   "octets": 571231,
+   "sha256": "e8a22098065cc60ff102de04d98bcfef8eba94abfc38b488168f79eb751f0f21"
   },
   "/static/carnet-notes.js": {
    "integrity": "sha384-/jbwJaEiImCDEsYHkGeIht+znVCg4i9vSGuAfG6SRpjAST+OI5nP9fPwr8Py0NPV",
