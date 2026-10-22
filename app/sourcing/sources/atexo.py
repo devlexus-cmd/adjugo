@@ -301,6 +301,7 @@ class AtexoSource(TenderSource):
     """Une plateforme Atexo. scope=None → nationale ; scope={depts} → régionale (ne tourne
     que si un de ses départements est ciblé)."""
     supported_filters = {"query", "departements"}
+    pagine = False      # tout est servi en première page (3 pages lues d'un coup), rien au-delà
 
     def __init__(self, name: str, base: str, scope=None):
         self.name = name

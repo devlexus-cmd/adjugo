@@ -598,6 +598,13 @@ function cpvSeulsCherche(criteres) {
 // d'attribution, ou estimée quand elle n'y est pas : app/services/renewal.py, _DEFAULT_DUREE). Revue : estimée « selon le
 // type de contrat » seulement quand ce type est connu (48 mois pour un accord-cadre, 30 pour un marché) ; sans type
 // (l'IA n'en donne pas, ou n'a rien rendu), 36 mois par défaut, et l'écran le dit.
+// Contrôle des bugs (22/10) : la fenêtre du serveur (decp.py, renewal.py) garde les contrats dont la fin estimée est
+// passée depuis 60 jours au plus (leur republication peut être en cours) ; la carte le dit au lieu de les montrer
+// comme « arrivant à échéance ». `aujourdhui` : date ISO du jour.
+function finDeContratPassee(r, aujourdhui) {
+  const fin = String((r && r.fin_estimee) || "").slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(fin) && fin < String(aujourdhui || "");
+}
 function dureeFinDeContrat(r, source) {
   if (r && r.duree_estimee) return r.type_contrat ? "(durée estimée selon le type de contrat)" : "(durée estimée par défaut, type de contrat inconnu)";
   return source === "BOAMP" ? "(durée lue dans l'intitulé de l'avis)" : "(durée publiée)";
@@ -5679,17 +5686,17 @@ const __adjApp = createApp({
       if (a.decision_seul) return a.decision_seul;
       if (a.decision !== "go_groupement") return a.decision;
       if (a.score == null) return null;
-      const go = Number(this.criteria.go_threshold) || 65, ng = Math.min(Number(this.criteria.nogo_threshold) || 40, go - 1);
+      const go = Number(this.criteria.go_threshold) || 75, ng = Math.min(Number(this.criteria.nogo_threshold) || 40, go - 1);
       return a.score >= go ? "go" : (a.score < ng ? "no_go" : "a_etudier");
     },
     // Verdict SEUL d'un marché « bon potentiel en groupement » : celui que l'API a calculé (simulation)
-    // sinon, à défaut, les seuils du profil (mêmes défauts que le serveur : 65 / 40). Jamais un chiffre inventé.
+    // sinon, à défaut, les seuils du profil (mêmes défauts que le serveur : 75 / 40). Jamais un chiffre inventé.
     aoSeulDecision() {
       const p = this.ao.project || {}; const d = p.go_decision;
       if (d !== "go_groupement") return d;
       const sim = this.ao.grp && this.ao.grp.sim; if (sim && sim.decision_seul) return sim.decision_seul;
       if (p.match_score == null) return null;
-      const go = Number(this.criteria.go_threshold) || 65, ng = Math.min(Number(this.criteria.nogo_threshold) || 40, go - 1);
+      const go = Number(this.criteria.go_threshold) || 75, ng = Math.min(Number(this.criteria.nogo_threshold) || 40, go - 1);
       return p.match_score >= go ? "go" : (p.match_score < ng ? "no_go" : "a_etudier");
     },
     statusLabel(s) { return libelleStatut(s); },            // un seul axe d'étapes (vague 2a, AXE_ETAPES)
@@ -5730,7 +5737,7 @@ const __adjApp = createApp({
     async srcSaveAlert() {
       if (this.src._savingAlert) return;   // garde anti double-clic (évite l'alerte en double)
       this.src._savingAlert = true;
-      const deps = this.srcDeps();
+      const deps = this.srcDepsVisibles();
       const countries = this.src.country ? [this.src.country] : [];
       const cpv = (this.src.cpv || "").split(/[ ,;]+/).map(s => s.trim()).filter(Boolean);
       const zone = this.src.country ? this.countryName(this.src.country) : "UE";
@@ -5764,6 +5771,18 @@ const __adjApp = createApp({
 
     // ── Sourcing IA (flux à la demande, sources officielles) ──
     srcDeps() { return this.src.dept.split(",").map(s => s.trim()).filter(Boolean); },
+    // Les départements du champ, seulement s'il est affiché (France ou tous les pays) : un autre pays le cache, et
+    // l'alerte ne garde pas un département que l'écran ne montre plus (« béton · Allemagne (974) », contrôle des bugs).
+    srcDepsVisibles() { return (!this.src.country || this.src.country === "FR") ? this.srcDeps() : []; },
+    // Les mots d'une alerte : sans mot, le BOAMP et TED cherchent « travaux » (repli des sources ; Mégalis ne filtre pas
+    // sur un mot) ; l'écran le dit au lieu de « tous métiers », qui annonçait les services et les fournitures.
+    alerteMots(q) { return String(q || "").trim() || "aucun mot saisi (« travaux » est cherché)"; },
+    // Où cherche une alerte : ses départements en France, le nom des pays sinon (un autre pays n'a pas de département).
+    alerteZone(a) {
+      const pays = (a && a.countries) || [], deps = (a && a.departements) || [];
+      if (pays.length && pays.indexOf("FR") < 0) return pays.map(c => this.countryName(c)).join(", ");
+      return deps.length ? "dépts " + deps.join(", ") : "tous départements";
+    },
     srcCpv() { return (this.src.cpv || "").split(/[,\s]+/).map(s => s.trim()).filter(Boolean); },
     srcResetAdv() { this.src.type_marche = ""; this.src.cpv = ""; },
     // « Modifier ma zone » (À venir, état vide) : la zone de la recherche des fins de contrat est le champ
@@ -5774,6 +5793,7 @@ const __adjApp = createApp({
     },
     // Lot 1, partie écran, point 12 : la durée d'une fin de contrat dite avec sa source (dureeFinDeContrat).
     srcRenDuree(r) { return dureeFinDeContrat(r, this.src.renewals.source); },
+    srcRenPassee(r) { return finDeContratPassee(r, this.fxAujourdhui()); },
     // La démo de pitch n'est jamais débitée : la ligne du crédit de « À venir » ne lui est pas montrée.
     estDemo() { return estCompteDemo(this.user); },
     // Revue de la partie écran : les analyses du mois sont utilisées et le paiement à l'usage est activé (forfaits Pro et

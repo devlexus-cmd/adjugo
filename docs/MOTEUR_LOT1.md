@@ -1160,3 +1160,144 @@ Rien n'est rejeté.
 - Suites complètes, navigateur et fichiers servis : `docs/MISE_EN_LIGNE_22_10.md`, section 5, « Partie écran du lot 1
   du moteur » ; pour la revue, « Revue de la partie écran du lot 1 » ; pour la contre-relecture, « Contre-relecture de
   la partie écran du lot 1 ».
+
+## Contrôle des bugs (22/10/2026), groupe « recherche »
+
+Douze défauts de Trouver des marchés (« Publiés », « À venir », « Mes alertes ») et de « Ce que je cherche ». Chacun a
+été **reproduit** sur `cfe04e1` et sur l'état des groupes précédents (`473e3f1`) avant d'être corrigé ; un signalement
+est rejeté (R.13). Tests : `tests/test_controle_bugs_recherche.py` (13 tests, tous en échec sur `cfe04e1` et sur
+`473e3f1`, chacun sur son défaut). Aucun prix, quota ni offre ne change : le débit et le remboursement du repli payant
+de « À venir » sont ceux d'avant (R.12 dit pourquoi la fenêtre n'a pas bougé). Pages juridiques et démo de pitch non
+touchées.
+
+### R.1 Mes alertes : rien n'est marqué « déjà vu » tant que le courriel n'est pas parti (n° 8)
+
+**Reproduit** : courriel en échec (Brevo ou SMTP en panne, `send_email` rend faux), les deux marchés trouvés étaient
+pourtant mémorisés ; au passage suivant, courriel réparé, rien ne partait. **Corrigé** (`run_tender_alerts`,
+`app/services/alerts.py`) : la mémoire d'avant le passage (`last_seen_refs`, `last_run`) est rendue aux alertes de cet
+utilisateur quand son courriel ne part pas ; les marchés partent au premier passage où l'envoi réussit, puis sont
+mémorisés. Même règle que les « pièces à renouveler ». Une alerte hebdomadaire dont le courriel n'est pas parti est
+rejouée au passage suivant de l'appel programmé, pas sept jours plus tard.
+
+### R.2 « Charger plus » se juge source par source (n° 10)
+
+**Reproduit** : 8 lignes du BOAMP et 7 de TED pour 15 demandées donnaient « Charger plus », puis une page vide
+(« Tous les marchés correspondant à ces critères sont déjà affichés ») ; de même les 3 pages de Mégalis, servies d'un
+coup. **Corrigé** (`app/sourcing/search.py`, `base.py`, `sources/atexo.py`, `sources/ted.py`) : la suite est proposée
+quand UNE source qui sert la suite par décalage a rempli sa page (ce que disaient déjà le commentaire du code et V.2) ;
+les plateformes Atexo (Mégalis, PLACE) ne la proposent jamais ; TED rend le nombre d'avis reçus, comme le BOAMP, pour
+qu'une page pleine dont des avis sont hors de la zone demandée reste pleine.
+
+### R.3 Rectificatif écrit « des offre » (n° 11)
+
+**Reproduit** : 26-99040 (13/10/2026, rectificatif de 26-89213, jeu « travaux » du 21/10) écrit « La date limite de
+remise des offre est prolongée au 30 octobre 2026. » ; lu « ne parle pas de la date limite », l'avis gardait son
+ancienne date. **Corrigé** (`_CONCERNE_DELAI`, `_REPERE_DU_DELAI`, `sources/boamp.py`) : le singulier est lu après
+« des » (offre, pli, candidature, réponse, dossier). Rejoué sur les 127 rectificatifs réels des jeux d'essai : seule la
+lecture de 26-99040 change (nouvelle date : 30/10/2026). Sur la recherche réelle « travaux » du 21/10, la relecture
+demande donc aussi 26-89213 : 65 avis visés au lieu de 64 (le test de V.1 le dit désormais).
+
+### R.4 « À venir » : une clé par fin de contrat (n° 12)
+
+**Reproduit** (vraies lignes DECP du 974) : deux contrats du même acheteur recevaient la même clé (son SIRET) ; le rond
+d'attente de « Préparer à plusieurs » tournait sur les deux cartes. **Corrigé** (`app/services/decp.py`) : la clé est
+celle du dédoublonnage (SIRET de l'acheteur et empreinte courte de l'objet), unique dans la liste. Le champ « id » de
+la DECP n'est pas demandé : c'est la numérotation propre de l'acheteur, réutilisée d'un marché à l'autre.
+
+### R.5 « À venir » : tous les codes CPV de « Ce que je cherche » (n° 13)
+
+**Reproduit** : « 45211000, 45300000 » n'envoyait à la DECP que le premier code. **Corrigé** (`_fetch`,
+`app/services/decp.py`) : la chaîne est découpée sur les virgules, points-virgules et espaces, comme le reste du produit
+(note, réseau) ; jusqu'à 5 codes, comme avant.
+
+### R.6 Alerte d'un collègue : le profil de l'entreprise (n° 14)
+
+**Reproduit** : l'alerte d'un collègue invité lisait sa propre fiche entreprise (il n'en a pas) ; sans le code postal
+de l'entreprise, ses marchés étaient classés autrement qu'à l'écran. **Corrigé** (`run_one_saved_search`) : le profil
+du propriétaire de l'organisation (`data_owner_id`), comme l'écran de recherche et « Ce que je cherche ».
+
+### R.7 Seuils « bon potentiel » et « peu adapté » : un seul défaut, 75 et 40 (n° 15)
+
+**Reproduit** : compte neuf, « Ce que je cherche » montrait 75 dans le champ (la valeur que garde le premier
+enregistrement, la fenêtre du SIRET comprise) mais le verdict prenait 65 tant que rien n'était enregistré
+(`_verdict`, `score_dce`, groupement) ; un marché noté 70 passait de « Bon potentiel » à « À étudier » au premier
+enregistrement sans que le seuil ait été touché. Le champ vidé disait « 65 (défaut) » et gardait l'ancienne valeur.
+**Corrigé** : les verdicts sans critères enregistrés prennent 75 et 40 (`app/routers/sourcing.py`,
+`app/services/dce_scoring.py`, `app/services/groupement_scoring.py`, deux replis de `app.js`), le champ vide dit
+« 75 (défaut) », et un seuil vidé revient à son défaut (`app/routers/criteria_v2.py`). **Choix pour Eliot** : 75 est la
+valeur que l'écran montre et que garde toute entreprise qui a enregistré « Ce que je cherche » (la démo aussi) ; rien
+ne change pour elles. Seules les entreprises qui n'ont jamais enregistré leurs critères voient leurs verdicts
+calculés avec 75 au lieu de 65. L'autre choix (65 partout, en changeant le défaut enregistré) changerait le seuil de
+toute entreprise inscrite à partir d'aujourd'hui.
+
+### R.8 Alerte : nom et mots-clés trop longs (n° 16)
+
+**Reproduit** (PostgreSQL 16.2, comme la production) : des mots-clés de plus de 240 caractères donnaient un nom
+d'alerte de plus de 255 caractères et une erreur serveur (« réessayez dans un instant », alors que réessayer ne change
+rien) ; SQLite acceptait. **Corrigé** (`app/routers/saved_searches.py`) : le nom, construit par l'écran, est coupé à
+255 caractères ; des mots-clés de plus de 500 caractères sont refusés avec « Les mots-clés d'une alerte font 500
+caractères au plus. » ; fréquence et type de marché trop longs (appel direct) refusés en 422.
+
+### R.9 « Mes alertes » ne dit plus « tous métiers » (n° 17)
+
+**Reproduit** : une alerte sans mot était présentée « tous métiers », alors que le BOAMP et TED cherchent alors
+« travaux » (les services et les fournitures sans ce mot n'en viennent pas ; Mégalis, elle, ne filtre pas sur un
+mot). **Corrigé** (`app.html`, `alerteMots` dans `app.js`, traduit en néerlandais et en espagnol) : « aucun mot saisi
+(« travaux » est cherché) ».
+Le repli « travaux » des sources reste tel quel : c'est le point « Recherche sans mot » laissé à Eliot (section
+« Écran », « Vu en passant, non corrigé ») ; s'il change, le test le signale et ce texte change avec lui.
+
+### R.10 Alerte sur un autre pays : sans le département caché (n° 18)
+
+**Reproduit** : le champ « Départements » disparaît quand un autre pays que la France est choisi, mais l'alerte
+l'emportait : « béton · Allemagne (974) », « dépts 974 ». **Corrigé** (`app.js`) : l'alerte et la ligne de « Mes
+alertes » ne prennent les départements que si le champ est affiché (`srcDepsVisibles`) ;
+la liste dit le pays pour une alerte hors de France (`alerteZone`), y compris une alerte enregistrée avant avec le
+département caché. Son nom enregistré, lui, n'est pas réécrit.
+
+### R.11 Département non reconnu : refusé avec une phrase (n° 19)
+
+**Reproduit** : « 29000 » (un code postal tapé dans « Départements (29, 56…) ») était écarté en silence et la recherche
+partait sur toute la France. **Corrigé** (`app/sourcing/base.py`, `app/routers/sourcing.py`,
+`app/routers/saved_searches.py`) : quand la France est cherchée, la recherche « Publiés » et la création d'une alerte
+répondent « « 29000 » n'est pas un numéro de département : indiquez par exemple 29, 56, 2A ou 974. », sans interroger
+aucune source. Un autre pays n'a pas de département : le champ que l'écran cache alors n'empêche pas la recherche. Le code postal
+n'est pas converti en département : la recherche porte sur ce qui est demandé, et la phrase dit quoi saisir. « À venir »
+lit déjà le département d'un code postal (`decp.code_departement`) : inchangé.
+
+### R.12 « À venir » : une fin de contrat déjà passée est dite (n° 20)
+
+**Reproduit** (vraies lignes DECP du 974, le 22/10/2026) : « Fin du contrat estimée le 29/09/2026 » sous « Contrats
+qui arrivent à échéance », comme une fin à venir. La fenêtre du serveur (`decp.py`, `renewal.py`) garde les contrats
+dont la fin estimée est passée depuis 60 jours au plus. **Corrigé** (`app.html`, `finDeContratPassee` dans `app.js`,
+traduit) : la carte porte « fin estimée déjà passée ». La fenêtre n'est pas réduite : la republication d'un contrat fini
+depuis peu peut être en cours, et retirer ces contrats déplacerait le repli payant (une recherche dans la DECP qui ne
+rendrait plus que des contrats finis déclencherait le repli, débité s'il trouve). **Choix pour Eliot** : garder ces
+contrats avec la mention, ou les retirer en acceptant ce déplacement du débit.
+
+### R.13 Rejeté : la démo et ses alertes (n° 9)
+
+Le signalement : la démo peut créer, mettre en pause et supprimer des alertes. **Rejeté** : c'est une règle écrite,
+pas un écart. `tests/test_demo_sans_cout.py` classe ces trois routes « interaction sans coût », comme les contacts et
+les devis ; la règle (e) du garde démo (`app/core/demo_guard.py`) énumère ce que la démo ne modifie pas (marchés,
+documents, profil, critères, partenaires), sans les alertes ; la remise à neuf automatique recrée les deux alertes de
+la vitrine (`demo_seed.py` les efface et les recrée), et l'appel programmé ne rejoue jamais les alertes de la démo
+(aucun courriel, aucun coût). Bloquer ces écritures serait un choix pour Eliot, qui vaudrait aussi pour les contacts et
+les devis.
+
+### R.14 Laissé, avec sa raison
+
+- Une alerte déjà enregistrée avec un département non reconnu ou caché le garde : la modification (pause, reprise)
+  n'est pas refusée, pour qu'une alerte en service puisse toujours être mise en pause ; le nom enregistré n'est pas
+  réécrit.
+- « Rechercher » (Publiés) et « Chercher les fins de contrat » (À venir), lancés sans mot, cherchent toujours
+  « travaux » sans le dire à l'écran de recherche : point déjà laissé à Eliot (section « Écran »).
+
+### Vérifications
+
+- Les 13 tests nouveaux, sur des extractions `git archive` de `cfe04e1` et de `473e3f1` (tests copiés) : 13 échecs
+  sur chacune, chacun sur son défaut.
+- Suite SQLite complète (TZ=UTC) : 2 485 tests, aucun échec. Les 43 fichiers de tests qui touchent la recherche, les
+  alertes, « À venir », les seuils et le menu, sur PostgreSQL 16.2 (`scripts/tests_postgres.py`) : 871 sur 871.
+- Un test existant suit une correction : le compte des avis visés de V.1 (64 → 65, R.3), avec 26-89213 nommé.
+- `node --check` des scripts servis, `scripts/sri_update.py --check`, `scripts/i18n_ajouter.py --check` (826 clés).

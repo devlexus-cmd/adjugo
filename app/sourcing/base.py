@@ -40,6 +40,18 @@ def _un_chiffre(d: str) -> str:
     return d.zfill(2) if (len(d) == 1 and d.isdigit()) else d
 
 
+def departements_non_reconnus(departements) -> list:
+    """Les entrées qui ne sont pas un numéro de département (même règle que TenderCriteria, qui les écarte) : « 29000 »
+    (un code postal), « 20A »… Une recherche qui les recevait partait sur toute la France sans le dire (contrôle des
+    bugs, 22/10) ; les routes de l'écran les refusent avec message_departement_non_reconnu."""
+    return [str(x).strip() for x in (departements or [])
+            if str(x).strip() and not _DEPT_RE.match(_un_chiffre(str(x).strip().upper()))]
+
+
+def message_departement_non_reconnu(mauvais: list) -> str:
+    return (f"« {str(mauvais[0])[:12]} » n'est pas un numéro de département : indiquez par exemple 29, 56, 2A ou 974.")
+
+
 def dept_cle(d) -> str:
     """Forme de comparaison d'un département : majuscules, « 6 » → « 06 », Corse « 2A »/« 2B » telle quelle,
     outre-mer sur ses TROIS chiffres (« 974 »). Jamais tronquée : 971 à 976 ne deviennent plus tous « 97 »."""
@@ -120,6 +132,11 @@ class TenderSource(ABC):
     """Une plateforme de marchés publics (BOAMP, DECP, TED…)."""
     name: str = "source"
     supported_filters: set = set()    # ex. {"cpv", "departements", "query"}
+    # La source sert-elle la suite par décalage (offset) ? « Charger plus » n'est proposé que si une source qui pagine
+    # a rempli sa page (search.py). Les plateformes Atexo (Mégalis, PLACE) servent tout en première page : jamais.
+    pagine: bool = True
+    # Lignes au plus par page demandée à l'API (le BOAMP et TED en rendent 50 au plus, quel que soit `limit`).
+    lignes_par_page: int = 50
 
     def __init_subclass__(cls, **kwargs):
         """Garde CENTRALE des liens : toute source (actuelle ou future) voit les résultats

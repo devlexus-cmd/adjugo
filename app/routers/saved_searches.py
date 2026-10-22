@@ -6,7 +6,7 @@ nouveaux appels d'offres pertinents. Passe de « je vérifie » à « ça arrive
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 
 from app.core.database import get_db
 from app.core.security import get_current_user
@@ -15,18 +15,37 @@ from app.models import User, SavedSearch
 router = APIRouter(prefix="/api/saved-searches", tags=["Veille / alertes AO"])
 
 
+# Longueurs des colonnes (models.SavedSearch) : au-delà, PostgreSQL refusait l'enregistrement et l'écran recevait une
+# erreur serveur (« réessayez dans un instant », alors que réessayer ne change rien) ; SQLite acceptait (contrôle des
+# bugs, 22/10).
+_NOM_MAX, _MOTS_MAX = 255, 500
+
+
 class SavedSearchIn(BaseModel):
     name: str
     query: Optional[str] = ""
     cpv: list[str] = []
-    type_marche: Optional[str] = ""
+    type_marche: Optional[str] = Field("", max_length=40)
     departements: list[str] = []
     countries: list[str] = []
     montant_min: Optional[float] = None
     montant_max: Optional[float] = None
-    frequency: Optional[str] = "quotidienne"
+    frequency: Optional[str] = Field("quotidienne", max_length=20)
     active: Optional[bool] = True
     min_score: Optional[int] = None
+
+    @field_validator("name")
+    @classmethod
+    def _nom_borne(cls, v):
+        # Le nom est construit par l'écran (« mots · pays (départements) ») : coupé à la longueur de la colonne.
+        return (v or "").strip()[:_NOM_MAX]
+
+    @field_validator("query")
+    @classmethod
+    def _mots_bornes(cls, v):
+        if v is not None and len(v) > _MOTS_MAX:
+            raise ValueError(f"Les mots-clés d'une alerte font {_MOTS_MAX} caractères au plus.")
+        return v
 
 
 def _out(s: SavedSearch) -> dict:
@@ -52,6 +71,13 @@ def list_saved_searches(current_user: User = Depends(get_current_user),
 @router.post("/", status_code=201)
 def create_saved_search(data: SavedSearchIn, current_user: User = Depends(get_current_user),
                         db: Session = Depends(get_db)):
+    # Même règle que la recherche : un département non reconnu (« 29000 ») n'élargit pas l'alerte à toute la France
+    # en silence. À la création seulement : une alerte déjà enregistrée se met toujours en pause ou se réactive.
+    from app.sourcing.base import departements_non_reconnus, message_departement_non_reconnu
+    pays = [str(c).upper() for c in (data.countries or [])]
+    mauvais = departements_non_reconnus(data.departements) if (not pays or "FR" in pays) else []
+    if mauvais:
+        raise HTTPException(422, message_departement_non_reconnu(mauvais))
     s = SavedSearch(user_id=current_user.id, **data.model_dump())
     db.add(s); db.commit(); db.refresh(s)
     return _out(s)

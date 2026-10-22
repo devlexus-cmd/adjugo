@@ -258,9 +258,11 @@ def score_dce(details: dict, company: dict = None, criteria: dict = None) -> dic
 
     total = max(0, min(100, sum(c["points"] for c in bd)))
     try:
-        threshold = int(criteria.get("go_threshold") or 65)   # défaut aligné sur le routeur (65) → plus de
-    except (ValueError, TypeError):                            # contradiction verdict/détail dans la bande 60-64
-        threshold = 65
+        # Défaut aligné sur le routeur et sur « Ce que je cherche » (75, CriteriaUpdate) : plus de contradiction
+        # verdict/détail, ni entre le seuil affiché et celui du verdict (contrôle des bugs, 22/10 ; avant : 65).
+        threshold = int(criteria.get("go_threshold") or 75)
+    except (ValueError, TypeError):
+        threshold = 75
     try:
         nogo = int(criteria.get("nogo_threshold") or 40)
     except (ValueError, TypeError):

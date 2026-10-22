@@ -2,9 +2,9 @@
  "algorithme": "sha384",
  "fichiers": {
   "/static/app.js": {
-   "integrity": "sha384-ZqaieaZA86vB5x0FCwNsA52cHN1FswPcBSCNM6WlMemQy2FYUqaYzM+5gHe8lIaY",
-   "octets": 580313,
-   "sha256": "bf7be12751a316df611b567f6ab19b37b73c9ad56aa68dd5fe5990bc7df0a94a"
+   "integrity": "sha384-6KOtQpF+YqMevPUXu4FCk2CpknpBazVlrramYEA4vlPTckMuqGI42n/2QN5OdbZW",
+   "octets": 582005,
+   "sha256": "170704882c30bad8e2aa61a026e14c727112967d750d9523b44890db765f39a3"
   },
   "/static/carnet-notes.js": {
    "integrity": "sha384-/jbwJaEiImCDEsYHkGeIht+znVCg4i9vSGuAfG6SRpjAST+OI5nP9fPwr8Py0NPV",
@@ -17,9 +17,9 @@
    "sha256": "076c8db3b312a45d6c4d0f568915dd9a8bd66474248c85eb57e318665c1def5b"
   },
   "/static/i18n.js": {
-   "integrity": "sha384-0hDn72aFg/mnfokoZD8bjL3K1TqIS6REEjj0MN9tECB098n0W0IGIrLM7tZsjopu",
-   "octets": 133521,
-   "sha256": "d8e9bd0014b9a4da7cebb3aeb0ed808c89a0b0a6474be8e9f805ebd909020288"
+   "integrity": "sha384-ni+kUhQL0yUUhSZRaB+iycxIg0sNP8p8L0GhO5UdGeLZ43rSvpoSFRy8a5GbY8l0",
+   "octets": 133844,
+   "sha256": "118e6865852270c5ec67a1983936b7e7198cc655c10efba02d85ad3db159dda5"
   },
   "/static/redaction-partenaire.js": {
    "integrity": "sha384-0jgm5b/r+FlC5YZVhiyqvLZyxecxtCABbOw03QuJfDDsfua5T9wxISR2Hfis2Dh+",

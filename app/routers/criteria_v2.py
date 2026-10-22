@@ -174,6 +174,10 @@ def update_criteria(data: CriteriaUpdate, current_user: User = Depends(get_curre
             # garde la valeur en place / le défaut (un nombre ne se « vide » pas en base).
             if "str" in str(CriteriaUpdate.model_fields[k].annotation):
                 setattr(c, k, "")
+            elif k in ("go_threshold", "nogo_threshold"):
+                # Seuil vidé : le défaut que dit le champ vide (« 75 (défaut) », « 40 (défaut) »), pas l'ancienne
+                # valeur gardée en silence (contrôle des bugs, 22/10).
+                setattr(c, k, CriteriaUpdate.model_fields[k].default)
             continue
         setattr(c, k, v)
     # Une seule réponse à la fois (vague 2b) : un montant donné retire « Je ne sais pas » ; « Je ne sais pas » coché (sans

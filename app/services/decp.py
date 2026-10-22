@@ -11,6 +11,7 @@ sont des champs STRUCTURÉS RÉELS → l'échéance est calculée de façon 100 
 (aucune estimation LLM, aucune consommation de quota, aucune hallucination possible).
 """
 import logging
+import re
 from datetime import date, timedelta
 from functools import lru_cache
 
@@ -79,7 +80,9 @@ def _fetch(query: str, departements, cpv=None, per: int = 100) -> list:
     if cpv:
         # cpv peut arriver en CHAÎNE ("45211000") ou en LISTE : sans normalisation, itérer
         # une chaîne parcourait ses CARACTÈRES ("4","5",…) → filtre CPV neutralisé (matche tout).
-        cpv_list = [cpv] if isinstance(cpv, str) else list(cpv)
+        # Une chaîne peut porter plusieurs codes (« Ce que je cherche » : « 45211000, 45300000 ») : découpée comme
+        # le fait le reste du produit (scoring, réseau) ; avant, seul le premier code était lu (contrôle des bugs).
+        cpv_list = re.split(r"[,;\s]+", cpv) if isinstance(cpv, str) else list(cpv)
         codes = [str(c).strip()[:4] for c in cpv_list if str(c).strip()[:4].isdigit()]
         if codes:
             obj = "(" + obj + " OR " + " OR ".join(f'codecpv like "{c}"' for c in codes[:5]) + ")"
@@ -96,6 +99,14 @@ def _fetch(query: str, departements, cpv=None, per: int = 100) -> list:
               "where": where, "select": SELECT}
     r = get_with_retry(API, params=params, timeout=14)
     return r.json().get("results", []) or []
+
+
+def _cle_fin_de_contrat(acheteur_id: str, objet_court: str) -> str:
+    """Identifiant d'une fin de contrat DECP : le SIRET de l'acheteur et une empreinte courte de l'objet (les 80
+    premiers caractères en minuscules, comme le dédoublonnage)."""
+    import hashlib
+    empreinte = hashlib.sha1(objet_court.encode("utf-8")).hexdigest()[:12]
+    return f"{acheteur_id or 'DECP'}-{empreinte}"
 
 
 def detect_renewals_decp(query: str, departements, criteria: dict, domaines=None) -> dict:
@@ -157,7 +168,11 @@ def detect_renewals_decp(query: str, departements, criteria: dict, domaines=None
              "dept": dep, "lieu": dep, "date_attribution": str(row.get("datenotification") or "")[:10]}
         score = _score(r, criteria, domaines, renouv, today)
         out.append({
-            "idweb": str(row.get("id") or acheteur_id or notif.isoformat()),
+            # Clé d'UNE fin de contrat (carte de l'écran, rond d'attente de « Préparer à plusieurs ») : la clé de
+            # dédoublonnage, unique dans la liste. La DECP n'est pas interrogée sur son champ « id » (numéro propre à
+            # l'acheteur, réutilisé d'un marché à l'autre) : avant, le repli sur le SIRET de l'acheteur donnait la même
+            # clé à tous ses contrats (contrôle des bugs, 22/10).
+            "idweb": _cle_fin_de_contrat(acheteur_id, k[0]),
             "objet": r["objet"], "acheteur": r["acheteur"], "lieu": dep, "dept": dep,
             "date_attribution": r["date_attribution"],
             "duree_mois": int(duree), "duree_estimee": False,        # durée RÉELLE, pas estimée

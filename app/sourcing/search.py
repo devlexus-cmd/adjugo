@@ -61,7 +61,14 @@ class TenderSearchService:
                gonogo: Optional[dict] = None) -> dict:
         tenders: list[NormalizedTender] = []
         errors: list[SourceError] = []
-        brut = 0        # lignes reçues des sources pour cette page (avant rattachement, dédup et filtres)
+        # Une source qui pagine a-t-elle rempli sa page (lignes reçues, avant rattachement, dédup et filtres) ?
+        limite = max(1, getattr(criteria, "limit", 20))
+        pleines = []
+
+        def _page_pleine(src, res) -> bool:
+            if not getattr(src, "pagine", True):
+                return False
+            return lignes_lues(res) >= min(limite, max(1, getattr(src, "lignes_par_page", limite) or limite))
 
         # Disjoncteur : on saute les sources en panne (fail-fast, pas de réattente).
         active = [s for s in self.sources if not _cb_open(s.name)]
@@ -79,7 +86,7 @@ class TenderSearchService:
                 try:
                     res = fut.result()
                     tenders.extend(res)
-                    brut += lignes_lues(res)
+                    pleines.append(_page_pleine(src, res))
                     _cb_ok(src.name)
                 except SourceIndisponible as e:
                     errors.append(SourceError(source=src.name, message=str(e)[:200]))
@@ -97,7 +104,7 @@ class TenderSearchService:
                 try:
                     res = fut.result()
                     tenders.extend(res)
-                    brut += lignes_lues(res)
+                    pleines.append(_page_pleine(src, res))
                     _cb_ok(src.name)
                 except SourceIndisponible as e:
                     errors.append(SourceError(source=src.name, message=str(e)[:200]))
@@ -117,7 +124,10 @@ class TenderSearchService:
         # Brut = les LIGNES reçues des sources (base.lignes_lues), pas leurs fiches : une page du BOAMP dont un avis
         # annulé est retiré, ou dont un rectificatif européen rejoint son avis, reste une page pleine (relecture du
         # lot 1) ; et les avis repris par leur rectificatif ne font pas croire qu'une page de plus existe.
-        raw_more = brut >= max(1, getattr(criteria, "limit", 20))
+        # Source par source (contrôle des bugs, 22/10) : la somme des lignes de toutes les sources (8 au BOAMP + 7 à
+        # TED pour 15 demandées, ou les 3 pages de Mégalis servies d'un coup) proposait « Charger plus » pour une page
+        # suivante vide.
+        raw_more = any(pleines)
 
         deduped = _dedup_tenders(tenders)
         # On n'affiche JAMAIS un AO dont la date limite de réponse est passée

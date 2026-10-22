@@ -15,7 +15,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Form
 from sqlalchemy.orm import Session
-from pydantic import BaseModel, Field as PydField
+from pydantic import BaseModel, Field as PydField, model_validator
 
 from app.core.database import get_db
 from app.core.security import get_current_user
@@ -87,8 +87,10 @@ def _company_service() -> CompanySearchService:
 def _verdict(score, gonogo) -> str:
     """Verdict Go/À étudier/No-Go à partir des seuils du profil. Garde-fou CENTRAL :
     on force nogo_threshold < go_threshold pour que la bande « à étudier » existe toujours
-    (sinon un profil mal réglé nogo≥go faisait disparaître la zone intermédiaire)."""
-    go_t = (gonogo or {}).get("go_threshold") or 65
+    (sinon un profil mal réglé nogo≥go faisait disparaître la zone intermédiaire).
+    Rien d'enregistré : les défauts de « Ce que je cherche » (75 / 40, CriteriaUpdate), ceux que l'écran montre dans le
+    champ et que garde le premier enregistrement (avant : 65, un marché noté 70 changeait de verdict à ce moment-là)."""
+    go_t = (gonogo or {}).get("go_threshold") or 75
     nogo_t = (gonogo or {}).get("nogo_threshold") or 40
     nogo_t = min(nogo_t, go_t - 1)
     return "go" if score >= go_t else ("no_go" if score < nogo_t else "a_etudier")
@@ -249,6 +251,17 @@ class SearchRequest(BaseModel):
     offset: int = PydField(0, ge=0, le=10000)        # pagination « charger plus »
     countries: list[str] = []      # ISO alpha-2 (ex. ["FR","DE"]). Vide = toute l'UE/EEE.
     type_marche: str = ""          # "travaux" | "services" | "fournitures" | "" (tous)
+
+    @model_validator(mode="after")
+    def _departements_reconnus(self):
+        # Un département non reconnu était écarté en silence : la recherche partait sur toute la France (Arras pour
+        # qui a tapé « 29000 »). Il est refusé avec une phrase (règle « recherche stricte par département ») quand la
+        # France est cherchée ; un autre pays n'a pas de département (l'écran cache alors le champ).
+        from app.sourcing.base import departements_non_reconnus, message_departement_non_reconnu
+        mauvais = departements_non_reconnus(self.departements) if _fr_inclus(self.countries) else []
+        if mauvais:
+            raise ValueError(message_departement_non_reconnu(mauvais))
+        return self
 
 
 @router.get("/countries")

@@ -507,8 +507,11 @@ def _date_finale(rects: list) -> Optional[str]:
 # La date limite de RÉPONSE, et elle seule : jamais la date des questions, de la visite ou de l'ouverture des plis.
 _CONCERNE_DELAI = re.compile(
     r"\bDLRO\b"
-    r"|(?:remise|r[ée]ception|d[ée]p[ôo]t|transmission)\s+des\s+(?:offres|plis|candidatures|r[ée]ponses|dossiers)"
+    r"|(?:remise|r[ée]ception|d[ée]p[ôo]t|transmission)\s+des\s+(?:offres?|plis?|candidatures?|r[ée]ponses?|dossiers?)"
     r"|date\s+limite\s+de\s+r[ée]ponse", re.I)
+# Singulier accepté après « des » (contrôle des bugs, 22/10) : 26-99040, rectificatif réel de 26-89213 du 13/10/2026,
+# écrit « La date limite de remise des offre est prolongée au 30 octobre 2026. » ; lu « ne concerne pas », l'avis
+# gardait son ancienne date. Sur les 127 rectificatifs réels des jeux d'essai, c'est la seule lecture qui change.
 # La date limite citée comme REPÈRE d'un autre délai (« … 10 jours calendaires avant la date limite fixée pour la
 # réception des offres », « … après la date limite de remise des plis ») ne la change jamais : un tel passage ne
 # compte pas comme parlant de la date limite (26-100865, du 16/10/2026, ne change que le délai des questions de
@@ -516,7 +519,7 @@ _CONCERNE_DELAI = re.compile(
 _REPERE_DU_DELAI = re.compile(
     r"\b(?:avant|apr[èe]s)\s+(?:la\s+|le\s+)?"
     r"(?:(?:date|jour)\s+(?:et\s+(?:l['’]\s*)?heure\s+)?limites?\s+(?:fix[ée]e?s?\s+)?(?:pour|de|d['’])\s*(?:la\s+|le\s+)?)?"
-    r"(?:remise|r[ée]ception|d[ée]p[ôo]t|transmission)\s+des\s+(?:offres|plis|candidatures|r[ée]ponses|dossiers)"
+    r"(?:remise|r[ée]ception|d[ée]p[ôo]t|transmission)\s+des\s+(?:offres?|plis?|candidatures?|r[ée]ponses?|dossiers?)"
     r"|\b(?:avant|apr[èe]s)\s+(?:la\s+)?(?:date\s+limite\s+de\s+r[ée]ponse|DLRO)\b", re.I)
 # « Au lieu de 21/10/2026 à 12h00, lire 05/11/2026 à 12h00 » : la date qui suit « lire ».
 _AU_LIEU_LIRE = re.compile(r"\bau\s+lieu\s+d(?:e|u|es)\b(.*?)\blire\b(.*?)(?=\bau\s+lieu\s+d(?:e|u|es)\b|$)",

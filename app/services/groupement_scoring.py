@@ -581,7 +581,7 @@ def gaps_for(details: dict, lead_company: dict, criteria: dict) -> list:
 # ── 4) Score de groupement ────────────────────────────────────────────────────────────
 
 def _thresholds(det: dict) -> dict:
-    return {"go": int(det.get("threshold") or 65), "nogo": int(det.get("nogo_threshold") or 40)}
+    return {"go": int(det.get("threshold") or 75), "nogo": int(det.get("nogo_threshold") or 40)}   # défauts de criteria_v2
 
 
 def _build_lead(lead_company: dict, criteria: dict, given: dict = None) -> dict:

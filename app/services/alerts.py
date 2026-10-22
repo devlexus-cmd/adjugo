@@ -491,7 +491,13 @@ def run_one_saved_search(s: SavedSearch, db: Session, mark: bool = True) -> list
     from app.services.profile import company_dict, criteria_dict
     from app.models import utcnow
 
-    company = db.query(Company).filter(Company.user_id == s.user_id).first()
+    # Profil entreprise de l'ORGANISATION (celui du propriétaire), comme l'écran de recherche et « Ce que je cherche »
+    # (criteria_dict) : un collègue n'a pas de fiche entreprise à lui, et son alerte classait les marchés sans le
+    # code postal de l'entreprise (contrôle des bugs, 22/10).
+    from app.core.org import data_owner_id
+    proprio = db.query(User).filter(User.id == s.user_id).first()
+    oid = data_owner_id(proprio, db) if proprio else s.user_id
+    company = db.query(Company).filter(Company.user_id == oid).first()
     gonogo = criteria_dict(s.user_id, db)
     countries = s.countries or []
     crit = TenderCriteria(query=s.query or "", cpv=s.cpv or [],
@@ -570,6 +576,10 @@ def run_tender_alerts(db: Session) -> dict:
     emailed = ({uid for (uid,) in db.query(User.id).filter(User.email.isnot(None)).all()}
                - _comptes_non_confirmes(db))
     by_user = defaultdict(list)   # user_id -> [(search_name, [tenders])]
+    # Mémoire d'avant ce passage, par alerte qui a de nouveaux marchés : rendue si le courriel ne part pas (Brevo ou
+    # SMTP en panne). Sinon ces marchés étaient marqués « déjà vus » sans avoir été envoyés, et ne partaient jamais
+    # (même règle que les « pièces à renouveler » : rien n'est marqué tant que le courriel n'est pas parti).
+    avant, alertes_de = {}, defaultdict(list)
     demo_ids = _demo_user_ids(db)
     from app.services.pieces_fin import jour_paris
     aujourdhui, en_attente = jour_paris(), 0
@@ -580,14 +590,22 @@ def run_tender_alerts(db: Session) -> dict:
             en_attente += 1
             continue
         has_email = s.user_id in emailed
+        memoire = (s.last_seen_refs, s.last_run)
         fresh = run_one_saved_search(s, db, mark=has_email)
         if fresh and has_email:
             by_user[s.user_id].append((s.name, fresh))
+            avant[s.id] = memoire
+            alertes_de[s.user_id].append(s)
+
+    def _rendre_la_memoire(user_id):
+        for s in alertes_de.get(user_id, []):
+            s.last_seen_refs, s.last_run = avant[s.id]
 
     notified, total = 0, 0
     for user_id, blocks in by_user.items():
         user = db.query(User).filter(User.id == user_id).first()
         if not user or not user.email or not user.email_verified:
+            _rendre_la_memoire(user_id)
             continue
         lines = ["Bonjour,\n\nVotre veille Adjugo a repéré de nouveaux appels d'offres :\n"]
         for name, tenders in blocks:
@@ -606,6 +624,8 @@ def run_tender_alerts(db: Session) -> dict:
         lines.append("\n\nConnectez-vous à Adjugo pour les analyser.\n\n— Adjugo")
         if send_email(user.email, f"Adjugo — {sum(len(t) for _, t in blocks)} nouvel(s) appel(s) d'offres", "\n".join(lines)):
             notified += 1
+        else:
+            _rendre_la_memoire(user_id)     # courriel non parti : ces marchés partiront au prochain passage
     db.commit()
     result = {"searches_run": len(searches), "users_notified": notified, "new_matches": total,
               "weekly_not_due": en_attente}

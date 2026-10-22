@@ -138,7 +138,9 @@ def test_relecture_ne_reprend_que_les_avis_dont_la_date_publiee_est_passee(monke
     assert len(relecture) == 1
     assert "datelimitereponse < date'2026-10-21'" in relecture[0].split(" OR (")[0]
     demandes, _ = _relue(relecture[0])
-    assert len(demandes) == 64 and "26-82275" in demandes and passes <= demandes
+    # 65 depuis le contrôle des bugs du 22/10 : 26-99040 (« remise des offre », au singulier) est lu comme changeant
+    # la date limite de 26-89213 (au 30/10/2026), qui est donc demandé lui aussi ; avant, 64 (26-89213 oublié).
+    assert len(demandes) == 65 and "26-82275" in demandes and "26-89213" in demandes and passes <= demandes
     assert not any("non relus" in x.getMessage() for x in caplog.records)
 
 
