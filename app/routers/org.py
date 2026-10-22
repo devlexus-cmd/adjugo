@@ -169,11 +169,22 @@ def invite_member(data: InviteIn, request: Request, current_user: User = Depends
                                  f"Passez à une offre supérieure pour agrandir l'équipe.")
 
     temp_password = secrets.token_urlsafe(9)
+    from datetime import datetime, timedelta, timezone
+    from app.core.quota import TRIAL_DAYS
+    from app.routers.auth import clean_full_name
     member = User(
         email=email_norm,
         hashed_password=hash_password(temp_password),
-        full_name=data.full_name or email_norm.split("@")[0],
+        # Nom nettoyé et borné comme à l'inscription (clean_full_name) : il s'affiche dans l'équipe et entre dans des
+        # courriels et des noms d'organisation. Avant : caractères de contrôle gardés, et au-delà de 255 caractères
+        # (largeur de la colonne) l'invitation échouait sur PostgreSQL (500).
+        full_name=clean_full_name(data.full_name) or email_norm.split("@")[0],
         org_id=org.id, org_role="membre",
+        # Tout NOUVEAU compte a une date de fin d'essai, quel que soit le mode de création (app/core/quota.py ; CGV
+        # 3.5 ; comme l'inscription par mot de passe ou par Google). Tant qu'il est membre, seul le forfait du
+        # propriétaire compte (quota._billing_user) ; retiré de l'organisation, il n'est pas un compte « historique »
+        # sans fin d'essai (5 analyses gratuites par mois sans fin, IA jamais en pause, aucune limite d'usage).
+        trial_ends_at=datetime.now(timezone.utc) + timedelta(days=TRIAL_DAYS),
     )
     db.add(member)
     db.commit()
@@ -270,6 +281,51 @@ def set_member_role(member_id: int, data: RoleIn, request: Request,
     return {"ok": True, "id": member.id, "role": role}
 
 
+def _transferer_facturation(db, ancien: User, nouveau: User) -> None:
+    """Le compte de facturation est le propriétaire de l'organisation (quota._billing_user : quota, écran Abonnement,
+    /api/stripe/status ; docs/ESSAI_GARDE_FOU.md) : au transfert, ce qui se facture passe de l'ancien au nouveau.
+    Déplacés (l'ancien retombe sans forfait) : forfait, client Stripe (le webhook retrouve le compte par lui),
+    paiement à l'usage et son compteur, compteurs d'analyses du mois, unités de dépassement envoyées à Stripe (lignes
+    `jobs`, annulables si l'analyse est remboursée). Copiés (l'ancien garde les siens : s'il quitte un jour
+    l'organisation, il reste soumis à son essai, jamais un compte sans fin d'essai) : fin d'essai, analyses de
+    l'essai. Le relevé du coût de l'IA (usage_ia : limite d'usage de l'essai, alerte des forfaits) suit lui aussi."""
+    import logging
+    from app.models import Job, PlanType, UsageIA
+    from app.services.billing_usage import UNITE_KIND
+    if nouveau.stripe_customer_id and nouveau.stripe_customer_id != ancien.stripe_customer_id:
+        # Client Stripe propre au nouveau propriétaire (paiement fait par un collègue avant le 22/10) : remplacé par
+        # celui de l'organisation ; noté pour pouvoir le retrouver (il porte aussi user_id dans ses métadonnées).
+        logging.getLogger("adjugo").warning("transfert de propriété : client Stripe %s du compte %s remplacé par %s",
+                                            nouveau.stripe_customer_id, nouveau.id, ancien.stripe_customer_id)
+    for champ, defaut in (("plan", PlanType.starter), ("stripe_customer_id", None), ("overage_enabled", False),
+                          ("overage_count", 0), ("analyses_used_this_month", 0), ("analyses_period", "")):
+        valeur = getattr(ancien, champ)
+        setattr(nouveau, champ, defaut if valeur is None else valeur)
+        setattr(ancien, champ, defaut)
+    nouveau.trial_ends_at = ancien.trial_ends_at
+    nouveau.trial_analyses_used = int(ancien.trial_analyses_used or 0)
+    db.flush()
+    ancien_c, nouveau_c = f"u{ancien.id}", f"u{nouveau.id}"
+    for r in db.query(UsageIA).filter(UsageIA.compte == ancien_c).all():
+        cible = db.query(UsageIA).filter(UsageIA.compte == nouveau_c, UsageIA.periode == r.periode,
+                                         UsageIA.essai == r.essai).first()
+        if cible is None:
+            r.compte, r.billing_user_id, r.org_id = nouveau_c, nouveau.id, nouveau.org_id
+            continue
+        # Même période, même nature (essai ou non) : une seule ligne (contrainte compte, période, essai).
+        cible.cout_eur = float(cible.cout_eur or 0) + float(r.cout_eur or 0)
+        cible.appels = int(cible.appels or 0) + int(r.appels or 0)
+        cible.tokens_entree = int(cible.tokens_entree or 0) + int(r.tokens_entree or 0)
+        cible.tokens_sortie = int(cible.tokens_sortie or 0) + int(r.tokens_sortie or 0)
+        cible.alerte_le = cible.alerte_le or r.alerte_le
+        cible.billing_user_id = nouveau.id
+        db.delete(r)
+    db.flush()
+    db.query(Job).filter(Job.user_id == ancien.id, Job.kind == UNITE_KIND).update(
+        {Job.user_id: nouveau.id}, synchronize_session=False)
+    db.flush()
+
+
 class TransferIn(BaseModel):
     new_owner_id: int
 
@@ -291,10 +347,17 @@ def transfer_ownership(data: TransferIn, request: Request,
         raise HTTPException(400, "Vous êtes déjà propriétaire")
     org.owner_id = target.id
     target.org_role = "admin"
-    current_user.org_role = "membre"
+    # L'ancien propriétaire devient administrateur, ce que dit la fenêtre de transfert (app.js, orgTransfer : « Vous
+    # deviendrez simple administrateur. ») : il invite encore des collègues ; seul le nouveau propriétaire retire,
+    # change les rôles, transfère et modifie l'organisation. Avant : « membre », contre le texte affiché.
+    current_user.org_role = "admin"
     # L'ancien propriétaire perd ses droits → on révoque ses sessions en cours pour que
     # la baisse d'autorité prenne effet immédiatement (pas seulement au prochain login).
     current_user.token_version = (current_user.token_version or 0) + 1
+    # Le compte de facturation change avec le propriétaire : forfait, client Stripe, essai et relevé du coût de l'IA
+    # le suivent. Avant, une organisation Pro redevenait « starter » (5 analyses), un essai terminé transféré à un
+    # collègue rouvrait l'IA, et le webhook Stripe ne mettait plus l'organisation à jour.
+    _transferer_facturation(db, current_user, target)
     # data_owner_id() bascule sur le nouveau propriétaire : on DOIT migrer avec lui les
     # données portées par le tenant, sinon elles deviennent orphelines/invisibles pour TOUTE
     # l'organisation (fiche entreprise, critères Go/No-Go, co-traitance). On ne touche PAS

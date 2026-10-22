@@ -1864,7 +1864,7 @@ const __adjApp = createApp({
       window.location.href = "/api/auth/google/login";
     },
     async resendVerification() {
-      try { const r = await this.api("POST", "/api/auth/resend-verification"); this.notify(r.message || "Email de confirmation renvoyé"); }
+      try { const r = await this.api("POST", "/api/auth/resend-verification"); this.notify(r.message || "Email de confirmation renvoyé", r && r.ok === false ? "err" : undefined); }   // ok:false : le courriel n'est pas parti
       catch (e) { this.notify(e.message, "err"); }
     },
     async resetPassword() {
@@ -2640,11 +2640,11 @@ const __adjApp = createApp({
       try {
         const r = await this.api("POST", "/api/stripe/create-checkout?plan=" + planKey);
         if (r && r.checkout_url) window.location.href = r.checkout_url;
-      } catch (e) { this.notify("Paiement indisponible (config Stripe) : " + e.message, "err"); }
+      } catch (e) { this.notify(e.status === 403 && e.message ? e.message : "Paiement indisponible (config Stripe) : " + e.message, "err"); }   // 403 : le serveur dit qui peut choisir un forfait
     },
     async portal() {
       try { const r = await this.api("POST", "/api/stripe/portal"); if (r.portal_url) window.location.href = r.portal_url; }
-      catch (e) { this.notify("Portail indisponible", "err"); }
+      catch (e) { this.notify(e.status === 403 && e.message ? e.message : "Portail indisponible", "err"); }
     },
 
     async loadStats() { try { this.stats = await this.api("GET", "/api/agent/stats"); } catch (e) {} },

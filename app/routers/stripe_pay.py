@@ -11,10 +11,24 @@ router = APIRouter(prefix="/api/stripe", tags=["Paiements Stripe"])
 settings = get_settings()
 
 
+def _compte_de_facturation(current_user, db, action: str):
+    """Le forfait est porté par le PROPRIÉTAIRE de l'organisation (quota._billing_user : c'est lui que lisent le quota,
+    l'écran Abonnement et /status). Le paiement et le portail lui sont rattachés (client Stripe, et `metadata.user_id`
+    du paiement, que lit le webhook `checkout.session.completed`), jamais au collègue qui clique : avant, un collègue
+    payait et le forfait allait sur son compte, que personne ne lit. Engagement financier : propriétaire ou
+    administrateur, comme le paiement à l'usage (set_overage)."""
+    from app.core.quota import _billing_user
+    bu = _billing_user(current_user, db)
+    if bu.id != current_user.id and (current_user.org_role or "") not in ("owner", "admin"):
+        raise HTTPException(403, f"Seul le propriétaire ou un administrateur de l'organisation peut {action}.")
+    return bu
+
+
 @router.post("/create-checkout")
 def create_checkout(plan: str, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     from app.core.demo_guard import refuser_demo
     refuser_demo(current_user, "vous abonner")               # défense en profondeur : aucune écriture Stripe
+    bu = _compte_de_facturation(current_user, db, "choisir un forfait")
     stripe.api_key = settings.STRIPE_SECRET_KEY
 
     prices = {"pro": settings.STRIPE_PRICE_PRO, "business": settings.STRIPE_PRICE_BUSINESS}
@@ -22,14 +36,14 @@ def create_checkout(plan: str, current_user: User = Depends(get_current_user), d
         raise HTTPException(400, "Plan invalide. Choisissez 'pro' ou 'business'.")
 
     try:
-        # Creer ou recuperer le customer Stripe
-        if not current_user.stripe_customer_id:
+        # Creer ou recuperer le customer Stripe du compte de facturation
+        if not bu.stripe_customer_id:
             customer = stripe.Customer.create(
-                email=current_user.email,
-                name=current_user.full_name or "",
-                metadata={"user_id": str(current_user.id)}
+                email=bu.email,
+                name=bu.full_name or "",
+                metadata={"user_id": str(bu.id)}
             )
-            current_user.stripe_customer_id = customer.id
+            bu.stripe_customer_id = customer.id
             db.commit()
 
         # Forfait + prix « à l'usage » (dépassement au-delà du quota) quand il est configuré : sans
@@ -38,13 +52,13 @@ def create_checkout(plan: str, current_user: User = Depends(get_current_user), d
         if (settings.STRIPE_PRICE_OVERAGE or "").strip():
             line_items.append({"price": settings.STRIPE_PRICE_OVERAGE.strip()})
         session = stripe.checkout.Session.create(
-            customer=current_user.stripe_customer_id,
+            customer=bu.stripe_customer_id,
             payment_method_types=["card"],
             line_items=line_items,
             mode="subscription",
             success_url=settings.APP_BASE_URL + "/app?payment=success",
             cancel_url=settings.APP_BASE_URL + "/app?payment=cancel",
-            metadata={"user_id": str(current_user.id), "plan": plan}
+            metadata={"user_id": str(bu.id), "plan": plan}
         )
         return {"checkout_url": session.url, "session_id": session.id}
 
@@ -149,17 +163,20 @@ def set_overage(enabled: bool = True, current_user: User = Depends(get_current_u
 
 
 @router.post("/portal")
-def create_portal(current_user: User = Depends(get_current_user)):
+def create_portal(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     from app.core.demo_guard import refuser_demo
     refuser_demo(current_user, "gérer votre abonnement")     # défense en profondeur : aucune écriture Stripe
+    # L'abonnement de l'organisation (compte de facturation) : avant, un administrateur dont l'écran disait « pro » et
+    # montrait « Gérer mon abonnement » recevait « Pas d'abonnement actif » (son propre client Stripe, inexistant).
+    bu = _compte_de_facturation(current_user, db, "gérer l'abonnement")
     stripe.api_key = settings.STRIPE_SECRET_KEY
 
-    if not current_user.stripe_customer_id:
+    if not bu.stripe_customer_id:
         raise HTTPException(400, "Pas d'abonnement actif")
 
     try:
         session = stripe.billing_portal.Session.create(
-            customer=current_user.stripe_customer_id,
+            customer=bu.stripe_customer_id,
             return_url=settings.APP_BASE_URL + "/app"
         )
         return {"portal_url": session.url}

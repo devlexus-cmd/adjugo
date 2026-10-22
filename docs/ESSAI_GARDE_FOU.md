@@ -216,3 +216,27 @@ restent accessibles. »
   fin d'essai (30 jours) qu'une inscription par mot de passe. Les comptes Google déjà en base ne sont
   pas modifiés (sans date de fin d'essai, ils restent traités comme des comptes historiques).
 - Tests : `tests/test_essai_termine.py`.
+
+## 10. Équipe et compte de facturation (contrôle des bugs, 22/10/2026)
+
+Le compte de facturation reste le propriétaire de l'organisation. Trois défauts corrigés, sans aucun
+changement de prix, de quota ni d'offre (tests : `tests/test_controle_bugs_comptes.py`) :
+
+- **Collègue invité** (Réglages › Collègues) : il reçoit, comme tout nouveau compte, une date de fin
+  d'essai (30 jours après l'invitation). Tant qu'il est membre, seul le forfait du propriétaire compte ;
+  retiré de l'organisation, il suit la règle de l'essai. Avant, il devenait un compte historique sans fin
+  d'essai (5 analyses gratuites par mois sans fin, IA jamais en pause). Les collègues déjà en base ne sont
+  pas modifiés.
+- **Transfert de propriété** : forfait, client Stripe, paiement à l'usage et son compteur, compteurs du
+  mois et unités de dépassement envoyées à Stripe passent au nouveau propriétaire (l'ancien retombe sans
+  forfait) ; la fin d'essai et les analyses de l'essai lui sont copiées ; le relevé du coût de l'IA
+  (`usage_ia`) le suit. Avant, une organisation Pro redevenait « starter » pour tous ses membres et un
+  essai terminé transféré à un collègue rouvrait l'IA. L'ancien propriétaire devient administrateur, ce que
+  dit la fenêtre de transfert. Choix laissé à Eliot : un client Stripe propre au nouveau propriétaire
+  (paiement fait par un collègue avant cette correction) est remplacé par celui de l'organisation et noté
+  dans le journal.
+- **Choisir un forfait, Gérer mon abonnement** : le paiement et le portail sont rattachés au propriétaire
+  (client Stripe et `metadata.user_id`), jamais au collègue qui clique, et réservés au propriétaire ou à un
+  administrateur, comme le paiement à l'usage (403 « Seul le propriétaire ou un administrateur de
+  l'organisation peut … », affiché tel quel). Avant, le paiement d'un collègue posait le forfait sur son
+  compte, que personne ne lit, et l'organisation restait sans forfait.

@@ -76,13 +76,24 @@ def _suite_apres_confirmation(user: User) -> str:
         return APRES_CONFIRMATION
 
 
-def _send_verification(user: User) -> None:
+def _verify_mail_rendre(user_id: int) -> None:
+    """Un envoi compté qui n'est pas parti (courriel coupé, service d'envoi en panne) est rendu au plafond du jour :
+    le plafond compte les courriels réellement envoyés, cinq pannes de suite n'épuisent pas la journée."""
+    with _VERIFY_LOCK:
+        lst = _VERIFY_SENT.get(user_id) or []
+        if lst:
+            lst.pop()
+
+
+def _send_verification(user: User) -> bool:
     """Génère un lien signé (48 h) et envoie l'email de confirmation. Silencieux si l'email
-    est désactivé/échoue → ne bloque JAMAIS l'inscription.
+    est désactivé/échoue → ne bloque JAMAIS l'inscription. Renvoie vrai si le courriel est PARTI
+    (valeur de send_email) ; sinon faux, et l'envoi manqué est rendu au plafond du jour.
     Le jeton porte `purpose` (jamais accepté comme session, cf. get_current_user) et
     l'ADRESSE à prouver : un ancien lien ne peut pas confirmer une adresse changée depuis."""
     if not _verify_mail_budget(user.id, consume=True):
-        return
+        return False
+    parti = False
     try:
         token = create_access_token(data={"sub": str(user.id), "purpose": "verify_email",
                                           "email": _norm_email(user.email)},
@@ -90,13 +101,23 @@ def _send_verification(user: User) -> None:
         base = (get_settings().APP_BASE_URL or "https://adjugo.pro").rstrip("/")
         link = f"{base}/app?verify={token}"
         suite = _suite_apres_confirmation(user)
-        send_email(user.email, "Confirmez votre adresse email — Adjugo",
-                   "Bienvenue sur Adjugo !\n\nConfirmez votre adresse email (lien valable 48 heures) :\n"
-                   f"{link}\n\n" + (suite + "\n\n" if suite else "")
-                   + "Si vous n'êtes pas à l'origine de cette inscription, ignorez ce message.\n\n— Adjugo",
-                   html=verify_email_html(link, user.full_name or "", suite))
+        parti = bool(send_email(user.email, "Confirmez votre adresse email — Adjugo",
+                                "Bienvenue sur Adjugo !\n\nConfirmez votre adresse email (lien valable 48 heures) :\n"
+                                f"{link}\n\n" + (suite + "\n\n" if suite else "")
+                                + "Si vous n'êtes pas à l'origine de cette inscription, ignorez ce message.\n\n— Adjugo",
+                                html=verify_email_html(link, user.full_name or "", suite)))
     except Exception:
-        pass
+        parti = False
+    if not parti:
+        _verify_mail_rendre(user.id)
+    return parti
+
+
+# Réponse de « Renvoyer l'email de vérification » quand le courriel n'est pas parti (affichée telle quelle par l'écran
+# plein « Confirmez votre adresse email » et par les boutons « Renvoyer l'email de confirmation »). Avant : « Email de
+# confirmation renvoyé. » dans ce cas aussi.
+MSG_VERIF_NON_PARTIE = ("L'email de confirmation n'a pas pu partir pour l'instant. Réessayez dans un instant ; "
+                        "si cela continue, écrivez-nous.")
 
 
 @router.post("/register", response_model=RegisterOut, status_code=201)
@@ -235,7 +256,9 @@ def resend_verification(request: Request, current_user: User = Depends(get_curre
     if not _verify_mail_budget(current_user.id, consume=False):
         raise HTTPException(status_code=429, detail="Plusieurs emails de confirmation sont déjà partis "
                                                     "aujourd'hui. Vérifiez vos spams ou réessayez demain.")
-    _send_verification(current_user)
+    # « Renvoyé » seulement si le courriel est parti : l'écran affiche cette réponse telle quelle.
+    if not _send_verification(current_user):
+        return {"ok": False, "message": MSG_VERIF_NON_PARTIE}
     return {"ok": True, "message": "Email de confirmation renvoyé."}
 
 

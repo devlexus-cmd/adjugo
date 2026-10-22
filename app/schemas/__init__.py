@@ -63,7 +63,17 @@ class UserCreate(BaseModel):
     email: EmailStr
     password: str = Field(min_length=8, description="Au moins 8 caractères")
     full_name: str
-    company_name: Optional[str] = None
+    # Nom d'entreprise : espaces autour retirés avant la mesure ; fait d'espaces seulement, il vaut « absent » (sinon
+    # l'organisation et la fiche entreprise s'appelaient « »). Borné à la largeur des colonnes companies.name et
+    # organizations.name (255) : au-delà, 422 lisible (« Entreprise : trop long ») au lieu d'un 500 sur PostgreSQL.
+    company_name: Optional[str] = Field(None, max_length=255)
+
+    @field_validator("company_name", mode="before")
+    @classmethod
+    def _strip_company_name(cls, v):
+        if not isinstance(v, str):
+            return v                    # None, ou une valeur d'un autre type : la validation habituelle décide
+        return v.strip() or None
 
     # EmailStr ne met en minuscule QUE le domaine : on normalise TOUTE l'adresse (partie locale
     # incluse) pour qu'inscription, connexion et reset utilisent la même forme canonique. Sinon
