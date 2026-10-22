@@ -24,7 +24,7 @@ Aucun import de routeur, aucun modèle SQLAlchemy : les appelants passent des di
 import re
 import unicodedata
 
-from app.services.dce_scoring import score_dce, _amount, _dept, _words, _GENERIC
+from app.services.dce_scoring import score_dce, _amount, _dept, _depts, _words, _GENERIC
 
 # Critères du barème score_dce (miroir) + 2 exigences propres aux candidatures groupées
 # (références et effectif ne sont pas notés par score_dce mais sont des manques réels).
@@ -478,12 +478,13 @@ def gaps_for(details: dict, lead_company: dict, criteria: dict) -> list:
 
     # Zone (20) — seulement si le DCE PRÉCISE un lieu (sinon rien n'est exigé)
     c = bd.get("zone")
-    ld = _dept(details.get("lieu_execution", ""))
-    if c and ld and c.get("status") != "ok":
+    lds = _depts(details.get("lieu_execution", ""))      # tous les départements du lieu, comme score_dce
+    if c and lds and c.get("status") != "ok":
         deps = _deps_of_criteria(criteria)
         gaps.append({
             "key": "zone", "label": _LABELS["zone"],
-            "required": f"département {ld} ({str(details.get('lieu_execution') or '').strip()[:80]})",
+            "required": f"département{'s' if len(lds) > 1 else ''} {', '.join(lds)} "
+                        f"({str(details.get('lieu_execution') or '').strip()[:80]})",
             "have": ", ".join(deps) if deps else _NON_RENSEIGNE,
             "extrait": "",
             "severity": "important" if (deps and c.get("status") == "partiel") else "a_verifier",
@@ -604,7 +605,7 @@ def _build_lead(lead_company: dict, criteria: dict, given: dict = None) -> dict:
 
 def _apporte_par(key: str, details: dict, partners: list, cumul_admis: bool) -> list:
     """Membres (non lead) dont la capacité fait passer le critère `key`."""
-    ld = _dept(details.get("lieu_execution", ""))
+    lds = _depts(details.get("lieu_execution", ""))      # tous les départements du lieu, comme score_dce
     out = []
     for p in partners:
         ok = False
@@ -615,7 +616,7 @@ def _apporte_par(key: str, details: dict, partners: list, cumul_admis: bool) -> 
         elif key == "metier":
             ok = bool(_market_words(details) & _member_words(p))
         elif key == "zone":
-            ok = bool(ld) and _in_zone(ld, p["departements"])
+            ok = any(_in_zone(d, p["departements"]) for d in lds)
         elif key == "references":
             ok = bool(p["references"])
         elif key == "effectif":
@@ -678,11 +679,11 @@ def score_groupement(details: dict, lead_company: dict, criteria: dict, members:
         for d in p["departements"]:
             if d not in lead_deps and d not in partner_deps:
                 partner_deps.append(d)
-    ld = _dept(details.get("lieu_execution", ""))
+    lds = _depts(details.get("lieu_execution", ""))      # tous les départements du lieu, comme score_dce
     # Zone : on n'« explicite » la zone du groupement que si elle n'était pas déjà définie
     # ET qu'un partenaire couvre vraiment le lieu — sinon un lead sans zone (statut 'inconnu',
     # non pénalisé) passerait « hors zone » par le seul fait d'ajouter un partenaire.
-    if partner_deps and (lead_deps or (ld and _in_zone(ld, partner_deps))):
+    if partner_deps and (lead_deps or any(_in_zone(d, partner_deps) for d in lds)):
         criteria_v["departements"] = lead_deps + partner_deps
 
     grp = score_dce(details, company_v, criteria_v)

@@ -491,6 +491,7 @@ def analyze_tender(request: Request, req: AnalyzeRequest,
 
     return {
         "project_id": project.id, "decision": project.go_decision, "score": score,   # score = SEUL
+        "decision_seul": decision,       # verdict SEUL (« decision » peut être « go_groupement »)
         "dce_available": dce_available,
         "confidence": tender.confidence,
         "summary": analysis.get("summary", ""),
@@ -625,12 +626,21 @@ def _finish_analysis(db, project, analysis, company_data, gonogo, user, lecture=
     intitule = analysis.get("details", {}).get("intitule_marche")
     if intitule:
         project.name = intitule[:500]
-    st = dict(_lecture_state(project))
+    # En tâche de fond, l'état garde la tâche qui tourne (GET /lecture dit « termine » quand elle est finie).
+    # Pendant la requête, aucune tâche ne tourne : l'état repart de zéro. Sinon l'état d'une ancienne lecture
+    # en tâche de fond (en erreur, ou morte au redémarrage) survivait sous « termine », et GET /lecture
+    # disait « La lecture ou l'analyse du dossier a échoué. Réessayez : votre analyse n'a pas été débitée. »
+    # d'une analyse qui avait réussi et avait été débitée.
+    st = dict(_lecture_state(project)) if _lecture_en_cours(db, project) else {}
+    st.pop("erreur", None)
     st.update({"etat": "termine", "fin": datetime.now(timezone.utc).isoformat(timespec="seconds")})
     _set_lecture_state(db, project, st)        # commit
     _apply_groupement(db, project, analysis, company_data, gonogo, user)
     return {
         "project_id": project.id, "decision": project.go_decision, "score": score,   # score = SEUL
+        # Verdict SEUL : « decision » devient « go_groupement » quand un groupement est recommandé ; la
+        # pastille « Seul » de « Trouver des marchés » dit celui-ci.
+        "decision_seul": decision,
         "dce_available": True,
         "summary": analysis.get("summary", ""),
         "details": analysis.get("details", {}),

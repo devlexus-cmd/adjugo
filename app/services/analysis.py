@@ -1428,11 +1428,96 @@ def _col_index(ref: str) -> int:
     return max(0, n - 1)
 
 
+# Formats de nombre intégrés d'Excel qui écrivent une date (14 à 17, 22 ; 27 à 36 et 50 à 58 : dates des
+# versions asiatiques) ou une heure du jour (18 à 21). Les durées (45 à 47, « [h]:mm:ss »…) ne sont pas des
+# dates : leur nombre reste tel quel.
+_XLSX_FMT_DATES = frozenset(list(range(14, 18)) + [22] + list(range(27, 37)) + list(range(50, 59)))
+_XLSX_FMT_HEURES = frozenset(range(18, 22))
+
+
+def _xlsx_format_date(code: str):
+    """'date', 'heure' (heure du jour seule) ou None pour un format de nombre personnalisé. Le texte entre
+    guillemets, les caractères échappés et les crochets (couleur, langue) ne comptent pas ; une durée
+    cumulée (« [h]:mm ») ou un format qui écrit des chiffres (« 0 », « # ») n'est pas une date."""
+    c = str(code or "")
+    if re.search(r"\[(?:h+|m+|s+)\]", c, re.IGNORECASE):
+        return None
+    c = re.sub(r'"[^"]*"|\\.|\[[^\]]*\]|_.|\*.', "", c)
+    c = re.sub(r"AM/PM|A/P", "", c, flags=re.IGNORECASE)
+    # Hors guillemets, un format de date n'écrit que des lettres de date ou d'heure (« Standard » n'en est pas un).
+    if re.search(r"[0#?]", c) or re.search(r"[^\W\dymdhsegb_]", c, re.IGNORECASE) \
+            or not re.search(r"[ymdhs]", c, re.IGNORECASE):
+        return None
+    return "date" if re.search(r"[yd]", c, re.IGNORECASE) or not re.search(r"[hs]", c, re.IGNORECASE) else "heure"
+
+
+def _xlsx_styles_dates(z, names: set) -> dict:
+    """{indice de style de cellule: 'date' ou 'heure'} d'après xl/styles.xml. Une date est enregistrée dans
+    la feuille comme un nombre de jours (« 46371 ») : seul le style de la cellule dit que c'est une date."""
+    out = {}
+    if "xl/styles.xml" not in names:
+        return out
+    try:
+        st = _xml_root(z.read("xl/styles.xml"))
+        perso = {}
+        for nf in st.iter(_XLSX_NS + "numFmt"):
+            try:
+                perso[int(nf.get("numFmtId"))] = nf.get("formatCode") or ""
+            except (TypeError, ValueError):
+                continue
+        xfs = st.find(_XLSX_NS + "cellXfs")
+        for i, xf in enumerate(xfs.findall(_XLSX_NS + "xf") if xfs is not None else []):
+            try:
+                fid = int(xf.get("numFmtId") or 0)
+            except (TypeError, ValueError):
+                continue
+            if fid in perso:
+                genre = _xlsx_format_date(perso[fid])
+            else:
+                genre = "date" if fid in _XLSX_FMT_DATES else ("heure" if fid in _XLSX_FMT_HEURES else None)
+            if genre:
+                out[i] = genre
+    except Exception:       # noqa: BLE001 — sans styles lisibles, les nombres restent des nombres
+        return {}
+    return out
+
+
+def _xlsx_date_texte(v: str, genre: str, base1904: bool) -> str:
+    """« 15/12/2026 », « 15/12/2026 09:30 » ou « 09:30 » à partir du nombre de jours enregistré par le
+    tableur ; '' (le nombre reste) si ce n'est pas un nombre ou si la date n'existe pas (avant mars 1900)."""
+    import datetime as _dt
+    import math
+    try:
+        x = float(v)
+    except (TypeError, ValueError):
+        return ""
+    if not math.isfinite(x) or x < 0 or x > 2_958_465:        # 31/12/9999
+        return ""
+    jours = math.floor(x)
+    secondes = int(round((x - jours) * 86400))
+    if secondes >= 86400:
+        jours, secondes = jours + 1, 0
+    hh, mm, ss = secondes // 3600, (secondes % 3600) // 60, secondes % 60
+    heure = f"{hh:02d}:{mm:02d}" + (f":{ss:02d}" if ss else "")
+    if genre == "heure" or (jours == 0 and secondes):
+        return heure
+    if base1904:
+        d = _dt.date(1904, 1, 1) + _dt.timedelta(days=jours)
+    elif jours < 61:
+        # Système 1900 : avant le 1er mars 1900, le tableur compte un 29 février 1900 qui n'existe pas (et 0
+        # n'est pas une date) ; aucune date de ce temps-là dans un dossier de marché : le nombre reste.
+        return ""
+    else:
+        d = _dt.date(1899, 12, 30) + _dt.timedelta(days=jours)
+    return d.strftime("%d/%m/%Y") + (f" {heure}" if secondes else "")
+
+
 def extract_xlsx(data: bytes, info: dict = None) -> str:
     """Texte d'un classeur .xlsx, feuille par feuille (« === Feuille : nom === »), une ligne de
     texte par ligne du tableau (« cellule | cellule »). Valeurs affichées des formules lues
-    telles qu'enregistrées. info["complet"] = False si le plafond de cellules est atteint.
-    '' si illisible."""
+    telles qu'enregistrées ; une cellule au format date ou heure est écrite « 15/12/2026 »,
+    « 15/12/2026 09:30 » ou « 09:30 », et non comme le nombre de jours que le tableur enregistre.
+    info["complet"] = False si le plafond de cellules est atteint. '' si illisible."""
     import io
     import zipfile
     if info is not None:
@@ -1447,9 +1532,13 @@ def extract_xlsx(data: bytes, info: dict = None) -> str:
                 root = _xml_root(z.read("xl/sharedStrings.xml"))
                 for si in root.iter(_XLSX_NS + "si"):
                     shared.append("".join(t.text or "" for t in si.iter(_XLSX_NS + "t")))
+            styles_dates = _xlsx_styles_dates(z, names)
+            base1904 = False
             sheets = []
             try:
                 wb = _xml_root(z.read("xl/workbook.xml"))
+                pr = wb.find(_XLSX_NS + "workbookPr")
+                base1904 = pr is not None and (pr.get("date1904") or "").strip().lower() in ("1", "true")
                 rels = {}
                 if "xl/_rels/workbook.xml.rels" in names:
                     rr = _xml_root(z.read("xl/_rels/workbook.xml.rels"))
@@ -1472,10 +1561,17 @@ def extract_xlsx(data: bytes, info: dict = None) -> str:
                 rows = []
                 for row in root.iter(_XLSX_NS + "row"):
                     vals = {}
+                    # L'adresse d'une cellule (« C2 ») est facultative dans le format : sans elle, la cellule
+                    # suit la précédente. Avant, toutes les cellules sans adresse tombaient dans la première
+                    # colonne et s'écrasaient : seule la dernière de chaque ligne restait.
+                    col = 0
                     for c in row.iter(_XLSX_NS + "c"):
                         cells += 1
                         if cells > SHEET_MAX_CELLS:
                             break
+                        ref = c.get("r") or ""
+                        ci = _col_index(ref) if ref else col
+                        col = ci + 1
                         t = c.get("t") or ""
                         v = c.find(_XLSX_NS + "v")
                         if t == "s" and v is not None and (v.text or "").strip().isdigit():
@@ -1485,9 +1581,16 @@ def extract_xlsx(data: bytes, info: dict = None) -> str:
                             txt = "".join(x.text or "" for x in c.iter(_XLSX_NS + "t"))
                         else:
                             txt = (v.text or "") if v is not None else ""
+                            if txt.strip() and t in ("", "n") and styles_dates:
+                                try:
+                                    genre = styles_dates.get(int(c.get("s") or "0"))
+                                except (TypeError, ValueError):
+                                    genre = None
+                                if genre:
+                                    txt = _xlsx_date_texte(txt.strip(), genre, base1904) or txt
                         txt = txt.strip()
                         if txt:
-                            vals[_col_index(c.get("r") or "")] = txt
+                            vals[ci] = txt
                     if vals:
                         rows.append(" | ".join(vals[k] for k in sorted(vals)))
                     if cells > SHEET_MAX_CELLS:

@@ -50,18 +50,45 @@ def _amount(s):
 def _dept(s):
     """Département depuis « Quimper (29) », « Ajaccio (2A) » ou un code postal. DOM-TOM (97x/98x)
     sur 3 chiffres (Guadeloupe 971 ≠ Réunion 974) ; Corse (CP 20xxx) mappée 2A (20000-20199,
-    Corse-du-Sud) / 2B (20200-20999, Haute-Corse) — sinon toute la Corse passait « hors zone »."""
+    Corse-du-Sud) / 2B (20200-20999, Haute-Corse) — sinon toute la Corse passait « hors zone ».
+    Un lieu sur plusieurs départements : le premier (tous : `_depts`)."""
+    d = _depts(s)
+    return d[0] if d else ""
+
+
+def _cp_dept(cp: str) -> str:
+    if cp[:2] == "20":
+        return "2A" if cp < "20200" else "2B"
+    return cp[:3] if cp[:2] in ("97", "98") else cp[:2]
+
+
+# Un code de département dans une parenthèse : 2 ou 3 chiffres (ou 2A/2B), ni collé à un autre chiffre ni
+# dans un nombre décimal (« 3.2 »).
+_RX_CODE_DEPT = r"(?<!\d)(?<!\d[.,])(\d{2,3}|2[ABab])(?!\d)(?![.,]\d)"
+
+
+def _depts(s) -> list:
+    """TOUS les départements d'un lieu d'exécution, dans l'ordre du texte, sans doublon : « Rennes (35) et
+    Brest (29) » → 35, 29 ; « Région Bretagne (22, 29, 35, 56) » → les quatre ; à défaut de parenthèse, les
+    codes postaux (« 29200 Brest, 56100 Lorient » → 29, 56). Une parenthèse qui contient autre chose que des
+    codes et leurs séparateurs (« (lot 12 et lot 13) », « (2027) ») n'est pas lue."""
     t = str(s or "")
-    m = re.search(r"\((\d{2,3}|2[ABab])\)", t)
-    if m:
-        return m.group(1).upper()
-    m = re.search(r"\b(\d{5})\b", t)
-    if m:
-        cp = m.group(1)
-        if cp[:2] == "20":
-            return "2A" if cp < "20200" else "2B"
-        return cp[:3] if cp[:2] in ("97", "98") else cp[:2]
-    return ""
+    out = []
+    for m in re.finditer(r"\(([^()]{1,120})\)", t):
+        inside = m.group(1)
+        codes = re.findall(_RX_CODE_DEPT, inside)
+        reste = re.sub(r"[\s,;/\-–]+|\bet\b|\bou\b", "", re.sub(_RX_CODE_DEPT, "", inside), flags=re.IGNORECASE)
+        if codes and not reste:
+            for c in codes:
+                if c.upper() not in out:
+                    out.append(c.upper())
+    if out:
+        return out
+    for m in re.finditer(r"\b(\d{5})\b", t):
+        d = _cp_dept(m.group(1))
+        if d not in out:
+            out.append(d)
+    return out
 
 
 def _days_until(s):
@@ -161,13 +188,20 @@ def score_dce(details: dict, company: dict = None, criteria: dict = None) -> dic
     explicit = bool(deps)              # l'utilisateur a-t-il VRAIMENT défini une zone ?
     if not deps and company.get("postal_code"):
         deps = [_dep(company["postal_code"])]
-    ld = _dept(details.get("lieu_execution", ""))
+    # Tous les départements du lieu : un marché exécuté dans plusieurs départements est dans la zone dès que
+    # l'un d'eux l'est (avant, seul le premier était lu : « Rennes (35) et Brest (29) » était « hors zone »
+    # pour une entreprise du 29, et « Région Bretagne (22, 29, 35, 56) » « non précisé »).
+    lds = _depts(details.get("lieu_execution", ""))
+    ld = lds[0] if lds else ""
+    dans_zone = [d for d in lds if _in_zone(d, deps)] if deps else []
     if not deps:
         bd.append(_crit("zone", "Zone géographique", 12, 20, "inconnu", "Zone d'intervention non renseignée"))
-    elif ld and _in_zone(ld, deps):
-        bd.append(_crit("zone", "Zone géographique", 20, 20, "ok", f"Lieu d'exécution dans votre zone ({ld})"))
+    elif dans_zone:
+        bd.append(_crit("zone", "Zone géographique", 20, 20, "ok",
+                        f"Lieu d'exécution dans votre zone ({', '.join(dans_zone)})"))
     elif ld and explicit:
-        bd.append(_crit("zone", "Zone géographique", 5, 20, "partiel", f"Hors zone d'intervention (dépt {ld})"))
+        bd.append(_crit("zone", "Zone géographique", 5, 20, "partiel",
+                        f"Hors zone d'intervention (dépt {', '.join(lds)})"))
     elif ld:
         # zone déduite du SEUL code postal (jamais définie) → on ne pénalise pas « hors zone »
         bd.append(_crit("zone", "Zone géographique", 12, 20, "inconnu", "Zone d'intervention non renseignée — précisez vos départements"))

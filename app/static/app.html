@@ -1768,7 +1768,7 @@
             <div v-if="src.analysis.dce_available" class="row" style="gap:16px;align-items:center">
               <!-- Décision 8 : après le dossier, le couple « Seul X % · À plusieurs Y % » -->
               <div class="score-ring lg" :style="ringStyle(src.analysis.score)"><span class="num">{{ src.analysis.score }}<small class="ring-pct">&nbsp;%</small></span></div>
-              <div><b class="small" style="margin-right:6px">Seul</b><span class="pill" :class="src.analysis.decision||'neutral'">{{ decLabel(src.analysis.decision) }}</span><span v-if="src.analysis.groupement_score!=null" class="pill go_groupement" style="margin-left:6px;gap:4px"><i data-lucide="handshake" style="width:12px;height:12px"></i>À plusieurs {{ src.analysis.groupement_score }} %</span><a :href="safeUrl(src.analysis.source.source_url)" target="_blank" class="small muted row" style="gap:3px;margin-top:4px">source {{ src.analysis.source.source }} · réf {{ src.analysis.source.official_ref }}<i data-lucide="external-link" style="width:12px;height:12px"></i></a></div>
+              <div><b class="small" style="margin-right:6px">Seul</b><span class="pill" :class="srcSeulDecision(src.analysis)||'neutral'">{{ decLabel(srcSeulDecision(src.analysis)) }}</span><span v-if="src.analysis.groupement_score!=null" class="pill go_groupement" style="margin-left:6px;gap:4px"><i data-lucide="handshake" style="width:12px;height:12px"></i>À plusieurs {{ src.analysis.groupement_score }} %</span><a :href="safeUrl(src.analysis.source.source_url)" target="_blank" class="small muted row" style="gap:3px;margin-top:4px">source {{ src.analysis.source.source }} · réf {{ src.analysis.source.official_ref }}<i data-lucide="external-link" style="width:12px;height:12px"></i></a></div>
             </div>
             <p class="small" style="margin-top:10px">{{ src.analysis.summary }}</p>
             <div v-if="src.analysis.couverture && src.analysis.couverture.message" class="lect-cov" :class="{partiel: !src.analysis.couverture.complet}">
@@ -4665,6 +4665,6 @@
 <script src="/static/redaction-partenaire.js" integrity="sha384-0jgm5b/r+FlC5YZVhiyqvLZyxecxtCABbOw03QuJfDDsfua5T9wxISR2Hfis2Dh+" defer></script>
 <script src="/static/sources-publiques.js" integrity="sha384-/0soYF6qmMI5KHOb/uzkHBoYNeOr5+R784XFb0c0+HjUkhtEyVBgunl6Xo08Dok+" defer></script>
 <script src="/static/carnet-notes.js" integrity="sha384-/jbwJaEiImCDEsYHkGeIht+znVCg4i9vSGuAfG6SRpjAST+OI5nP9fPwr8Py0NPV" defer></script>
-<script src="/static/app.js" integrity="sha384-33e0l7N0F9qlw4gR0/qIiK01pPepLzwP3D72DBvIP3MqSm3ClOHIqHUnWCwE35m7" defer></script>
+<script src="/static/app.js" integrity="sha384-SJGymDuy9ImQk4I2PahZvb87oKW/JDexspcQgnYs0Lr6DA72kyNuejbUJJNjGJJZ" defer></script>
 </body>
 </html>

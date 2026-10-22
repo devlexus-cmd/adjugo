@@ -110,6 +110,13 @@ Stripe**. De plus :
   reconnu est précédé du bandeau s'il n'y figure pas déjà. Les numéros de page restent justes quand le
   PDF commence par des pages sans texte. Une pièce coupée par le plafond de caractères le dit
   (« texte trop long »), plus « trop de pages ».
+- **Tableurs** (contrôle des bugs, octobre 2026) : une cellule sans adresse (« r », facultative dans le
+  format) suit la précédente ; avant, toutes les cellules sans adresse d'une ligne s'écrasaient dans la
+  première colonne et la pièce était quand même dite « lue en entier ». Une cellule au format date ou heure
+  est écrite « 15/12/2026 », « 15/12/2026 09:30 » ou « 09:30 », et non comme le nombre de jours que le
+  tableur enregistre (« 46371 »), d'après les styles du classeur (formats intégrés et personnalisés, base
+  1904 comprise) ; une durée cumulée (« [h]:mm »), un nombre sans format date et une date d'avant mars 1900
+  restent le nombre enregistré.
 - **Pièces nommées par leur chemin** dans l'archive, sans le dossier commun à toutes les pièces :
   dans un dossier rangé par lots, « LOT 02 - Eclairage/CCTP.pdf » et non deux « CCTP.pdf » (en-têtes
   remis à l'IA, sources des réponses, liste des pièces lues) ; dans une archive à plat, le nom du
@@ -332,6 +339,13 @@ ré-analyse dans les 5 minutes est rare. Coupure : `LLM_PROMPT_CACHE=0`. Mistral
   leur raison sous le message de couverture (« voir la liste » renvoie enfin à une liste), et « Pièces
   lues » marque la pièce « non exploitée par l'IA (…) » au lieu de « lue en entier ».
 - Champs d'import : `.docm` et `.xlsm` acceptés.
+- Carte d'analyse de « Trouver des marchés » (contrôle des bugs, octobre 2026) : la pastille « Seul » dit
+  le verdict seul (`decision_seul` des réponses de `/analyze`, `/analyze-upload` et `/reanalyze`) ;
+  `decision` devient « go_groupement » quand un groupement est recommandé, et la pastille disait alors
+  « Bon potentiel en groupement » à côté de « À plusieurs Y % ».
+- En-tête d'un marché créé à la main puis analysé depuis un dossier importé : aucun avis derrière ce
+  marché, le bloc `source` de l'analyse est vide ; aucun lien « BOAMP · réf … » n'est affiché (avant, un
+  lien « · réf » sans source ni référence).
 
 ### 2.7 Lectures en tâche de fond (`app/services/lecture_taches.py`)
 
@@ -344,7 +358,11 @@ ré-analyse dans les 5 minutes est rare. Coupure : `LLM_PROMPT_CACHE=0`. Mistral
   « DCE » du marché (`storage.py`) quand elle démarre (repli : le fichier reçu, si l'archivage a échoué).
 - **Fin honnête** : un échec passe le marché en « erreur » (l'écran cesse d'en suivre la progression
   à chaque ouverture ; après un redémarrage, `GET /lecture` le fait au premier passage) et rembourse
-  l'analyse ; « terminé » n'est dit qu'une fois le résultat du job enregistré.
+  l'analyse ; « terminé » n'est dit qu'une fois le résultat du job enregistré. Une analyse faite
+  ensuite pendant la requête (petit dossier, ou « Ré-analyser » après une tâche morte) repart d'un état
+  vide (« termine », sans tâche ni erreur) : `GET /lecture` ne dit plus « La lecture ou l'analyse du
+  dossier a échoué. Réessayez : votre analyse n'a pas été débitée. » d'une analyse réussie et débitée
+  (contrôle des bugs, octobre 2026).
 - **Ré-analyser complète une lecture inachevée** : si des pièces n'ont pas été lues pour une raison
   passagère (temps écoulé, pages en image pas encore lues, plafond de pages lues par OCR dans une
   tâche, ou lecture des images indisponible alors qu'elle l'est maintenant), la ré-analyse relit en

@@ -5231,7 +5231,13 @@ const __adjApp = createApp({
     // Déposer : « Prêt à déposer » porte déjà « Exporter le dossier complet » quand tout est prêt (pas de doublon).
     aoExportDansPret() { return this.depotShown() && !this.depotIsDeposed() && !!(this.depotPret() && this.depotPret().pret); },
     aoDetails() { return (this.ao.project && this.ao.project.ai_analysis && this.ao.project.ai_analysis.details) || {}; },
-    aoSource() { return (this.ao.project && this.ao.project.ai_analysis && this.ao.project.ai_analysis.source) || null; },
+    // Source de l'avis (lien « BOAMP · réf … » de l'en-tête). Un marché créé à la main puis analysé depuis un dossier
+    // importé n'a pas d'avis : le serveur range un bloc vide ({}), « vrai » en JavaScript, et l'en-tête affichait un lien
+    // « · réf » sans source ni référence. Sans lien, référence ni nom de source : pas de lien.
+    aoSource() {
+      const s = this.ao.project && this.ao.project.ai_analysis && this.ao.project.ai_analysis.source;
+      return (s && (s.source_url || s.official_ref || s.source)) ? s : null;
+    },
     aoContact() { const c = this.aoDetails().contact; return (c && (c.nom || c.email)) ? c : null; },
     aoDceAvailable() { return !!(this.ao.project && this.ao.project.ai_analysis && this.ao.project.ai_analysis.dce_available); },
     // Une carte « À venir » (décision 11) : le marché n'est pas encore publié, il n'a ni annonce ni dossier. La page ne
@@ -5664,6 +5670,17 @@ const __adjApp = createApp({
     decColor(d) { return ({ go: "color:var(--go)", go_groupement: "color:var(--accent-text)", no_go: "color:var(--danger)", a_etudier: "color:var(--warning-text)" })[d] || "color:var(--muted)"; },
     // Kanban : la carte dit « À plusieurs 100 % » ou « Seul 87 % » (scoreCourt) ; le couple complet reste au survol.
     kanbanScoreTitle(p) { return (p.match_score == null && p.groupement_score == null) ? "" : this.feedScoreTitle(p); },
+    // Carte d'analyse de « Trouver des marchés » : le verdict SEUL. « decision » devient « go_groupement » quand un
+    // groupement est recommandé ; la pastille « Seul » disait alors « Bon potentiel en groupement ». Le serveur envoie
+    // decision_seul ; une réponse plus ancienne sans ce champ retombe sur les seuils du profil (comme aoSeulDecision).
+    srcSeulDecision(a) {
+      a = a || {};
+      if (a.decision_seul) return a.decision_seul;
+      if (a.decision !== "go_groupement") return a.decision;
+      if (a.score == null) return null;
+      const go = Number(this.criteria.go_threshold) || 65, ng = Math.min(Number(this.criteria.nogo_threshold) || 40, go - 1);
+      return a.score >= go ? "go" : (a.score < ng ? "no_go" : "a_etudier");
+    },
     // Verdict SEUL d'un marché « bon potentiel en groupement » : celui que l'API a calculé (simulation)
     // sinon, à défaut, les seuils du profil (mêmes défauts que le serveur : 65 / 40). Jamais un chiffre inventé.
     aoSeulDecision() {
