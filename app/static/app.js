@@ -1856,6 +1856,9 @@ const __adjApp = createApp({
 
     // ── Auth ──
     async submitAuth() {
+      // Entrée dans un champ appelle submitAuth sans passer par le bouton (désactivé pendant l'envoi) : deux appuis
+      // rapides envoyaient deux inscriptions de la même adresse (contrôle des bugs, 22/10/2026).
+      if (this.busy) return;
       if (this.auth.mode === "register" && (this.auth.password || "").length < 8) {
         this.notify("Le mot de passe doit faire au moins 8 caractères", "err"); return;
       }

@@ -316,7 +316,15 @@ def _run_piece_expiry_alerts(db: Session, today, due=None, merged=None) -> int:
     """Coffre-fort croisé (E) : envoie les alertes d'attestations dues (voir _piece_alerts_due) —
     un email au membre (sauf si son alerte a déjà été jointe à sa relance de part, `merged`) et
     UN récapitulatif par marché au mandataire (plus un email par partenaire). Journalise
-    `piece.expiring` (visible du membre). Best-effort : aucune exception ne remonte au cron."""
+    `piece.expiring` (visible du membre). Best-effort : aucune exception ne remonte au cron.
+
+    Rien n'est noté tant que le courriel au membre n'est pas parti (contrôle des bugs, 22/10/2026) :
+    `piece.expiring` vaut « déjà alerté pour tout le palier », et une panne du fournisseur d'email
+    (send_email faux) le posait quand même ; le membre n'était plus jamais prévenu pour ce palier,
+    son journal disait le contraire. Son alerte repart au passage suivant ; le récapitulatif du
+    chef de file ne compte plus un membre dont le courriel n'est pas parti (il dit « Les
+    partenaires concernés ont été prévenus »). Même règle que les pièces à renouveler
+    (run_document_expiry_alerts) et le rappel de part (reminder_stage posé si l'envoi réussit)."""
     from app.services import audit
 
     def _is_email(v):
@@ -339,12 +347,13 @@ def _run_piece_expiry_alerts(db: Session, today, due=None, merged=None) -> int:
             # Vague 2b (B4) : l'espace du partenaire est « Votre part dans [marché] » ; le lien de l'invitation y mène.
             ou = (f"depuis votre part dans ce marché :\n{base_url}/invite/{inv.token}" if base_url
                   else "depuis votre part dans ce marché (votre lien d'invitation).")
-            send_email(
-                inv.recipient,
-                f"Attestations à mettre à jour avant le {_fr(a['deadline_date'])} — {project.name[:50]}",
-                f"Bonjour,\n\nPour le marché « {project.name} » (date limite : {_fr(a['deadline_date'])}), "
-                f"le groupement {a['du_chef']} a besoin de vos attestations à jour :\n{lines}\n\n"
-                f"Déposez-les {ou}\n\n— Adjugo")
+            if not send_email(
+                    inv.recipient,
+                    f"Attestations à mettre à jour avant le {_fr(a['deadline_date'])} — {project.name[:50]}",
+                    f"Bonjour,\n\nPour le marché « {project.name} » (date limite : {_fr(a['deadline_date'])}), "
+                    f"le groupement {a['du_chef']} a besoin de vos attestations à jour :\n{lines}\n\n"
+                    f"Déposez-les {ou}\n\n— Adjugo"):
+                continue        # courriel non parti : rien de noté, l'alerte repart au prochain passage
         # Chaîné sous le propriétaire du tenant (sinon l'entrée sortait de la chaîne
         # d'intégrité de l'entreprise quand un membre a créé le marché).
         audit.record(db, action="piece.expiring", owner_id=a["tenant_oid"], project_id=project.id,

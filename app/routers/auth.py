@@ -4,6 +4,7 @@ Adjugo — Routes d'authentification
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from pydantic import BaseModel, Field
 from typing import Optional
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from sqlalchemy import func
@@ -140,27 +141,38 @@ def register(request: Request, data: UserCreate, db: Session = Depends(get_db)):
         trial_ends_at=datetime.now(timezone.utc) + timedelta(days=30),
     )
     db.add(user)
-    db.flush()
+    try:
+        db.flush()
 
-    # Créer l'organisation (espace de travail) dont l'utilisateur est propriétaire. Repli si le
-    # nom complet est vide (sinon on créait une organisation nommée « Équipe » + espace).
-    from app.models import Organization
-    org_name = data.company_name or (f"Équipe {fn}" if fn else "Mon organisation")
-    org = Organization(name=org_name, owner_id=user.id)
-    db.add(org)
-    db.flush()
-    user.org_id = org.id
+        # Créer l'organisation (espace de travail) dont l'utilisateur est propriétaire. Repli si le
+        # nom complet est vide (sinon on créait une organisation nommée « Équipe » + espace).
+        from app.models import Organization
+        org_name = data.company_name or (f"Équipe {fn}" if fn else "Mon organisation")
+        org = Organization(name=org_name, owner_id=user.id)
+        db.add(org)
+        db.flush()
+        user.org_id = org.id
 
-    # Créer le profil entreprise si un nom est fourni
-    if data.company_name:
-        company = Company(user_id=user.id, name=data.company_name)
-        db.add(company)
+        # Créer le profil entreprise si un nom est fourni
+        if data.company_name:
+            company = Company(user_id=user.id, name=data.company_name)
+            db.add(company)
 
-    # Créer les critères par défaut
-    criteria = MatchingCriteria(user_id=user.id)
-    db.add(criteria)
+        # Créer les critères par défaut
+        criteria = MatchingCriteria(user_id=user.id)
+        db.add(criteria)
 
-    db.commit()
+        db.commit()
+    except IntegrityError:
+        # Deux envois du même formulaire au même instant (deux onglets ; deux appuis sur Entrée avant que l'écran ne
+        # l'empêche, submitAuth) : tous deux passaient la vérification du doublon ci-dessus (le calcul du mot de passe
+        # laisse le temps), et le second s'arrêtait sur l'unicité de l'adresse, en erreur interne (500, « Erreur
+        # serveur » à l'écran) alors que le compte venait d'être créé (contrôle des bugs, 22/10/2026). Même réponse que
+        # le doublon ; toute autre erreur reste une erreur.
+        db.rollback()
+        if db.query(User.id).filter(func.lower(User.email) == data.email).first():
+            raise HTTPException(status_code=400, detail="Cet email est déjà utilisé")
+        raise
     db.refresh(user)
 
     # Email de confirmation. Choix du 24/06, gardé (décision 12 (a) de l'étude « organisation du logiciel », vague 2b) :

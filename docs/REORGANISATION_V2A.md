@@ -1456,3 +1456,99 @@ le 22/10/2026 · signalé au réseau le 22/10/2026 ».
 
 - **La carte « API & développeurs » du logiciel** (`app.html`, écran « Abonnement ») mène aussi à `/docs` et
   `/openapi.json`, fermés en production. Hors de la liste de ce groupe : signalé, non corrigé.
+
+## Q. Contrôle des bugs (22/10/2026), groupe « données »
+
+Six signalements vérifiés (n° 30, 31, 32, 33, 35 et 37) : sauvegardes, inscription, tâches planifiées et fin des
+pièces. Cinq ont été **reproduits** sur `cfe04e1` et sur `a545256` (avant cette correction), puis corrigés ; un est
+rejeté (n° 30, déjà corrigé). Tests : `tests/test_controle_bugs_donnees.py` (8 tests ; 7 en échec sur `cfe04e1` et
+sur `a545256`, chacun sur son défaut, sur SQLite et sur PostgreSQL 16.2 ; le huitième est le témoin de midi, qui passe
+déjà). Aucun prix, quota ni offre ne change ; ni page juridique, ni démonstration touchées.
+
+### Q.1 Une sauvegarde se restaure sur PostgreSQL, le moteur de la production (31)
+
+**Reproduit** (procédure `docs/GO_LIVE.md`, étape 4, dans une base neuve montée par `alembic upgrade head`) : la
+restauration était refusée net sur PostgreSQL (« organizations viole la clé étrangère fk_org_owner » : une
+organisation pointe vers son propriétaire, inséré après elle, puisque chaque compte pointe lui-même vers son
+organisation) ; dans une base déjà remplie, la purge butait dans l'autre sens (« users » encore désigné par une
+organisation). Une fois ce point passé, la première inscription était refusée (« users_pkey, Key (id)=(1) already
+exists » : les compteurs de numéros d'une base neuve restaient à 1). Sur les deux moteurs, un champ JSON vide
+(`ai_analysis`, `groupement_plan`) revenait comme le texte JSON « null », que « groupement_plan IS NULL » ne
+reconnaît pas. Sur SQLite (la base jetable de la procédure), seul ce dernier point se voyait : le test de la procédure
+réussissait alors qu'une vraie restauration de la production échouait.
+
+**Corrigé** (`app/services/backup.py`, `restore_backup`) : le lien en cycle (`organizations.owner_id`, la seule clé
+posée « après coup » du schéma) est vidé avant la purge, inséré vide, puis reposé une fois toutes les lignes en place ;
+sur PostgreSQL, chaque compteur de numéros repart au-dessus du plus grand numéro restauré ; un champ JSON vide reste
+vide (une colonne JSON obligatoire garde l'écriture d'avant). Le test restaure deux fois de suite (base vide, puis
+déjà remplie) et vérifie les comptes, les marchés, le lien compte ↔ organisation, les champs vides et une inscription
+ensuite. Chaque partie de la correction retirée à son tour, le test échoue sur PostgreSQL. `docs/GO_LIVE.md`, étape 4,
+dit que la commande vaut aussi dans une base PostgreSQL jetable.
+
+### Q.2 Une sauvegarde lue en un seul instantané (32)
+
+**Reproduit** : `run_backup` lisait les tables une par une sur une base vivante (la sauvegarde planifiée tourne
+pendant que l'application répond). Un marché enregistré avec sa pièce au moment où la sauvegarde allait lire les
+pièces (les marchés déjà lus) donnait une sauvegarde avec la pièce sans son marché, que PostgreSQL refuse ensuite à la
+restauration, en entier (clé étrangère `fk_documents_project_id`). **Corrigé** (`_instantane`) : toutes les tables sont
+lues dans une seule transaction. PostgreSQL : lecture seule « repeatable read », l'écriture faite pendant passe et la
+sauvegarde ne la voit pas (vérifié). SQLite (poste local, démo) : une écriture attend la fin de la lecture, jusqu'à
+30 s (délai du moteur de l'application ; l'écriture du test, réglée à 1 s, est refusée « database is locked »). Si
+l'instantané ne peut pas être pris, la sauvegarde part comme avant, avec un avertissement dans les logs : elle n'est
+jamais bloquée.
+
+### Q.3 Deux inscriptions de la même adresse au même instant (33)
+
+**Reproduit** : deux envois du formulaire « Créer le compte » au même instant passaient tous deux la vérification du
+doublon (le calcul du mot de passe laisse le temps) ; le second s'arrêtait sur l'unicité de l'adresse, en erreur
+interne (500), et l'écran disait « Erreur serveur, réessayez dans un instant. » alors que le compte venait d'être créé.
+Depuis l'écran, le bouton est désactivé pendant l'envoi, mais Entrée dans les champs Email et Mot de passe appelait
+l'envoi sans le regarder : deux appuis rapides suffisaient. **Corrigé** : le serveur répond au second envoi comme au
+doublon, 400 « Cet email est déjà utilisé » (`register`, `app/routers/auth.py` ; une autre erreur d'unicité reste une
+erreur), un seul compte ; l'écran n'envoie plus une seconde inscription tant que la première n'a pas répondu
+(`submitAuth`, comme le bouton). Le test fait attendre les deux envois l'un l'autre au calcul du mot de passe : il ne
+dépend pas de la vitesse de la machine.
+
+### Q.4 Alerte d'attestations d'un partenaire : notée seulement une fois partie (35)
+
+**Reproduit** (marché à J-3, partenaire invité avec une adresse, part envoyée, aucune attestation ; fournisseur
+d'email en panne) : l'alerte était notée (`piece.expiring`, qui vaut « déjà alerté pour tout le palier »), le journal
+du partenaire disait « Adjugo vous a alerté : une attestation manque ou expire », et le passage suivant, fournisseur
+revenu, n'envoyait plus rien, ni au partenaire ni au chef de file : à J-3, dernier palier, il n'était jamais prévenu.
+**Corrigé** (`_run_piece_expiry_alerts`, `app/services/alerts.py`) : rien n'est noté tant que le courriel au partenaire
+n'est pas parti ; l'alerte repart au passage suivant et n'est notée qu'une fois ; le récapitulatif du chef de file
+(« Les partenaires concernés ont été prévenus ») ne compte plus un partenaire dont le courriel n'est pas parti. Même
+règle que les pièces à renouveler et le rappel de part. Une alerte jointe au rappel de part reste notée quand ce rappel
+est parti, comme avant. Contrat : `docs/COTRAITANCE_V2_VAGUE4_API.md`, section 6.
+
+### Q.5 Une pièce expirée l'est au jour de Paris, sur tous les écrans (37)
+
+**Reproduit** (horloge figée à 23 h UTC le 22/10/2026, soit 1 h du matin le 23/10 à Paris ; attestation URSSAF
+finissant le 22/10) : Mes documents disait « Expirée le 22/10/2026 », mais « Pièces à fournir » la comptait valable
+(statut ok) et « Prêt à déposer » ne la rangeait ni dans les pièces ni dans « Vos attestations ». Les deux prenaient le
+jour du serveur (UTC), contre la règle de A3.3 (« Un seul calcul de la fin », « Jour de Paris partout »). **Corrigé** :
+`match_document` (`app/routers/checklist.py`) et `_piece_status` (`app/routers/invites.py` : coffre-fort croisé des
+partenaires et attestations du chef de file dans « Prêt à déposer ») lisent `jour_paris()`. Témoin : à midi UTC, les
+écrans s'accordaient déjà, et s'accordent toujours.
+
+### Q.6 Rejeté : alertes de marchés et courriel non parti (30)
+
+Le même défaut que le n° 8 du groupe « recherche », déjà corrigé par `833696e` (`run_tender_alerts` rend la mémoire et
+la date de passage de chaque alerte si le courriel ne part pas ; `docs/MOTEUR_LOT1.md`, § R.1). Revérifié sur
+`a545256` avec le test du vérificateur : alerte quotidienne, le passage suivant renvoie les deux marchés ; alerte
+hebdomadaire, ni mémoire ni date de passage posées, elle repart au passage suivant. Rien à corriger de plus.
+
+### Q.7 Laissé, avec sa raison
+
+- **Récapitulatif du chef de file non parti** : si le courriel du partenaire part et que celui du chef de file échoue,
+  ce récapitulatif n'est pas renvoyé (il n'a pas de trace propre ; le renvoyer réécrirait au partenaire). Un partenaire
+  sans adresse (lien seul) reste compté dans le récapitulatif « prévenus », comme avant. Hors de ce signalement :
+  signalé, non corrigé.
+- **Jour du serveur ailleurs** : « La date limite du marché (…) est dépassée » de « Prêt à déposer »
+  (`app/services/groupement_members.py`, deux endroits) et les paliers J-7, J-3 et J-1 des rappels de co-traitance
+  (`run_cotraitance_reminders`) comptent encore les jours en UTC. Ils parlent de la date limite du marché, pas de la fin
+  d'une pièce : hors de la liste, signalé, non corrigé.
+- **Pièces en versions dans une restauration** (lu dans le code, non reproduit) : une version de pièce pointe vers la
+  pièce d'origine (`documents.parent_id`) ; les lignes d'une table sont relues sans ordre fixe et insérées par paquets.
+  Sur PostgreSQL, une version placée dans un paquet avant celui de son origine serait refusée. Aucun cas observé.
+- **Deux onglets** : le second reçoit « Cet email est déjà utilisé », ce qui est exact (le compte existe).

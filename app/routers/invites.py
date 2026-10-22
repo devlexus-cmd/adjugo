@@ -2610,11 +2610,14 @@ def _dce_requires_qualification(project) -> bool:
 
 
 def _piece_status(pc, deadline) -> str:
-    """present | valide_jusquau | expire_avant_limite | expire (manquant = pas de pièce)."""
+    """present | valide_jusquau | expire_avant_limite | expire (manquant = pas de pièce). « Expire » au jour de Paris,
+    comme Mes documents (app.services.pieces_fin, contrat A3.3) : avec le jour du serveur (UTC), une attestation
+    finissant la veille restait valable entre minuit et 2 h (contrôle des bugs, 22/10/2026)."""
+    from app.services.pieces_fin import jour_paris
     exp = getattr(pc, "expiration_date", None)
     if not exp:
         return "present"
-    today = date.today()
+    today = jour_paris()
     if exp < today:
         return "expire"
     if deadline and exp < deadline:

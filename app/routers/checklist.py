@@ -3,13 +3,13 @@ Adjugo - Checklist intelligente
 Compare les pieces requises (extraites par l'IA) avec les documents du coffre-fort.
 """
 import re
-from datetime import date
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.core.org import member_ids
 from app.models import User, Project, Document
+from app.services.pieces_fin import jour_paris
 
 router = APIRouter(prefix="/api/checklist", tags=["Checklist intelligente"])
 
@@ -299,7 +299,9 @@ def match_document(piece_name, documents):
         if trouve:
             # Vraie date d'expiration (la colonne days_until_expiration n'existe PAS sur
             # le modèle → hasattr renvoyait toujours False → AUCUNE pièce jamais « périmée »).
-            expired = (doc.expiration_date is not None and doc.expiration_date < date.today())
+            # Jour de Paris, comme Mes documents (pieces_fin, contrat A3.3) : avec le jour du serveur (UTC), une pièce
+            # finissant la veille restait valable ici entre minuit et 2 h, « Expirée » dans Mes documents.
+            expired = (doc.expiration_date is not None and doc.expiration_date < jour_paris())
             hit = {"found": True, "document_id": doc.id,
                    "document_name": doc.name, "expired": expired}
             # Un document VALIDE prime : sinon une vieille version expirée masquait

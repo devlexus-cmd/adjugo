@@ -413,7 +413,10 @@ Cron existant `POST /api/admin/run-cotraitance-reminders` :
 - un partenaire qui doit aussi soumettre sa part reçoit **un seul email** (rappel de part + liste
   des attestations) ;
 - le chef de file reçoit **un récapitulatif par marché** (plus un email par partenaire) ;
-- plus rien après « Marquer déposé » (statut envoyé, gagné, perdu ou abandonné).
+- plus rien après « Marquer déposé » (statut envoyé, gagné, perdu ou abandonné) ;
+- une alerte n'est notée qu'une fois son courriel parti : si le fournisseur d'email est en panne, rien n'est noté, elle
+  repart au passage suivant, et le récapitulatif du chef de file ne compte pas ce partenaire (contrôle des bugs,
+  22/10/2026, `docs/REORGANISATION_V2A.md` § Q.4).
 Journal du partenaire : « Adjugo vous a alerté : une attestation manque ou expire · J-3 (date limite 20/10/2026) ».
 
 ## 7. Tableau de bord : `GET /api/groupement/tableau-de-bord` (240/h)

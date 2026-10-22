@@ -52,6 +52,27 @@ def _backend_is_object() -> bool:
     return (get_settings().STORAGE_BACKEND or "").lower() == "s3"
 
 
+def _instantane(db) -> None:
+    """Toutes les tables sont lues dans UN SEUL instantané de la base (contrôle des bugs, 22/10/2026). Avant, chaque
+    table était lue à son tour sur une base vivante : un marché enregistré avec sa pièce entre la lecture des marchés
+    et celle des pièces donnait une sauvegarde avec la pièce sans son marché, que PostgreSQL refuse ensuite à la
+    restauration (clé étrangère), en entier. PostgreSQL : transaction en lecture seule « repeatable read » (l'application
+    continue d'écrire, la sauvegarde ne voit pas ces écritures). SQLite (poste local, démo) : transaction ouverte le
+    temps de la lecture (une écriture attend la fin de la sauvegarde). Ne bloque jamais la sauvegarde : si l'instantané
+    ne peut pas être pris, elle part comme avant, avec un avertissement dans les logs."""
+    from sqlalchemy import text as _t
+    try:
+        moteur = db.get_bind().dialect.name
+        if moteur == "postgresql":
+            db.execute(_t("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY"))
+        elif moteur == "sqlite":
+            db.execute(_t("BEGIN"))
+    except Exception as e:                            # noqa: BLE001
+        db.rollback()
+        logger.warning("backup : lecture en un seul instantané impossible (%s), sauvegarde lue table par table",
+                       type(e).__name__)
+
+
 def run_backup(keep: int = 14) -> dict:
     """Dump toutes les tables → JSON gzippé → upload R2 → purge des anciens (garde `keep`)."""
     if not _backend_is_object():
@@ -62,6 +83,7 @@ def run_backup(keep: int = 14) -> dict:
     storage = get_storage()
     db = SessionLocal()
     try:
+        _instantane(db)
         dump = {"generated_at": datetime.now(timezone.utc).isoformat(),
                 "schema_version": "logical-v1", "tables": {}}
         n_rows = 0
@@ -117,16 +139,22 @@ def _prune(storage, keep: int) -> int:
 
 def _coerce_rows(table, rows: list) -> list:
     """Reconvertit les valeurs texte du JSON vers les types attendus (dates → datetime/
-    date), pour que l'insert passe aussi bien sur SQLite que sur Postgres."""
+    date), pour que l'insert passe aussi bien sur SQLite que sur Postgres. Un champ JSON
+    vide (None dans la sauvegarde) redevient un champ vide de la base (SQL NULL) : inséré
+    tel quel, il était rangé comme le texte JSON « null », que « groupement_plan IS NULL »
+    ne reconnaît pas (contrôle des bugs, 22/10/2026). Une colonne JSON obligatoire garde
+    l'ancienne écriture (le vide n'y est pas permis)."""
     from datetime import datetime, date
-    from sqlalchemy import DateTime, Date
-    dt_cols, d_cols = set(), set()
+    from sqlalchemy import DateTime, Date, JSON, null
+    dt_cols, d_cols, j_cols = set(), set(), set()
     for col in table.columns:
         if isinstance(col.type, DateTime):
             dt_cols.add(col.name)
         elif isinstance(col.type, Date):
             d_cols.add(col.name)
-    if not dt_cols and not d_cols:
+        elif isinstance(col.type, JSON) and col.nullable:
+            j_cols.add(col.name)
+    if not dt_cols and not d_cols and not j_cols:
         return rows
     for r in rows:
         for c in dt_cols:
@@ -139,13 +167,53 @@ def _coerce_rows(table, rows: list) -> list:
             if isinstance(v, str) and v:
                 try: r[c] = date.fromisoformat(v[:10])
                 except ValueError: pass
+        for c in j_cols:
+            if c in r and r[c] is None:
+                r[c] = null()
     return rows
+
+
+def _colonnes_en_cycle(table) -> list:
+    """Clés étrangères posées « après coup » (use_alter) : organizations.owner_id → users, alors que users.org_id →
+    organizations. Elles pointent vers une table insérée PLUS TARD dans l'ordre des tables : PostgreSQL, qui contrôle
+    les clés étrangères, refuse de les insérer d'un coup (et de purger users tant qu'une organisation y pointe)."""
+    return sorted({fk.parent.name for fk in table.foreign_keys if fk.use_alter})
+
+
+def _remettre_les_compteurs(db, tables) -> None:
+    """PostgreSQL : chaque compteur de numéros (séquence) repart au-dessus du plus grand numéro restauré. Sans cela,
+    le compteur d'une base neuve restait à 1 et la première ligne nouvelle (une inscription, un marché) était refusée
+    (« numéro déjà pris »). SQLite numérote toujours au-dessus du plus grand numéro présent : rien à faire."""
+    from sqlalchemy import text as _t
+    if db.get_bind().dialect.name != "postgresql":
+        return
+    for table in tables:
+        pk = list(table.primary_key.columns)
+        if len(pk) != 1 or not pk[0].autoincrement:
+            continue
+        try:
+            if pk[0].type.python_type is not int:
+                continue
+        except NotImplementedError:
+            continue
+        col = pk[0].name
+        seq = db.execute(_t("SELECT pg_get_serial_sequence(:t, :c)"), {"t": f'"{table.name}"', "c": col}).scalar()
+        if not seq:
+            continue
+        plus_grand = db.execute(_t(f'SELECT max("{col}") FROM "{table.name}"')).scalar()
+        if plus_grand is not None:
+            db.execute(_t("SELECT setval(:s, :v, true)"), {"s": seq, "v": int(plus_grand)})
 
 
 def restore_backup(blob: bytes, db) -> dict:
     """Recharge un backup dans une base au schéma DÉJÀ créé (migrations passées).
     Insère table par table dans l'ordre FK-safe. DESTRUCTIF sur les tables concernées
-    (purge avant insert). À utiliser depuis un script d'urgence, pas exposé en HTTP."""
+    (purge avant insert). À utiliser depuis un script d'urgence, pas exposé en HTTP.
+
+    Vaut sur PostgreSQL (la production) comme sur SQLite (contrôle des bugs, 22/10/2026) :
+    les liens en cycle (organizations.owner_id) sont détachés avant la purge et reposés
+    une fois toutes les lignes insérées, les compteurs de numéros repartent au-dessus des
+    numéros restaurés, un champ JSON vide reste vide."""
     from app.core.database import Base
     from sqlalchemy import text as _t
     from app.services.backup_crypto import is_encrypted
@@ -156,13 +224,35 @@ def restore_backup(blob: bytes, db) -> dict:
     data = json.loads(gzip.decompress(blob).decode("utf-8"))
     tables = data.get("tables", {})
     inserted = 0
-    for table in reversed(Base.metadata.sorted_tables):   # purge enfants → parents
+    ordre = list(Base.metadata.sorted_tables)
+    cycles = {t.name: _colonnes_en_cycle(t) for t in ordre}
+    for table in ordre:                                   # liens en cycle détachés avant la purge
+        if table.name in tables:
+            for col in cycles[table.name]:
+                db.execute(_t(f'UPDATE "{table.name}" SET "{col}" = NULL WHERE "{col}" IS NOT NULL'))
+    for table in reversed(ordre):                         # purge enfants → parents
         if table.name in tables:
             db.execute(_t(f'DELETE FROM "{table.name}"'))
-    for table in Base.metadata.sorted_tables:             # insert parents → enfants
+    a_reposer = []                                        # (table, colonne, clé primaire, [(clé, valeur)])
+    for table in ordre:                                   # insert parents → enfants
         rows = tables.get(table.name) or []
-        if rows:
-            db.execute(table.insert(), _coerce_rows(table, rows))
-            inserted += len(rows)
+        if not rows:
+            continue
+        rows = _coerce_rows(table, rows)
+        pk = [c.name for c in table.primary_key.columns]
+        for col in cycles[table.name]:
+            valeurs = [({k: r.get(k) for k in pk}, r[col]) for r in rows if r.get(col) is not None]
+            for r in rows:
+                if col in r:
+                    r[col] = None
+            if valeurs:
+                a_reposer.append((table, col, pk, valeurs))
+        db.execute(table.insert(), rows)
+        inserted += len(rows)
+    for table, col, pk, valeurs in a_reposer:             # liens en cycle reposés, toutes les lignes en place
+        ou = " AND ".join(f'"{k}" = :cle_{k}' for k in pk)
+        db.execute(_t(f'UPDATE "{table.name}" SET "{col}" = :valeur WHERE {ou}'),
+                   [{"valeur": v, **{f"cle_{k}": cle[k] for k in pk}} for cle, v in valeurs])
+    _remettre_les_compteurs(db, ordre)
     db.commit()
     return {"ok": True, "tables": len(tables), "rows": inserted}

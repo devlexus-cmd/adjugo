@@ -132,6 +132,11 @@ n'est jamais bloquée.
    ```
    Attendu : `{'ok': True, 'tables': N, 'rows': M}`. Supprime ensuite `restauration_test.db`
    et le `.json.gz` déchiffré (il est en clair).
+   La même commande vaut dans une base PostgreSQL jetable, le moteur de la production :
+   `DATABASE_URL=postgresql://…` d'une base vide, après `alembic upgrade head` sur cette base.
+   Avant le 22/10/2026, la restauration y était refusée (lien entre comptes et organisations),
+   puis la première inscription aussi ; le test sur SQLite ne le montrait pas
+   (`docs/REORGANISATION_V2A.md` § Q.1).
 
 **Changer de clé** : génère une nouvelle paire (`--sortie` vers un autre fichier), remplace
 `BACKUP_PUBLIC_KEY`, et garde l'ancienne clé privée 14 jours de plus (les anciennes
