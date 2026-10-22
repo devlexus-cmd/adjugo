@@ -4,8 +4,9 @@ Réunion du 22/10 — REVUE de la réunion (85e5809). Document : docs/MISE_EN_LI
 Chaque remarque de la revue a été reproduite sur le code réuni avant d'être corrigée ; chaque test ci-dessous échouait
 sur 85e5809 (code, ou document qui disait autre chose que le code) :
 
-  R1  décision 2 : la règle « rien vers une adresse non confirmée » ne couvre aujourd'hui que les alertes de marchés et
-      les courriels vers des tiers ; « Demandez vos notes » et « pièces à renouveler » partent encore (fixé ici) ;
+  R1  décision 2 : la règle « rien vers une adresse non confirmée » ne couvrait que les alertes de marchés et les
+      courriels vers des tiers ; « Demandez vos notes » et « pièces à renouveler » partaient encore. Eliot a pris
+      l'option (b) le 22/10 : le test fixe désormais la règle unique (plus bas, « Décisions d'Eliot ») ;
   R2  mise en ligne : par `railway up` depuis le bon dossier, jamais par un push vers GitHub ;
   R3  retour arrière : l'ancien code renvoie une fois TOUS les marchés revus par la nouvelle version qui passent son
       seuil, même ceux envoyés avant la mise en ligne (mécanisme de la mémoire des alertes, fixé ici) ;
@@ -28,6 +29,15 @@ les tests CR1 et CR2 échouaient sur 002e2bb (le document disait autre chose que
   CR2 retour arrière, étape 4 : l'ancien code ne plafonne pas le renvoi à 25 marchés par alerte (25 par source qui
       suit la limite, plus Mégalis, qui ne la suit pas ; la liste réunie n'est jamais coupée) — rejoué sur le code de
       production extrait par `git archive`.
+
+DÉCISIONS D'ELIOT (22/10), appliquées sur 130fc9e ; chaque test échouait sur 130fc9e :
+
+  D1  (b) le repli payant de « À venir » est remboursé en outre-mer et en Corse, seul ou avec d'autres départements,
+      jusqu'à l'annonce du crédit à l'écran ; ailleurs, débité s'il trouve ; le journal dit la raison ;
+  D2  (b) une seule règle pour les courriels planifiés vers le compte lui-même : rien vers une adresse non confirmée
+      (alertes de marchés, « Demandez vos notes », « pièces à renouveler », veille amont), rien de marqué, envoi après
+      la confirmation (tests R1) ;
+  D3  (b) la bulle (i) de « Mes alertes » corrigée, traduite, et ce qu'elle dit vérifié dans le code.
 """
 import json
 import os
@@ -72,17 +82,42 @@ def _node_tz(script, tz="Europe/Paris", *args):
     return json.loads(r.stdout.strip().splitlines()[-1])
 
 
-# ═══ R1. Adresse non confirmée : ce qui part, ce qui ne part pas ═══════════════════════════════════════════════════
+# ═══ R1, puis décision 2 (b) du 22/10. Adresse non confirmée : aucun courriel planifié vers le compte ════════════════
+# La revue (R1) avait fixé la règle telle qu'elle était sur 85e5809 et 130fc9e : l'alerte de marchés refusée, mais
+# « Demandez vos notes » et « pièces à renouveler » envoyés à l'adresse non confirmée. Eliot a pris l'option (b) : ce
+# test fixe la règle unique. Il échouait sur 130fc9e (« Demandez vos notes » et le récapitulatif partaient).
 
-def test_r1_adresse_non_confirmee_ce_qui_part_et_ce_qui_ne_part_pas(client, auth, monkeypatch):
-    """La règle telle qu'elle est (décision 2) : dans une même tournée planifiée, l'alerte de marchés n'est pas envoyée
-    à une adresse non confirmée, mais « Demandez vos notes » l'est ; le récapitulatif « pièces à renouveler » aussi.
-    Si la décision 2 (b) est prise, ce test change avec elle. Le document ne dit plus que c'est « la règle du reste de
-    l'application »."""
+def _maj_user(uid, **cols):
+    from app.models import User
+    db = _db()
+    try:
+        u = db.get(User, uid)
+        for k, v in cols.items():
+            setattr(u, k, v)
+        db.commit()
+    finally:
+        db.close()
+
+
+def _tournee(al):
+    """La tournée planifiée du matin : alertes de marchés (avec « Demandez vos notes »), puis les pièces à renouveler."""
+    res = al.run_tender_alerts(_db())
+    al.run_document_expiry_alerts(_db())
+    return res
+
+
+def test_r1_adresse_non_confirmee_aucun_courriel_planifie_vers_le_compte(client, auth, monkeypatch):
+    """Décision 2 (b) : dans une même tournée, une adresse non confirmée ne reçoit ni l'alerte de marchés, ni « Demandez
+    vos notes », ni le récapitulatif « pièces à renouveler », avec la même fonction (_comptes_non_confirmes). Rien n'est
+    marqué : la recherche n'est pas rejouée avec mark=True, aucun drapeau d'alerte n'est posé sur la pièce, aucun rappel
+    n'est noté au carnet. Confirmée, la tournée suivante envoie les trois ; « Demandez vos notes » seulement dans ses
+    14 jours (un marché perdu il y a 15 jours n'en reçoit pas)."""
     import app.services.alerts as al
     import app.services.email as em
     from app.models import Document, SavedSearch, User
-    envois = []
+    from app.services.carnet_notes import COURRIEL_FIN_JOURS
+    assert COURRIEL_FIN_JOURS == 14
+    envois, rejeux = [], []
 
     def _envoi(to, sujet, texte, *a, **k):
         envois.append((to, sujet, texte))
@@ -90,10 +125,11 @@ def test_r1_adresse_non_confirmee_ce_qui_part_et_ce_qui_ne_part_pas(client, auth
     monkeypatch.setattr(em, "send_email", _envoi)
     monkeypatch.setattr(al, "send_email", _envoi)
     h = _h(auth)
-    pid = _marche(client, h)
-    c = _get(pid)
-    c["perdu_le"] = (datetime.utcnow() - timedelta(days=3)).replace(microsecond=0).isoformat()
-    _set(pid, carnet_notes=c)
+    recent, ancien = _marche(client, h), _marche(client, h, name="Couverture du gymnase")
+    for pid, jours in ((recent, 3), (ancien, COURRIEL_FIN_JOURS + 1)):
+        c = _get(pid)
+        c["perdu_le"] = (datetime.utcnow() - timedelta(days=jours)).replace(microsecond=0).isoformat()
+        _set(pid, carnet_notes=c)
     uid = _user_id(auth["email"])
     db = _db()
     try:
@@ -108,35 +144,90 @@ def test_r1_adresse_non_confirmee_ce_qui_part_et_ce_qui_ne_part_pas(client, auth
         db.close()
     marche = {"objet": "Réfection de toiture R1", "acheteur": "Ville", "score": 50, "date_limite": None, "lieu": "",
               "source": "BOAMP", "url": "https://exemple.invalid/avis", "ref": "26-1"}
-    monkeypatch.setattr(al, "run_one_saved_search", lambda s, db, mark=True: [marche] if s.id == sid else [])
+
+    def _rejeu(s, db, mark=True):
+        if s.id != sid:
+            return []
+        rejeux.append(mark)
+        return [marche]
+    monkeypatch.setattr(al, "run_one_saved_search", _rejeu)
     # Les comptes des autres tests sont mis à l'écart comme le compte de démonstration : la tournée ne touche qu'à ce
     # compte (aucun drapeau d'envoi posé ailleurs).
     monkeypatch.setattr(al, "_demo_user_ids", lambda db: {u for (u,) in db.query(User.id).filter(User.id != uid).all()})
-    try:
-        res = al.run_tender_alerts(_db())
-        al.run_document_expiry_alerts(_db())
-    finally:
+
+    def _drapeaux():
         db = _db()
         try:
-            db.get(User, uid).email_verified = True
+            d = db.get(Document, doc_id)
+            return (bool(d.alert_30_sent), bool(d.alert_7_sent), bool(d.alert_day_sent))
+        finally:
+            db.close()
+    try:
+        # 1) Adresse non confirmée : rien ne part, rien n'est marqué.
+        assert uid in al._comptes_non_confirmes(_db())
+        res = _tournee(al)
+        assert [to for to, _s, _t in envois if to == auth["email"]] == []
+        assert res["rappels_notes_envoyes"] == 0 and res["users_notified"] == 0
+        assert rejeux == [False]                                   # recherche rejouée sans marquer « déjà vu »
+        assert _drapeaux() == (False, False, False)                # pièce : aucun drapeau d'alerte
+        assert "rappel_courriel" not in _get(recent) and "rappel_courriel" not in _get(ancien)
+        # 2) Adresse confirmée : la tournée suivante envoie les trois courriels.
+        _maj_user(uid, email_verified=True)
+        envois.clear()
+        res = _tournee(al)
+    finally:
+        _maj_user(uid, email_verified=True)
+        db = _db()
+        try:
             db.query(SavedSearch).filter(SavedSearch.id == sid).update({SavedSearch.active: False})
             db.get(Document, doc_id).deleted_at = datetime.utcnow()
             db.commit()
         finally:
             db.close()
     mes = [(sujet, texte) for to, sujet, texte in envois if to == auth["email"]]
-    assert not any("nouvel(s) appel(s) d'offres" in sujet for sujet, _ in mes)        # alerte de marchés : refusée
-    assert res["rappels_notes_envoyes"] >= 1
-    assert any(sujet.startswith("Adjugo — demandez vos notes") for sujet, _ in mes)  # même tournée : envoyé
-    assert any("parce que vous avez des alertes actives" in texte for _, texte in mes)
-    assert any("pièce à renouveler" in sujet for sujet, _ in mes)                     # récapitulatif : envoyé
-    # Le document dit cette règle telle qu'elle est, et la laisse à Eliot.
-    d2 = _section("2. **Adresses non confirmées", "3. **La bulle (i)")
-    assert "règle du reste de l'application" not in d2           # (la revue, section 5, cite l'ancienne phrase)
-    for x in ("Demandez vos notes", "pièces à renouveler", "_comptes_non_confirmes", "**(a)**", "**(b)**", "**(c)**",
-              "test_r1_adresse_non_confirmee_ce_qui_part_et_ce_qui_ne_part_pas"):
-        assert x in d2, x
-    assert "ne reçoit plus d'alerte de marchés" in _plat(DOC)
+    assert rejeux == [False, True]
+    assert [x for x, _ in mes if "nouvel(s) appel(s) d'offres" in x] == ["Adjugo — 1 nouvel(s) appel(s) d'offres"]
+    notes = [x for x, _ in mes if x.startswith("Adjugo — demandez vos notes")]
+    assert res["rappels_notes_envoyes"] == 1 and notes == ["Adjugo — demandez vos notes : Toiture de l'école"]
+    assert "rappel_courriel" in _get(recent) and "rappel_courriel" not in _get(ancien)   # 15 jours : plus de courriel
+    assert [x for x, _ in mes if "pièce à renouveler" in x] == ["Adjugo — 1 pièce à renouveler"]
+    assert _drapeaux() == (True, True, False)                      # palier « 7 jours » du jour de l'envoi
+
+
+def test_r1_la_veille_amont_suit_la_meme_regle(client, auth, monkeypatch):
+    """La veille amont (masquée, PROJETS_A_VENIR=0) est une autre tâche planifiée qui écrit au compte lui-même ;
+    rallumée, elle suit la même règle : une adresse non confirmée n'est pas servie (aucun courriel, aucun projet
+    enregistré pour elle), et l'est au premier passage après la confirmation. Sur 130fc9e, elle recevait le courriel."""
+    import app.services.agents.amont as agents_amont
+    import app.services.alerts as al
+    import app.sourcing.sources.deliberations as deliberations
+    from app.models import Signal, User
+    monkeypatch.setenv("PROJETS_A_VENIR", "1")
+    uid = _user_id(auth["email"])
+    envois = []
+    monkeypatch.setattr(al, "send_email", lambda to, sujet, texte, *a, **k: envois.append((to, sujet)) or True)
+    monkeypatch.setattr(al, "_demo_user_ids", lambda db: {u for (u,) in db.query(User.id).filter(User.id != uid).all()})
+    monkeypatch.setattr(deliberations.DeliberationSource, "fetch_recent", lambda self, *a, **k: [{"titre": "x"}])
+    monkeypatch.setattr(agents_amont, "detect_from_deliberations", lambda *a, **k: [
+        {"intitule": "Rénovation de la toiture de la mairie R1", "collectivite": "Ville de Brest", "source": "Brest"}])
+    monkeypatch.setattr(agents_amont, "score_pertinence", lambda p, c, d=None: (80, "pertinent"))
+
+    def _signaux():
+        db = _db()
+        try:
+            return db.query(Signal).filter(Signal.user_id == uid).count()
+        finally:
+            db.close()
+    _maj_user(uid, amont_alerts_enabled=True, email_verified=False)
+    try:
+        assert al.run_amont_alerts(_db()) == {"scanned": 0, "users_notified": 0, "new_signals": 0, "opted_in": 0}
+        assert envois == [] and _signaux() == 0
+        _maj_user(uid, email_verified=True)
+        res = al.run_amont_alerts(_db())
+    finally:
+        _maj_user(uid, amont_alerts_enabled=False, email_verified=True)
+    assert res["users_notified"] == 1 and _signaux() == 1
+    assert envois == [(auth["email"], "Adjugo — 1 projet(s) détecté(s) en amont")]
 
 
 # ═══ R2. Mettre en ligne : `railway up`, jamais un push ═══════════════════════════════════════════════════════════
@@ -499,3 +590,185 @@ def test_cr2_l_ancien_code_ne_plafonne_pas_le_renvoi_a_25_par_alerte(tmp_path):
               "il ne coupe jamais la liste réunie", "Le courriel en affiche 10 par alerte, avec leur nombre, et son "
               "objet donne le total"):
         assert x in r4, x
+
+
+# ═══ Décisions d'Eliot (22/10) ══════════════════════════════════════════════════════════════════════════════════════
+# Décision 2 : test_r1_adresse_non_confirmee_aucun_courriel_planifie_vers_le_compte et test_r1_la_veille_amont_suit_la_
+# meme_regle (plus haut). Chaque test ci-dessous échouait sur 130fc9e.
+
+# ─── Décision 1 (b) : le repli payant de « À venir » remboursé en outre-mer et en Corse ─────────────────────────────
+
+def _compteurs(uid):
+    from app.models import User
+    db = _db()
+    try:
+        u = db.get(User, uid)
+        return (u.trial_analyses_used or 0, u.analyses_used_this_month or 0)
+    finally:
+        db.close()
+
+
+def test_d1_repli_a_venir_rembourse_en_outre_mer_et_en_corse(client, auth, monkeypatch, caplog):
+    """La DECP ne donne rien, le repli (BOAMP + IA) trouve une fin de contrat. En outre-mer (« 974 », « 971 », « 988 »,
+    « 97 ») et en Corse (« 2A, 2B », « 20 », un code postal corse), seul ou avec la métropole : l'analyse est remboursée,
+    la fin de contrat est montrée, et le journal dit pourquoi. Ailleurs (métropole, toute la France) : débitée, comme
+    avant. Sur 130fc9e, « 974 » et « 2A, 2B » étaient débités."""
+    import logging
+    from app.services import decp, renewal
+    REMBOURSE_PAR_ZONE = "remboursée (outre-mer ou Corse, jusqu'à l'annonce du crédit à l'écran)"
+    uid = _user_id(auth["email"])
+    fin = {"idweb": "25-1", "objet": "Entretien de la voirie", "acheteur": "Ville", "lieu": "", "dept": "974",
+           "date_attribution": "2023-01-10", "duree_mois": 36, "duree_estimee": True, "type_contrat": "",
+           "fin_estimee": "2026-01-10", "renouvellement_estime": "2025-09-12", "score": 70, "url": "https://x.invalid"}
+    demandes = []
+    monkeypatch.setattr(decp, "detect_renewals_decp", lambda *a, **k: {"count": 0, "renewals": [], "errors": []})
+
+    def _repli(query, departements, criteria, domaines=None, lang_name=None):
+        demandes.append(list(departements))
+        return {"count": 1, "renewals": [dict(fin)], "errors": []}
+    monkeypatch.setattr(renewal, "detect_renewals", _repli)
+    cas = [(["974"], ["974"], False), (["971"], ["971"], False), (["988"], ["988"], False), (["97"], ["97"], False),
+           (["2A", "2B"], ["2A", "2B"], False), (["20"], ["20"], False), (["20200"], ["20"], False),
+           (["29", "974"], ["29", "974"], False), (["2B", "56"], ["2B", "56"], False),
+           (["29"], ["29"], True), (["6"], ["06"], True), ([], [], True)]
+    for champ, deps, debite in cas:
+        _maj_user(uid, trial_analyses_used=0, analyses_used_this_month=0)
+        caplog.clear()
+        demandes.clear()
+        with caplog.at_level(logging.INFO, logger="adjugo"):
+            r = client.post("/api/sourcing/renewals", headers=_h(auth), json={"query": "voirie", "departements": champ})
+        assert r.status_code == 200, (champ, r.text)
+        assert [f["idweb"] for f in r.json()["renewals"]] == ["25-1"]          # la fin de contrat est montrée
+        assert demandes == [deps], (champ, demandes)
+        lignes = [x.getMessage() for x in caplog.records if "repli payant « À venir »" in x.getMessage()]
+        assert len(lignes) == 1, (champ, lignes)
+        if debite:
+            assert _compteurs(uid) == (1, 1), champ
+            assert "; analyse débitée ;" in lignes[0], (champ, lignes[0])
+        else:
+            assert _compteurs(uid) == (0, 0), champ
+            assert f"; analyse {REMBOURSE_PAR_ZONE} ;" in lignes[0], (champ, lignes[0])
+            assert "fins de contrat trouvées=1" in lignes[0]
+    # Rien trouvé : remboursé partout ; en outre-mer et en Corse, le journal donne la même raison.
+    monkeypatch.setattr(renewal, "detect_renewals", lambda *a, **k: {"count": 0, "renewals": [], "errors": []})
+    for champ, raison in ((["974"], REMBOURSE_PAR_ZONE), (["29"], "remboursée")):
+        _maj_user(uid, trial_analyses_used=0, analyses_used_this_month=0)
+        caplog.clear()
+        with caplog.at_level(logging.INFO, logger="adjugo"):
+            r = client.post("/api/sourcing/renewals", headers=_h(auth), json={"query": "voirie", "departements": champ})
+        assert r.status_code == 200 and _compteurs(uid) == (0, 0)
+        lignes = [x.getMessage() for x in caplog.records if "repli payant « À venir »" in x.getMessage()]
+        assert len(lignes) == 1 and f"; analyse {raison} ;" in lignes[0], lignes
+    _maj_user(uid, trial_analyses_used=0, analyses_used_this_month=0)
+    from app.routers.sourcing import REMBOURSE_PAR_ZONE as dans_le_code
+    assert dans_le_code == REMBOURSE_PAR_ZONE
+
+
+def test_d1_le_document_dit_la_decision():
+    d1 = _section("1. **Repli payant de l'onglet « À venir »", "2. **Adresses non confirmées")
+    for x in ("**Décidé le 22/10 : (b)**", "remboursé en outre-mer et en Corse", "seul ou avec d'autres départements",
+              "débité s'il trouve, remboursé sinon", REMBOURSE_PAR_ZONE_DOC,
+              "test_d1_repli_a_venir_rembourse_en_outre_mer_et_en_corse"):
+        assert x in d1, x
+    s1 = _section("### Trouver des marchés › À venir (fins de contrat)", "### Trouver des marchés › Mes alertes")
+    assert "L'analyse est alors **débitée**" not in s1
+    assert "l'analyse est **remboursée**, même s'il trouve" in s1
+    nc = _section("### Ce qui ne change pas", "## 2. Les défauts de production corrigés")
+    assert "peut désormais trouver, donc débiter, en Corse et en outre-mer" not in nc
+
+
+REMBOURSE_PAR_ZONE_DOC = "« analyse remboursée (outre-mer ou Corse, jusqu'à l'annonce du crédit à l'écran) »"
+
+
+# ─── Décision 3 (b) : la bulle (i) de « Mes alertes », corrigée et traduite ─────────────────────────────────────────
+
+BULLE = ("Recevez par email les nouveaux marchés de cette recherche, 10 au plus par alerte, les autres comptés. "
+         "Chaque envoi lit un nombre limité d'avis par source (au BOAMP, les 25 derniers publiés) : une recherche très "
+         "large peut en avoir d'autres, à voir dans Adjugo. La recherche de l'onglet « Publiés » est enregistrée telle "
+         "quelle.")
+
+
+def test_d3_la_bulle_de_mes_alertes_dit_ce_que_fait_le_courriel():
+    m = re.search(r'<b style="font-size:13\.5px">Mes alertes</b><button type="button" class="tip">.*?'
+                  r'<span class="tip-b" role="tooltip">([^<]*)</span>', HTML)
+    assert m and m.group(1) == BULLE, m and m.group(1)          # un seul nœud de texte : translateDOM le traduit entier
+    assert "seuil de compatibilité" not in m.group(1)
+    tete, corps = (STATIC / "i18n.js").read_text(encoding="utf-8").split("\n", 1)
+    d = json.loads(corps[len("window.ADJUGO_I18N = "):].rstrip().rstrip(";"))
+    for lg, mots in (("nl", ("maximaal 10 per melding", "de overige geteld", "BOAMP de 25 laatst gepubliceerde")),
+                     ("es", ("10 como máximo por alerta", "las demás contabilizadas", "BOAMP, los 25 últimos"))):
+        assert all(x in d[lg][BULLE] for x in mots), (lg, d[lg][BULLE])
+        assert "drempel" not in d[lg][BULLE] and "umbral" not in d[lg][BULLE]
+    d3 = _section("3. **La bulle (i) de « Mes alertes »**", "4. **Mesure du rappel avant le lot.**")
+    assert "**Décidé le 22/10 : (b)**" in d3 and _plat(BULLE) in d3
+    assert "« les autres comptés » n'est vrai que pour les avis que l'envoi lit" in d3
+    alertes = _section("### Trouver des marchés › Mes alertes", "### Mes marchés et la page d'un marché")
+    assert "C'est faux depuis ce lot" not in alertes and "dit encore « au-dessus de votre seuil" not in alertes
+
+
+def test_d3_ce_que_dit_la_bulle_est_vrai(client, auth, monkeypatch):
+    """« 10 au plus par alerte, les autres comptés » : 13 nouveaux marchés dans une alerte, 10 dans le courriel et la
+    ligne « … et 3 autres marchés ». « un nombre limité d'avis par source (au BOAMP, les 25 derniers publiés) » : la
+    tournée demande 25 avis à chaque source, et le BOAMP les trie du plus récent au plus ancien."""
+    import app.services.alerts as al
+    import app.services.email as em
+    from app.models import SavedSearch, User
+    from app.sourcing import http as sourcing_http
+    from app.sourcing import search
+    from app.sourcing.base import TenderCriteria
+    from app.sourcing.sources.boamp import BoampSource
+    assert al._MARCHES_PAR_ALERTE == 10
+    uid = _user_id(auth["email"])
+    db = _db()
+    try:
+        s = SavedSearch(user_id=uid, name="Voirie D3", query="voirie", active=True, frequency="quotidienne")
+        db.add(s)
+        db.commit()
+        sid = s.id
+    finally:
+        db.close()
+    envois = []
+    monkeypatch.setattr(em, "send_email", lambda to, sujet, texte, *a, **k: envois.append((to, sujet, texte)) or True)
+    monkeypatch.setattr(al, "send_email", lambda to, sujet, texte, *a, **k: envois.append((to, sujet, texte)) or True)
+    monkeypatch.setattr(al, "_demo_user_ids", lambda db: {u for (u,) in db.query(User.id).filter(User.id != uid).all()})
+    marches = [{"objet": f"Voirie D3 n° {i}", "acheteur": "Ville", "score": 50, "date_limite": None, "lieu": "",
+                "source": "BOAMP", "url": f"https://exemple.invalid/{i}", "ref": f"26-{i}"} for i in range(13)]
+    monkeypatch.setattr(al, "run_one_saved_search", lambda s, db, mark=True: marches if s.id == sid else [])
+    try:
+        al.run_tender_alerts(_db())
+    finally:
+        db = _db()
+        try:
+            db.query(SavedSearch).filter(SavedSearch.id == sid).update({SavedSearch.active: False})
+            db.commit()
+        finally:
+            db.close()
+    mes = [(sujet, texte) for to, sujet, texte in envois if to == auth["email"]]
+    assert len(mes) == 1 and mes[0][0] == "Adjugo — 13 nouvel(s) appel(s) d'offres"
+    texte = mes[0][1]
+    assert "● Voirie D3 (13 nouveau(x)) :" in texte
+    assert sum(1 for i in range(13) if f"Voirie D3 n° {i} —" in texte) == 10
+    assert "… et 3 autres marchés : relancez cette recherche dans Adjugo pour les voir tous." in texte
+    # 25 avis demandés à chaque source par la tournée ; le BOAMP, les 25 derniers publiés.
+    monkeypatch.undo()
+    vus = []
+    monkeypatch.setattr(search.TenderSearchService, "search", lambda self, crit, company=None, gonogo=None: (
+        vus.append(crit.limit), {"tenders": [], "errors": []})[1])
+    db = _db()
+    try:
+        al.run_one_saved_search(SavedSearch(user_id=uid, name="x", query="voirie", departements=["29"]), db, mark=False)
+    finally:
+        db.close()
+    assert vus == [25]
+    demandes = []
+
+    class _Rep:
+        def json(self):
+            return {"results": []}
+
+    def _get(url, params=None, **k):
+        demandes.append(dict(params or {}))
+        return _Rep()
+    monkeypatch.setattr(sourcing_http, "get_with_retry", _get)
+    BoampSource().search(TenderCriteria(query="voirie", departements=["29"], limit=25))
+    assert demandes and demandes[0]["limit"] == 25 and demandes[0]["order_by"] == "-dateparution"

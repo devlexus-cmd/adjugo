@@ -154,11 +154,18 @@ def register(request: Request, data: UserCreate, db: Session = Depends(get_db)):
     # planifié de la part ni l'alerte d'attestations à ses partenaires : app/services/alerts.py,
     # _comptes_non_confirmes ; ni la relance planifiée des parties du dossier de présentation ni « Votre partie est à
     # valider » quand il écrit la partie d'un partenaire : app/services/atelier_groupement.py, relancer_parts et
-    # _notifier_partenaire). Les alertes de marchés ne partent pas non plus vers une adresse non confirmée, qui peut être
-    # celle d'un tiers (alerts.run_tender_alerts, moteur lot 1 ; rien n'y est marqué « déjà vu » : elles partent après
-    # la confirmation). Seule exception, à la demande de qui ouvre le lien : le code qui vérifie l'adresse du
+    # _notifier_partenaire). Seule exception, à la demande de qui ouvre le lien : le code qui vérifie l'adresse du
     # partenaire (sans le lien ; 8 par jour au plus pour une organisation non confirmée : invites._otp_cap_reached),
-    # puis, une fois cette adresse vérifiée, l'accusé de sa part envoyée. Ne vérifient PAS
+    # puis, une fois cette adresse vérifiée, l'accusé de sa part envoyée. Vers le compte lui-même, une seule règle
+    # (réunion du 22/10, décision 2) : aucune tâche planifiée n'écrit à une adresse non confirmée, qui peut être celle
+    # d'un tiers (faute de frappe au changement d'adresse) — ni les alertes de marchés (alerts.run_tender_alerts), ni
+    # « Demandez vos notes » (carnet_notes.envoyer_rappels), ni le récapitulatif « pièces à renouveler »
+    # (alerts.run_document_expiry_alerts), ni celui des attestations de ses partenaires (alerts._piece_alerts_due), ni la
+    # veille amont, masquée (alerts.run_amont_alerts) ; une seule fonction, alerts._comptes_non_confirmes. Rien n'y est
+    # marqué envoyé ni « déjà vu » : ils partent au premier passage après la confirmation, « Demandez vos notes »
+    # seulement dans ses 14 jours (carnet_notes.COURRIEL_FIN_JOURS). La règle porte sur les tâches planifiées : les
+    # courriels que le compte demande lui-même, comme la confirmation de l'adresse ou le mot de passe oublié, partent
+    # comme avant. Ne vérifient PAS
     # l'adresse : les appels qui passent seulement par exiger_ia (questions sur un marché déjà analysé, estimation du
     # prix, veille) ; ils restent bornés par le garde-fou de l'essai (docs/REORGANISATION_V2B.md, B1, laissé). Le jeton
     # est rendu quand même : il sert à renvoyer l'email, à revérifier la confirmation et à se déconnecter.

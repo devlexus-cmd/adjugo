@@ -1840,14 +1840,18 @@ def _destinataire_du_rappel(db, p, c: dict) -> Optional[User]:
 
 def envoyer_rappels(db, now: Optional[datetime] = None) -> dict:
     """Un courriel « Demandez vos notes », une seule fois par marché, à l'utilisateur qui l'a passé à « Perdu »,
-    seulement s'il a des alertes actives. Jamais à l'acheteur, jamais au compte de démonstration."""
+    seulement s'il a des alertes actives. Jamais à l'acheteur, jamais au compte de démonstration. Jamais vers une
+    adresse non confirmée (réunion du 22/10, décision 2 : alerts._comptes_non_confirmes, la règle de toutes les tâches
+    planifiées) : rien n'est marqué, le rappel part au premier passage après la confirmation, s'il est encore dans ses
+    COURRIEL_FIN_JOURS (14) jours."""
     from app.core.config import get_settings
     from app.models import ProjectStatus
-    from app.services.alerts import _demo_user_ids
+    from app.services.alerts import _comptes_non_confirmes, _demo_user_ids
     from app.services.email import send_email
     now = now or _now()
     envoyes, examines = 0, 0
     demo = _demo_user_ids(db)
+    non_confirmes = _comptes_non_confirmes(db)
     base = (get_settings().APP_BASE_URL or "https://adjugo.pro").rstrip("/")
     ids = [pid for pid, c in db.query(Project.id, Project.carnet_notes)
            .filter(Project.status == ProjectStatus.perdu, Project.deleted_at.is_(None)).all()
@@ -1862,6 +1866,8 @@ def envoyer_rappels(db, now: Optional[datetime] = None) -> dict:
         examines += 1
         u = _destinataire_du_rappel(db, p, c)
         if u is None or not u.email or u.id in demo or p.user_id in demo or not getattr(u, "is_active", True):
+            continue
+        if u.id in non_confirmes:       # adresse non confirmée : rien, et rien de marqué (part après la confirmation)
             continue
         if not _a_des_alertes(db, u.id):
             continue

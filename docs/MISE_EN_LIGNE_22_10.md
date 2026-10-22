@@ -19,6 +19,10 @@ restent hors de cette mise en ligne tant que vous n'avez pas relu leurs textes. 
 **Rien n'a été mis en ligne ni poussé.** Aucune variable nouvelle sur Railway. Une seule migration de base de
 données, `c5priseenmain` (section 4).
 
+**Vos décisions du 22/10 sont appliquées** (section 3, décisions 1 à 3, et section 5, « Décisions d'Eliot ») : le
+repli payant de « À venir » est remboursé en outre-mer et en Corse ; aucun courriel planifié ne part vers une adresse
+non confirmée ; la bulle (i) de « Mes alertes » est corrigée.
+
 ---
 
 ## 1. Ce qui change pour les clients, écran par écran
@@ -33,6 +37,13 @@ données, `c5priseenmain` (section 4).
   courriel de confirmation dit la même phrase, seulement quand c'est vrai (entreprise sans SIRET).
 - Les réponses de « Renvoyer l'email » et de « J'ai cliqué sur le lien » s'affichent enfin dans l'écran. Avant,
   elles passaient dessous et restaient invisibles.
+- **Tant que l'adresse n'est pas confirmée, Adjugo ne lui envoie aucun courriel planifié** (décision 2, prise le
+  22/10) : ni alerte de marchés, ni « Demandez vos notes », ni récapitulatif « pièces à renouveler ». Rien n'est marqué
+  envoyé : ils partent au premier passage après la confirmation, « Demandez vos notes » seulement dans les 14 jours qui
+  suivent le passage du marché à « Perdu ». En production, ces trois courriels partaient vers une adresse non confirmée
+  (section 2, point 3) ; avant cette décision, le code réuni ne retenait que l'alerte de marchés. Le cas réel : un
+  compte qui change d'adresse redevient non confirmé ; il ne reçoit plus rien jusqu'à ce qu'il confirme la nouvelle.
+  Les courriels que le compte demande lui-même (confirmation, mot de passe oublié) partent comme avant.
 
 ### Fenêtre du SIRET et « Ce que je cherche »
 
@@ -96,15 +107,19 @@ données, `c5priseenmain` (section 4).
   entreprise, déjà inscrite ou non. La zone enregistrée dans Ce que je cherche n'y entre pas : elle ne sert qu'à
   la note des fins de contrat. « 97 » saisi dans le champ garde celles de tout l'outre-mer.
 - **Corse et outre-mer, repli payant** : quand la base des marchés attribués (DECP) ne donne rien, le repli par le
-  BOAMP et l'IA peut désormais trouver des fins de contrat dans ces deux zones. L'analyse est alors **débitée**.
-  Avant, il ne trouvait jamais rien, et l'analyse était toujours remboursée. **C'est la décision 1 de la
-  section 3.**
+  BOAMP et l'IA peut désormais trouver des fins de contrat dans ces deux zones, et l'écran les montre. Dans ces zones,
+  l'analyse est **remboursée**, même s'il trouve, jusqu'à ce que l'écran annonce le crédit avant le clic (décision 1,
+  prise le 22/10). Avant, il ne trouvait jamais rien, et l'analyse était toujours remboursée : le crédit ne change donc
+  pas pour ces entreprises. Une demande qui mêle un département de métropole et un d'outre-mer ou de Corse
+  (« 29, 974 ») est remboursée en entier ; en production, elle était débitée si elle trouvait en métropole. Partout
+  ailleurs, la règle ne change pas : débité s'il trouve, remboursé sinon.
 - « 6 » saisi seul est lu comme « 06 » dans la DECP, sans crédit. Avant, il passait par le repli payant.
 - Une durée de contrat que l'IA n'a pas vraiment lue est affichée « (estimée) », et non plus « (réelle) ».
 - Le bouton « Modifier ma zone » met le curseur dans le champ « Départements » de l'onglet, celui qui compte pour
   cette recherche.
 - Chaque repli payant laisse une ligne dans le journal du serveur, sans donnée personnelle. Rien n'est visible à
-  l'écran.
+  l'écran. En outre-mer et en Corse, elle dit « analyse remboursée (outre-mer ou Corse, jusqu'à l'annonce du crédit à
+  l'écran) ».
 
 ### Trouver des marchés › Mes alertes, et les courriels d'alerte
 
@@ -115,11 +130,14 @@ données, `c5priseenmain` (section 4).
 - Les dates des consultations Mégalis apparaissent dans le courriel.
 - Moins de marchés reçus deux fois. Aucun marché déjà reçu n'est renvoyé au passage à la nouvelle mémoire des
   alertes (vérifié depuis une base remplie par la production, section 5).
-- **Un compte dont l'adresse n'est pas confirmée ne reçoit plus d'alerte de marchés.** Ses marchés partent au
-  premier passage après la confirmation. Il reçoit toujours, comme avant, « Demandez vos notes » et « pièces à
-  renouveler » (décision 2 de la section 3).
-- **Attention** : la bulle (i) de « Mes alertes » dit encore « au-dessus de votre seuil de compatibilité ». C'est
-  faux depuis ce lot (décision 3).
+- **Un compte dont l'adresse n'est pas confirmée ne reçoit plus d'alerte de marchés**, ni aucun autre courriel
+  planifié (plus haut, « Inscription et confirmation de l'adresse »). Ses marchés partent au premier passage après la
+  confirmation.
+- **La bulle (i) de « Mes alertes »** dit désormais, en français, néerlandais et espagnol : « Recevez par email les
+  nouveaux marchés de cette recherche, 10 au plus par alerte, les autres comptés. Chaque envoi lit un nombre limité
+  d'avis par source (au BOAMP, les 25 derniers publiés) : une recherche très large peut en avoir d'autres, à voir dans
+  Adjugo. La recherche de l'onglet « Publiés » est enregistrée telle quelle. » Avant : « … qui vous correspondent
+  (au-dessus de votre seuil de compatibilité) », faux depuis ce lot (décision 3, prise le 22/10).
 
 ### Mes marchés et la page d'un marché
 
@@ -187,8 +205,9 @@ données, `c5priseenmain` (section 4).
 
 ### Ce qui ne change pas
 
-Les prix, les forfaits, les quotas et la règle de débit et de remboursement ne changent pas. Seul effet : le repli
-payant de l'onglet « À venir » peut désormais trouver, donc débiter, en Corse et en outre-mer. Aucune offre ni
+Les prix, les forfaits, les quotas et la règle de débit et de remboursement ne changent pas, à une exception près,
+en faveur du client : le repli payant de l'onglet « À venir » est remboursé dès que la demande porte sur l'outre-mer
+ou la Corse, même avec un département de métropole (décision 1). Aucune offre ni
 carte d'offre ne change (décision 14, réservée). Les pages juridiques et la vitrine ne bougent pas, et aucune IA
 n'est ajoutée. La démo de pitch est identique, à quelques ajouts près (section 5).
 
@@ -210,7 +229,9 @@ contrats).
    rappel planifié, la relance des parties du dossier de présentation et « Votre partie est à valider ». Or
    l'adresse d'un compte jamais confirmé peut être celle de n'importe qui. (V2B § S.5, T.1, T.2)
 3. **Les alertes de marchés partaient vers des adresses jamais confirmées.** La production a envoyé 5 marchés à
-   un tel compte dans la vérification de cette réunion. (Moteur § V.7)
+   un tel compte dans la vérification de cette réunion. (Moteur § V.7) « Demandez vos notes » et le récapitulatif
+   « pièces à renouveler » y partaient aussi : ils ne partent plus (décision 2 ; reproduit sur `0afc1ed` et sur
+   `130fc9e`, section 5, « Décisions d'Eliot »).
 4. **Les adresses de la veille masquée « Projets à venir » répondaient** à un appel direct : elles débitaient
    une analyse et appelaient l'IA. Elles répondent maintenant « introuvable », sans rien débiter.
    (Moteur § 7)
@@ -254,16 +275,27 @@ contrats).
 
 ### Avant la mise en ligne
 
-1. **Repli payant de l'onglet « À venir » en outre-mer et en Corse.** Il débite désormais là où il remboursait
-   toujours (il ne trouvait jamais rien). Deux choix :
-   - **(a)** garder ce débit, selon la règle de partout ailleurs : débité s'il trouve, remboursé sinon. C'est ce
-     que fait le code aujourd'hui ;
-   - **(b)** rembourser le repli dans ces deux zones jusqu'à ce que l'écran annonce le crédit avant le clic
-     (partie écran du lot, point 12 de la note du 21/10). Cela demande un petit changement de code, testé avant
-     la mise en ligne.
+Les décisions 1 à 3 ont été prises par Eliot le 22/10 et sont appliquées dans le code (section 5, « Décisions
+d'Eliot »). Restent les décisions 4 à 7.
 
-   Effet de bord à connaître : comme la DECP ne mélange plus les DOM entre eux, un département d'outre-mer sans
-   fin de contrat déclenche le repli payant, là où la DECP montrait avant (à tort) celles d'un autre DOM.
+1. **Repli payant de l'onglet « À venir » en outre-mer et en Corse.** **Décidé le 22/10 : (b)**, remboursé en
+   outre-mer et en Corse jusqu'à ce que l'écran annonce le crédit avant le clic (partie écran du lot, point 12 de la
+   note du 21/10). Le choix (a) gardait le débit de partout ailleurs.
+
+   La règle appliquée (`_repli_rembourse_par_zone`, `app/routers/sourcing.py`) : le repli est remboursé, qu'il trouve
+   ou non, dès qu'un des départements demandés est en outre-mer (tout code qui commence par « 97 » ou « 98 » :
+   « 974 », « 971 », « 988 »…, ou « 97 » saisi seul) ou en Corse (« 2A », « 2B », ou « 20 », celui d'un code postal
+   corse), seul ou avec d'autres départements. Les fins de contrat trouvées sont montrées. Le journal du repli payant
+   écrit alors « analyse remboursée (outre-mer ou Corse, jusqu'à l'annonce du crédit à l'écran) », qu'il ait trouvé ou
+   non. Sans département (toute la France) ou en métropole seule, la règle ne change pas : débité s'il trouve,
+   remboursé sinon. Le crédit reste demandé avant le repli, comme avant : un compte sans analyse disponible reçoit le
+   même refus. Ce que cela change par rapport à la production : rien pour une demande qui ne porte que sur ces zones
+   (le repli n'y trouvait rien et était toujours remboursé) ; une demande mixte (« 29, 974 ») est remboursée en entier,
+   alors que la production la débitait si elle trouvait en métropole. C'est le seul écart, et il est en faveur du
+   client. Prouvé par `test_d1_repli_a_venir_rembourse_en_outre_mer_et_en_corse`, qui échouait sur `130fc9e`.
+
+   Effet de bord, inchangé : comme la DECP ne mélange plus les DOM entre eux, un département d'outre-mer sans fin de
+   contrat déclenche le repli, là où la DECP montrait avant (à tort) celles d'un autre DOM. Ce repli est remboursé.
    (Moteur, points 12 et 12 bis, § R.1 et V.5)
 
    Qui est concerné (contre-relecture de la réunion) :
@@ -277,32 +309,54 @@ contrats).
    entreprise déjà inscrite par la fenêtre du SIRET y a « 97 » ou « 20 », mais elle passe sous cette règle dès la
    mise en ligne, comme les nouvelles. La portée est fixée par `tests/test_mise_en_ligne_22_10.py` (`test_cr1_a_venir_part_du_code_postal_pour_toute_entreprise_sous_node`,
    `test_cr1_la_route_a_venir_ne_lit_que_le_champ_de_l_onglet`).
-2. **Adresses non confirmées : une règle qui ne couvre pas encore tous les courriels.** Ce qui est en place :
-   - aucune alerte de marchés ne part vers une adresse non confirmée (moteur). Rien n'est marqué « déjà vu », donc
-     les marchés partent au premier passage après la confirmation (Moteur § V.7) ;
-   - aucune tâche planifiée n'écrit à un partenaire pour un compte non confirmé (vague 2b, section 2, point 2).
+2. **Adresses non confirmées : une seule règle.** **Décidé le 22/10 : (b)**, la règle étendue à tous les courriels
+   des tâches planifiées vers le compte lui-même, avec la même fonction (`_comptes_non_confirmes`,
+   `app/services/alerts.py`). Les choix (a), garder tel quel, et (c), retirer la règle des alertes, sont écartés.
 
-   Ce n'est pas encore la règle de tous les courriels vers le compte lui-même. La même tournée planifiée envoie à
-   une adresse non confirmée « Demandez vos notes », dont le texte dit « parce que vous avez des alertes actives ».
-   Le récapitulatif « pièces à renouveler » y part aussi. C'était déjà le cas en production, et c'est vérifié sur le
-   code réuni. Le cas réel : un compte confirmé qui change d'adresse redevient non confirmé, et la nouvelle adresse
-   peut être une faute de frappe. Les comptes créés avant la vérification des adresses ont été confirmés par la
-   migration de juin. Trois choix :
-   - **(a)** garder tel quel : c'est ce que fait le code ;
-   - **(b)** étendre la règle à ces deux courriels, avec la même fonction (`_comptes_non_confirmes`). Rien ne
-     serait marqué comme envoyé, donc ils partiraient après la confirmation, « Demandez vos notes » seulement dans
-     ses 14 jours. C'est un petit changement de code, testé avant la mise en ligne. Recommandé, pour qu'il n'y ait
-     qu'une règle ;
-   - **(c)** retirer la règle des alertes de marchés, ce qui tient en deux lignes.
+   La règle appliquée : aucune tâche planifiée n'écrit à une adresse non confirmée, qui peut être celle d'un tiers.
+   Vers le compte lui-même :
+   - ni alerte de marchés (`run_tender_alerts`, déjà en place depuis le moteur) ;
+   - ni « Demandez vos notes » (`carnet_notes.envoyer_rappels`), dont le texte dit « parce que vous avez des alertes
+     actives » ;
+   - ni récapitulatif « pièces à renouveler » (`run_document_expiry_alerts`) ;
+   - ni récapitulatif des attestations de ses partenaires (`_piece_alerts_due`, déjà en place depuis la vague 2b) ;
+   - ni veille amont (`run_amont_alerts`). Elle est masquée et n'envoie rien aujourd'hui ; si elle est rallumée, elle
+     suit la même règle. Ce point n'était pas dans la décision : cette tâche planifiée écrit, elle aussi, au compte
+     lui-même, et sans lui la règle n'aurait pas été la seule.
 
-   La règle telle qu'elle est est fixée par `tests/test_mise_en_ligne_22_10.py`
-   (`test_r1_adresse_non_confirmee_ce_qui_part_et_ce_qui_ne_part_pas`).
-3. **La bulle (i) de « Mes alertes »** dit encore « au-dessus de votre seuil de compatibilité ». Deux choix :
-   - **(a)** la laisser jusqu'à la partie écran du lot ;
-   - **(b)** la corriger maintenant, avec ses traductions. Proposition : « Recevez par email les nouveaux marchés
-     de cette recherche, 10 au plus par alerte, les autres comptés ».
+   Vers un tiers, rien ne change : aucune tâche planifiée n'écrit pour un compte non confirmé (vague 2b, section 2,
+   point 2). Rien n'est marqué comme envoyé ni « déjà vu » : tout part au premier passage après la confirmation,
+   « Demandez vos notes » seulement dans ses 14 jours (`COURRIEL_FIN_JOURS`), le récapitulatif des pièces avec les
+   pièces dues ce jour-là, la veille amont avec les délibérations qu'elle lit à ce passage. Les courriels que le compte
+   demande lui-même (confirmation de l'adresse, mot de passe oublié) partent comme avant. Le cas réel : un compte
+   confirmé qui change d'adresse redevient non confirmé, et la nouvelle adresse peut être une faute de frappe. Les
+   comptes créés avant la vérification des adresses ont été confirmés par la migration de juin. Le commentaire
+   d'`app/routers/auth.py` et la fonction `_comptes_non_confirmes` disent cette règle.
 
-   (Moteur § V.8)
+   Prouvé par `tests/test_mise_en_ligne_22_10.py` (`test_r1_adresse_non_confirmee_aucun_courriel_planifie_vers_le_compte`,
+   `test_r1_la_veille_amont_suit_la_meme_regle`), qui échouaient sur `130fc9e`. Le test de la revue
+   (`test_r1_adresse_non_confirmee_ce_qui_part_et_ce_qui_ne_part_pas`) fixait l'ancienne règle : il est remplacé.
+3. **La bulle (i) de « Mes alertes »** disait encore « au-dessus de votre seuil de compatibilité ». **Décidé le 22/10 :
+   (b)**, corrigée maintenant, avec ses traductions. Elle dit :
+
+   « Recevez par email les nouveaux marchés de cette recherche, 10 au plus par alerte, les autres comptés. Chaque
+   envoi lit un nombre limité d'avis par source (au BOAMP, les 25 derniers publiés) : une recherche très large peut en
+   avoir d'autres, à voir dans Adjugo. La recherche de l'onglet « Publiés » est enregistrée telle quelle. »
+
+   La première phrase est la vôtre. Vérifiée dans le code :
+   - « 10 au plus par alerte » est vrai : le courriel liste 10 marchés au plus par alerte (`_MARCHES_PAR_ALERTE`) ;
+   - « les autres comptés » n'est vrai que pour les avis que l'envoi lit : au-delà de 10, la ligne « … et N autres
+     marchés » les compte. Mais chaque envoi ne demande que 25 avis au BOAMP et à TED (`run_one_saved_search`,
+     `limit=25` ; au BOAMP, les 25 derniers publiés) et lit 3 pages au plus de Mégalis. Si une source a plus d'avis
+     nouveaux qu'un envoi n'en lit, le reste n'est ni listé ni compté ; au BOAMP, ce sont les plus anciens, et l'envoi
+     suivant lit de nouveau les 25 derniers publiés. D'où la deuxième phrase, ajoutée pour que la bulle reste vraie.
+     La troisième phrase est celle d'avant, inchangée : l'alerte reprend les mots, les départements, le pays, le
+     type de marché et les codes CPV de la recherche de « Publiés » (`srcSaveAlert`).
+
+   Néerlandais et espagnol ajoutés (`scripts/i18n_ajouter.py`, 790 clés). Prouvé par
+   `test_d3_la_bulle_de_mes_alertes_dit_ce_que_fait_le_courriel` (échouait sur `130fc9e`) et
+   `test_d3_ce_que_dit_la_bulle_est_vrai` (13 marchés : 10 listés, « … et 3 autres marchés » ; 25 avis demandés ; le
+   BOAMP trié du plus récent au plus ancien). (Moteur § V.8)
 4. **Mesure du rappel avant le lot.** Pour mesurer ce que le lot change, il faut une mesure « avant » prise avant
    la mise en ligne. Il faut pour cela la liste des numéros d'entreprise (SIREN) des PME en test, que fournit
    Mathys. On lance ensuite sur votre poste `scripts/mesure_rappel.py collecter`, puis
@@ -351,8 +405,8 @@ sans migration.
 
 ### Mettre en ligne
 
-1. **Avant** : prenez les décisions 1 à 4 de la section 3, puis faites une sauvegarde de la base juste avant
-   (instantané Railway ou sauvegarde R2).
+1. **Avant** : les décisions 1 à 3 de la section 3 sont prises et appliquées ; prenez la décision 4 (la mesure
+   « avant »), puis faites une sauvegarde de la base juste avant (instantané Railway ou sauvegarde R2).
 2. **Mettre la branche de production à jour, en local** : avancez `feat/produit-acheteur-collectivites` de
    `0afc1ed` au commit de cette réunion (la tête de la branche `worktree-wf_08701d74-77f-1`), par avance rapide
    (`git merge --ff-only <commit>`), sans fusion. Ne
@@ -457,13 +511,14 @@ appels, chacun à sa place. Aucun test n'a été affaibli ni retiré, et une seu
 
 | Moteur | Tests | Réussis | Échecs | Erreurs | Ignorés |
 |---|---|---|---|---|---|
-| SQLite | 2 394 | 2 394 | 0 | 0 | 0 |
-| PostgreSQL 16.2 jetable (`scripts/tests_postgres.py`) | 2 394 | 2 394 | 0 | 0 | 0 |
+| SQLite | 2 399 | 2 399 | 0 | 0 | 0 |
+| PostgreSQL 16.2 jetable (`scripts/tests_postgres.py`) | 2 399 | 2 399 | 0 | 0 | 0 |
 
 Le total vaut 2 205 (production) + 126 (vague 2b) + 50 (moteur) + 10 (revue de la réunion, plus bas) + 3
-(contre-relecture de la réunion, plus bas). La première suite réunie, avant l'alignement du test cité plus haut,
-donnait 2 380 sur 2 381. Avant la revue : 2 381 sur 2 381 sur les deux moteurs. Avant la contre-relecture : 2 391
-sur 2 391 sur les deux moteurs.
+(contre-relecture de la réunion, plus bas) + 5 (décisions d'Eliot, plus bas : le test R1 de la revue remplacé par
+deux, et quatre nouveaux). La première suite réunie, avant l'alignement du test cité plus haut, donnait 2 380 sur
+2 381. Avant la revue : 2 381 sur 2 381 sur les deux moteurs. Avant la contre-relecture : 2 391 sur 2 391 sur les
+deux moteurs. Avant les décisions d'Eliot : 2 394 sur 2 394 sur les deux moteurs.
 
 **Migration depuis l'état exact de la production, PostgreSQL 16.2 : 38 contrôles sur 38.** Le code `0afc1ed` a
 été extrait par `git archive`. La base a été montée par ce code (tête `c4montantseul`) et remplie par lui :
@@ -499,7 +554,7 @@ Les défauts 1 et 3 de la section 2 ont été constatés avec le code de product
 
 - `scripts/sri_update.py --check` : empreintes à jour ;
 - `node --check` : 8 fichiers JS servis et 9 scripts intégrés aux pages, 0 erreur ;
-- `scripts/i18n_ajouter.py --check` : 789 clés, néerlandais et espagnol ;
+- `scripts/i18n_ajouter.py --check` : 789 clés, néerlandais et espagnol (790 depuis les décisions d'Eliot, plus bas) ;
 - gabarit de l'application compilé par le Vue du dépôt : 3 tests.
 
 **Démo de pitch.** Toutes les réponses de lecture de la démo, plus le lien du partenaire de Kerhel, ont été
@@ -539,7 +594,7 @@ aucune n'est rejetée. Six portaient sur ce document, deux sur le code. Les test
 
 | | Remarque | Reproduction | Correction |
 |---|---|---|---|
-| R1 | La décision 2 disait que refuser les alertes aux adresses non confirmées était « la règle du reste de l'application ». | Sur `85e5809`, une adresse non confirmée ne reçoit pas l'alerte de marchés, mais la même tournée lui envoie « Demandez vos notes ». Le récapitulatif « pièces à renouveler » part aussi vers elle. | Décision 2 récrite, avec trois choix. Le code ne change pas : le test fixe la règle telle qu'elle est. |
+| R1 | La décision 2 disait que refuser les alertes aux adresses non confirmées était « la règle du reste de l'application ». | Sur `85e5809`, une adresse non confirmée ne reçoit pas l'alerte de marchés, mais la même tournée lui envoie « Demandez vos notes ». Le récapitulatif « pièces à renouveler » part aussi vers elle. | Décision 2 récrite, avec trois choix. Le code ne change pas : le test fixe la règle telle qu'elle est. Depuis la décision 2 (b) du 22/10, le test fixe la règle unique (plus bas, « Décisions d'Eliot »). |
 | R2 | « puis poussez » : la production ne part pas d'un push. | `origin` est à `e483f0c` (29/06), 287 commits avant `0afc1ed`. Les mises en ligne d'octobre sont parties par `railway up`. | Section 4 : la vraie procédure, le bon dossier, et le push présenté comme un geste à part. |
 | R3 | Le retour arrière ne renvoie pas que les marchés « envoyés depuis la mise en ligne ». | PostgreSQL : 26-900001, 26-900002 et 26-900007 renvoyés, dont les 2 premiers envoyés avant la mise en ligne. | Section 4, étape 4, et un test du mécanisme de la mémoire. |
 | R4 | Le downgrade coupait le service sans le dire. | PostgreSQL, application en service pendant le downgrade : connexion 500, inscription 500, pages d'un utilisateur connecté 500, santé 200. | `alembic stamp c4montantseul` recommandé, sans coupure ni perte (vérifié) ; le downgrade reste possible, avec la coupure annoncée. |
@@ -599,3 +654,42 @@ une fois `tests/test_lecture_integrale.py::test_scan_sans_ocr_signale_et_rembour
 une course entre le test et la tâche de fond : `lecture_taches.lancer` écrit l'état « erreur » avant de rembourser
 l'analyse, et le test relit le compteur dès qu'il voit « erreur ». Le remboursement a bien lieu. Ce fichier relancé
 seul trois fois, puis la suite complète relancée seule, sont verts. Ce code n'a pas changé depuis la production.
+
+### Décisions d'Eliot (22/10/2026)
+
+Les décisions 1 à 3 de la section 3 ont été prises par Eliot le 22/10, toutes trois sur le choix (b). Elles sont
+appliquées sur `130fc9e`. Chaque changement a un test qui échouait sur `130fc9e` (code exporté par `git archive`, tests
+nouveaux copiés) et passe désormais. Aucun test n'est affaibli ni retiré sans remplaçant.
+
+| | Décision | Ce qui change dans le code | Preuve (`tests/test_mise_en_ligne_22_10.py`) |
+|---|---|---|---|
+| D1 | Repli payant de « À venir » remboursé en outre-mer et en Corse, jusqu'à l'annonce du crédit à l'écran | `app/routers/sourcing.py` : `_repli_rembourse_par_zone`, et le journal écrit `REMBOURSE_PAR_ZONE` | `test_d1_repli_a_venir_rembourse_en_outre_mer_et_en_corse` : 12 demandes, dont « 974 », « 2A, 2B », « 20200 » et « 29, 974 » remboursées, « 29 », « 6 » et toute la France débitées ; sur `130fc9e`, « 974 » est débité. `test_d1_le_document_dit_la_decision`. |
+| D2 | Une seule règle pour les courriels planifiés vers le compte lui-même | `app/services/carnet_notes.py` (« Demandez vos notes ») et `app/services/alerts.py` (« pièces à renouveler », veille amont) lisent `_comptes_non_confirmes` ; commentaire d'`app/routers/auth.py` et docstring de la fonction | `test_r1_adresse_non_confirmee_aucun_courriel_planifie_vers_le_compte` : rien ne part ni n'est marqué, puis les trois partent après la confirmation, sauf « Demandez vos notes » d'un marché perdu il y a 15 jours ; sur `130fc9e`, « Demandez vos notes » et le récapitulatif partaient. `test_r1_la_veille_amont_suit_la_meme_regle` ; sur `130fc9e`, la veille rallumée écrivait à l'adresse. |
+| D3 | Bulle (i) de « Mes alertes » corrigée, avec ses traductions | `app/static/app.html`, `app/static/i18n.js` (néerlandais, espagnol), empreintes SRI | `test_d3_la_bulle_de_mes_alertes_dit_ce_que_fait_le_courriel` ; sur `130fc9e`, l'ancienne bulle. `test_d3_ce_que_dit_la_bulle_est_vrai` (passait déjà : il fixe ce que la bulle affirme). |
+
+Tests adaptés, et pourquoi :
+
+- `test_r1_adresse_non_confirmee_ce_qui_part_et_ce_qui_ne_part_pas` (revue) fixait l'ancienne règle, celle que la
+  décision 2 change : il est remplacé par les deux tests R1 ci-dessus, qui vérifient davantage (rien de marqué, envoi
+  après la confirmation, la limite des 14 jours, la veille amont).
+- `tests/test_reorganisation_v2b_relecture.py::test_s5_le_commentaire_d_auth_py_reste_vrai` comptait 3 appels à
+  `_comptes_non_confirmes` dans `alerts.py`. Il en compte 5, chacun à sa tâche planifiée, plus celui de
+  `carnet_notes.envoyer_rappels`, et vérifie la phrase nouvelle du commentaire d'`auth.py`.
+
+Constaté sur le code de production (`0afc1ed`, exporté par `git archive`), même tournée et même compte non confirmé :
+l'adresse recevait les trois courriels, « Adjugo — 1 nouvel(s) appel(s) d'offres », « Adjugo — 1 pièce à renouveler »
+et « Adjugo — demandez vos notes : Toiture de l'école ».
+
+Vu en appliquant la décision 3 : « les autres comptés » n'est vrai que pour les avis que chaque envoi lit (25 demandés
+au BOAMP et à TED, 3 pages au plus de Mégalis). La bulle le dit dans une deuxième phrase (section 3, décision 3).
+
+Vérifications, sur le code des décisions :
+
+- suites complètes, `TZ=UTC`, Python 3.12 installé depuis `requirements.lock`, sans réseau : SQLite, 2 399 sur
+  2 399 ; PostgreSQL 16.2 jetable (`scripts/tests_postgres.py`), 2 399 sur 2 399 (tableau plus haut) ;
+- `scripts/sri_update.py`, puis `--check` : empreintes à jour (`app.html`, `sri-manifest.json`) ;
+- `node --check` : 8 fichiers JS servis et 9 scripts intégrés aux pages, 0 erreur ;
+- `scripts/i18n_ajouter.py --check` : 790 clés, néerlandais et espagnol (789 avant, une phrase nouvelle) ;
+- gabarit de l'application compilé par le Vue du dépôt : ses 3 tests sont dans la suite.
+
+Aucune migration nouvelle, aucune variable Railway, rien n'a été mis en ligne ni poussé.

@@ -310,7 +310,8 @@ def renewals(request: Request, req: RenewalRequest,
 
     PRIORITÉ DECP (Données Essentielles, open data) : durée + date réelles → échéance
     100 % DÉTERMINISTE, couverture de TOUS les profils acheteurs (pas que BOAMP),
-    et GRATUIT (aucun quota consommé). Repli sur la version BOAMP+IA si DECP est vide.
+    et GRATUIT (aucun quota consommé). Repli sur la version BOAMP+IA si DECP est vide : débité s'il trouve,
+    remboursé sinon ; toujours remboursé en outre-mer et en Corse (_repli_rembourse_par_zone, décision 1 du 22/10).
 
     Démo (pitch) : des fins de contrat fictives, sans réseau ni IA ni quota (demo_search.renewals_results)."""
     from app.services.demo_search import is_demo as _is_demo, renewals_results as _demo_renewals
@@ -348,11 +349,32 @@ def renewals(request: Request, req: RenewalRequest,
         _journal_repli_a_venir(motif, deps, None, f"remboursée (repli en échec : {type(e).__name__})")
         raise
     # Remboursement dès que le repli ne produit AUCUN renouvellement (BOAMP vide, hors
-    # fenêtre, ou erreur) : pas de valeur rendue = pas de quota débité.
-    if not res.get("renewals"):
+    # fenêtre, ou erreur) : pas de valeur rendue = pas de quota débité. En outre-mer et en Corse, toujours remboursé,
+    # même s'il trouve (décision 1 de la réunion du 22/10 : _repli_rembourse_par_zone) ; le journal le dit.
+    par_zone = _repli_rembourse_par_zone(deps)
+    if par_zone or not res.get("renewals"):
         refund_analysis(current_user, db)
-    _journal_repli_a_venir(motif, deps, res, "débitée" if res.get("renewals") else "remboursée")
+    _journal_repli_a_venir(motif, deps, res, REMBOURSE_PAR_ZONE if par_zone
+                           else ("débitée" if res.get("renewals") else "remboursée"))
     return res
+
+
+# Sort de l'analyse noté au journal quand le repli est remboursé parce qu'il porte sur l'outre-mer ou la Corse.
+REMBOURSE_PAR_ZONE = "remboursée (outre-mer ou Corse, jusqu'à l'annonce du crédit à l'écran)"
+
+
+def _repli_rembourse_par_zone(deps: list) -> bool:
+    """Décision 1 de la réunion du 22/10 (docs/MISE_EN_LIGNE_22_10.md, section 3) : le repli payant de « À venir » est
+    TOUJOURS remboursé, qu'il trouve ou non, dès qu'un des départements demandés est en outre-mer (tout code qui
+    commence par « 97 » ou « 98 » : « 971 », « 974 », « 988 »…, ou « 97 » saisi seul) ou en Corse (« 2A », « 2B », et
+    « 20 », celui d'un code postal corse), seul ou avec d'autres départements, jusqu'à ce que l'écran annonce le
+    crédit avant le clic (partie écran du lot 1). En production (0afc1ed), le repli y demandait au BOAMP « 97 » ou
+    « 2A », que le BOAMP n'écrit jamais (il écrit « 974 », « 20A », « 20B ») : il n'y trouvait rien et l'analyse y était
+    toujours remboursée (docs/MOTEUR_LOT1.md, R.1 et V.5). Une demande qui mêle la métropole et l'une de ces zones est
+    remboursée en entier (en production, débitée si elle trouvait en métropole). Sans département (toute la France) ou
+    en métropole seule, la règle habituelle : débité s'il trouve, remboursé sinon. `deps` : codes complets
+    (decp.code_departement), ceux que reçoivent la DECP et le repli."""
+    return any(str(d)[:2] in ("97", "98", "2A", "2B") or str(d) == "20" for d in (deps or []))
 
 
 def _journal_repli_a_venir(motif: str, deps: list, res, analyse: str) -> None:
@@ -360,7 +382,8 @@ def _journal_repli_a_venir(motif: str, deps: list, res, analyse: str) -> None:
     journal, avec ce qu'il trouve, pour trancher à la vague 1 de la veille sur une mesure. AUCUNE donnée
     personnelle : ni utilisateur, ni organisation, ni mots tapés ; le motif du repli, les départements (codes
     de 2 ou 3 caractères), le compte des fins de contrat, la part de durées lues ou estimées par type de contrat,
-    le sort de l'analyse et les références publiques des avis d'attribution BOAMP (10 au plus)."""
+    le sort de l'analyse (« débitée », « remboursée », REMBOURSE_PAR_ZONE en outre-mer et en Corse, ou « remboursée
+    (repli en échec : …) ») et les références publiques des avis d'attribution BOAMP (10 au plus)."""
     fins = list((res or {}).get("renewals") or [])
     estimees = sum(1 for r in fins if r.get("duree_estimee"))
     refs = [str(r.get("idweb") or "")[:20] for r in fins if r.get("idweb")][:10]

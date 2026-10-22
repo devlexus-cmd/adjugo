@@ -1143,7 +1143,9 @@ les invitations d'un chef de file non confirmé (`_comptes_non_confirmes`, `app/
 d'attestations ne part plus vers une adresse non confirmée. Les comptes d'avant la vérification d'email ont été
 confirmés par sa migration : rien ne change pour eux. Le commentaire d'`auth.py` le dit. Complété par la
 contre-relecture (§ T.1 et T.2) : la relance planifiée des parties du dossier de présentation et « Votre partie est à
-valider » ne partaient pas par ces deux tâches et écrivaient encore au tiers.
+valider » ne partaient pas par ces deux tâches et écrivaient encore au tiers. *Réunion du 22/10, décision 2 d'Eliot* :
+la même fonction vaut désormais pour tous les courriels planifiés vers le compte lui-même (alertes de marchés,
+« Demandez vos notes », « pièces à renouveler », veille amont) ; voir `docs/MISE_EN_LIGNE_22_10.md`, section 3.
 
 ### S.6 « Rien n'attend de réponse » seulement une fois lu
 

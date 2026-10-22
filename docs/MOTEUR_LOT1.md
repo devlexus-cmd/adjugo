@@ -77,13 +77,15 @@ change (voir « Ce qui ne change pas », plus bas).*
     désormais les avis d'attribution corses du BOAMP ; avant, il ne trouvait jamais rien en Corse et l'analyse était
     toujours remboursée. Il peut maintenant trouver des fins de contrat, et l'analyse est alors débitée, selon la même
     règle que partout ailleurs (remboursée s'il ne trouve rien). La règle de débit ne change pas. [R.1]
+    *Décidé par Eliot le 22/10 (b)* : en Corse et en outre-mer, le repli est remboursé, même s'il trouve, jusqu'à
+    l'annonce du crédit à l'écran (§ « Décisions d'Eliot », plus bas).
 12 bis. **Outre-mer, repli payant (relevé à la relecture)** : avant, le repli demandait « 97 » au BOAMP, qui n'écrit
     jamais l'outre-mer ainsi : il ne trouvait rien et l'analyse était toujours remboursée. Désormais il demande « 974 »
     (ou 971, 972, 973, 976), peut trouver des fins de contrat, et l'analyse est alors débitée, selon la règle
     habituelle. Et la DECP ne rend plus les fins de contrat des autres départements d'outre-mer (point 11) : quand le
     département demandé n'en a aucune, le repli payant part là où, avant, la DECP montrait celles d'un autre
     département, sans crédit. Code inchangé (la recherche sur « 974 » est juste). **À valider par Eliot**, comme la
-    Corse (point 12). [V.5]
+    Corse (point 12). [V.5] *Décidé le 22/10 (b)* : remboursé, comme la Corse (point 12).
 12 ter. *Relecture* : une durée que l'IA n'a pas vraiment rendue (0, « 36 » en texte) est remplacée par la durée par
     défaut du type de contrat ET dite estimée : la carte affiche « (estimée) » au lieu de « (réelle) », et le journal
     du repli la compte en « durée estimée ». Défaut antérieur au lot. [V.6]
@@ -103,14 +105,16 @@ change (voir « Ce qui ne change pas », plus bas).*
     multipliait les envois : sur l'alerte réelle « voirie » 29, 0 courriel avant le lot, 1 de 7 marchés après). Ses
     marchés ne sont pas marqués « déjà vus » : ils partent au premier passage après la confirmation. Les comptes
     créés avant la vérification des adresses sont confirmés (migration de juin) : non concernés. **À valider par
-    Eliot.** [V.7]
+    Eliot.** [V.7] *Décidé le 22/10 (b)* : la règle vaut pour tous les courriels planifiés vers le compte lui-même
+    (« Demandez vos notes », « pièces à renouveler », veille amont compris), § « Décisions d'Eliot ».
 17. Au-delà de 10 marchés par alerte, la ligne « … et N autres marchés : relancez cette recherche dans Adjugo pour les
     voir tous. » « Tester » une alerte annonce plus de nouveaux marchés ; la référence qu'il rend dans l'API reste
     celle de l'avis (« 26-98235 »), comme avant (*Relecture*). [Services 6 a, V.10]
 17 bis. *Relecture*, partie écran : la bulle de « Mes alertes » dit « … qui vous correspondent (au-dessus de votre
     seuil de compatibilité) » ; aucun seuil n'écarte plus rien. Elle est à corriger avec la partie écran du lot, après
     la 2b (proposition : « Recevez par email les nouveaux marchés de cette recherche, 10 au plus par alerte, les autres
-    comptés »). Jusque-là, elle dit le contraire du comportement. [V.8]
+    comptés »). Jusque-là, elle dit le contraire du comportement. [V.8] *Décidé le 22/10 (b)* : corrigée dès cette mise
+    en ligne, avec une phrase de plus pour rester vraie (§ « Décisions d'Eliot »).
 18. Les dates des consultations Mégalis apparaissent dans le courriel (« — clôture 2026-12-07 »). [S.1, R.3]
 19. Moins de marchés reçus deux fois. Aucun marché déjà reçu n'est renvoyé au passage à la nouvelle forme de mémoire ;
     un avis rectifié garde sa référence ; un avis repris par son rectificatif n'est pas renvoyé s'il avait déjà été
@@ -879,7 +883,9 @@ Aucune autre requête réseau.
 ### V.12 Ce qui reste, et ce que j'ai vu en passant
 
 - **À valider par Eliot** : V.5 (outre-mer, repli payant) avec R.1 (Corse) ; V.7 (alertes et adresse non confirmée).
-- **Partie écran, après la 2b** : la bulle « Mes alertes » (V.8), en plus des points 10 à 13 de la note.
+  *Décidé le 22/10 : (b) pour les deux (§ « Décisions d'Eliot »).*
+- **Partie écran, après la 2b** : la bulle « Mes alertes » (V.8), en plus des points 10 à 13 de la note. *La bulle est
+  corrigée dès le 22/10 (§ « Décisions d'Eliot ») ; les points 10 à 13 restent à la partie écran.*
 - **Vu, non corrigé** : une recherche « 20 » (forme que le formulaire accepte) demande « 20 » au BOAMP, qui n'écrit
   la Corse que « 20A » / « 20B » : elle ne trouve rien, comme en production ; la relecture des avis initiaux ne porte
   pas le type de marché (un avis SERVICES peut être relu pour une recherche TRAVAUX ; le filet de `search.py` le retire,
@@ -928,3 +934,35 @@ de Mégalis inchangé.
 - **Lectures des rectificatifs réels inchangées** : les 127 des jeux d'essai, lus par `lire_rectificatif` de `f86e510`
   et de cet état, donnent les mêmes résultats (aucune différence).
 - **Aucun changement de base de données** : rien à vérifier sur Postgres.
+
+---
+
+## Décisions d'Eliot (22/10/2026)
+
+Prises sur le bilan de la mise en ligne (`docs/MISE_EN_LIGNE_22_10.md`, section 3, décisions 1 à 3), appliquées sur
+`130fc9e`. Chaque test cité échouait sur `130fc9e` et passe désormais (`tests/test_mise_en_ligne_22_10.py`).
+
+**Points 12 et 12 bis, V.5 : (b), le repli payant remboursé en outre-mer et en Corse.** `app/routers/sourcing.py`,
+`_repli_rembourse_par_zone` : dès qu'un des départements demandés commence par « 97 » ou « 98 », ou vaut « 2A », « 2B »
+ou « 20 », seul ou avec d'autres, le repli est remboursé, qu'il trouve ou non ; les fins de contrat trouvées sont
+montrées. Le journal du repli écrit « analyse remboursée (outre-mer ou Corse, jusqu'à l'annonce du crédit à l'écran) »
+(`REMBOURSE_PAR_ZONE`). Ailleurs, la règle habituelle. Le crédit reste demandé avant le repli. Seul écart avec la
+production, en faveur du client : une demande mixte (« 29, 974 ») est remboursée en entier, alors que `0afc1ed` la
+débitait si elle trouvait en métropole. Preuve : `test_d1_repli_a_venir_rembourse_en_outre_mer_et_en_corse` (sur
+`130fc9e`, « 974 » débité).
+
+**Point 16 bis, V.7 : (b), une seule règle pour les courriels planifiés vers le compte lui-même.** La fonction
+`alerts._comptes_non_confirmes` sert aussi à `carnet_notes.envoyer_rappels` (« Demandez vos notes »),
+`alerts.run_document_expiry_alerts` (« pièces à renouveler ») et `alerts.run_amont_alerts` (veille amont, masquée ;
+ajoutée pour que la règle soit la seule). Rien n'est marqué : ils partent au premier passage après la confirmation,
+« Demandez vos notes » seulement dans ses 14 jours. Preuve : `test_r1_adresse_non_confirmee_aucun_courriel_planifie_vers_le_compte`,
+`test_r1_la_veille_amont_suit_la_meme_regle` ; constaté aussi sur `0afc1ed` : l'adresse non confirmée y recevait
+l'alerte de marchés, « Demandez vos notes » et « pièces à renouveler ».
+
+**Point 17 bis, V.8 : (b), la bulle de « Mes alertes » corrigée.** Elle dit : « Recevez par email les nouveaux marchés
+de cette recherche, 10 au plus par alerte, les autres comptés. Chaque envoi lit un nombre limité d'avis par source (au
+BOAMP, les 25 derniers publiés) : une recherche très large peut en avoir d'autres, à voir dans Adjugo. La recherche de
+l'onglet « Publiés » est enregistrée telle quelle. » « 10 au plus » est vrai (`_MARCHES_PAR_ALERTE`) ; « les autres
+comptés » ne l'est que pour les avis que l'envoi lit (25 demandés au BOAMP et à TED, 3 pages au plus de Mégalis) : la
+deuxième phrase le dit. Néerlandais et espagnol ajoutés (790 clés). Preuve :
+`test_d3_la_bulle_de_mes_alertes_dit_ce_que_fait_le_courriel`, `test_d3_ce_que_dit_la_bulle_est_vrai`.

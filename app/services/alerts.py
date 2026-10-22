@@ -30,13 +30,22 @@ def _demo_user_ids(db: Session) -> set:
 
 
 def _comptes_non_confirmes(db: Session) -> set:
-    """Comptes dont l'adresse email n'est pas confirmée. Relecture de la vague 2b : aucune tâche planifiée n'écrit à un
-    tiers pour eux (rappel de la part, alerte d'attestations ; relance des parties du dossier de présentation,
-    atelier_groupement.relancer_parts, depuis la contre-relecture), comme l'invitation elle-même, qui ne part par courriel
-    que si l'expéditeur a confirmé son adresse (anti-spam par comptes jetables, invites._create_invite) — sinon le
-    rappel planifié, qui porte le lien, devenait l'invitation complète envoyée à la place du compte. Les comptes d'avant
-    la vérification d'email ont été confirmés par sa migration (j4k5l6m7n8o9). Les alertes de marchés (moteur, lot 1)
-    ne partent pas non plus vers ces comptes, et rien n'y est marqué « déjà vu » (run_tender_alerts)."""
+    """Comptes dont l'adresse email n'est pas confirmée. LA notion unique des tâches planifiées.
+
+    Vers un tiers (relecture de la vague 2b) : aucune tâche planifiée n'écrit à un tiers pour eux (rappel de la part,
+    alerte d'attestations ; relance des parties du dossier de présentation, atelier_groupement.relancer_parts, depuis la
+    contre-relecture), comme l'invitation elle-même, qui ne part par courriel que si l'expéditeur a confirmé son adresse
+    (anti-spam par comptes jetables, invites._create_invite) — sinon le rappel planifié, qui porte le lien, devenait
+    l'invitation complète envoyée à la place du compte.
+
+    Vers le compte lui-même (réunion du 22/10, décision 2 : une seule règle) : aucun courriel planifié vers une adresse
+    non confirmée, qui peut être celle d'un tiers (faute de frappe au changement d'adresse) — ni alerte de marchés
+    (run_tender_alerts, moteur lot 1), ni « Demandez vos notes » (carnet_notes.envoyer_rappels), ni récapitulatif
+    « pièces à renouveler » (run_document_expiry_alerts), ni récapitulatif des attestations des partenaires
+    (_piece_alerts_due), ni veille amont (run_amont_alerts, masquée aujourd'hui). Rien n'y est marqué envoyé ni « déjà
+    vu » : ils partent au premier passage après la confirmation (« Demandez vos notes » seulement dans ses 14 jours,
+    carnet_notes.COURRIEL_FIN_JOURS ; la veille amont, avec les délibérations qu'elle lit à ce passage). Les comptes
+    d'avant la vérification d'email ont été confirmés par sa migration (j4k5l6m7n8o9)."""
     try:
         from sqlalchemy import or_
         return {uid for (uid,) in db.query(User.id).filter(
@@ -363,8 +372,12 @@ def run_document_expiry_alerts(db: Session) -> dict:
 
     notified, alerts = 0, 0
     demo_ids = _demo_user_ids(db)
+    # Réunion du 22/10, décision 2 (une seule règle pour les courriels planifiés vers le compte lui-même) : rien vers une
+    # adresse non confirmée. Aucun drapeau n'est posé : le récapitulatif part au premier passage après la confirmation,
+    # avec les pièces dues ce jour-là (palier du jour, _due_alert).
+    non_confirmes = _comptes_non_confirmes(db)
     for user, items in by_user.items():
-        if not user or not user.email or user.id in demo_ids:
+        if not user or not user.email or user.id in demo_ids or user.id in non_confirmes:
             continue
         lines = [f"• {d.name} : {label} (date de fin : {jj_mm_aaaa(d.expiration_date)})" for d, _, label, _ in items]
         n = len(items)
@@ -578,7 +591,8 @@ def run_tender_alerts(db: Session) -> dict:
     result = {"searches_run": len(searches), "users_notified": notified, "new_matches": total,
               "weekly_not_due": en_attente}
     # Rédaction, vague 6 (F) : rappel « Demandez vos notes » 2 jours après le passage à « Perdu », par courriel
-    # seulement aux utilisateurs qui ont des alertes actives (une fois par marché, jamais à l'acheteur).
+    # seulement aux utilisateurs qui ont des alertes actives (une fois par marché, jamais à l'acheteur) et, depuis la
+    # réunion du 22/10 (décision 2), une adresse confirmée, comme l'alerte de marchés ci-dessus.
     try:
         from app.services.carnet_notes import envoyer_rappels
         result.update(envoyer_rappels(db))
@@ -612,11 +626,14 @@ def run_amont_alerts(db: Session) -> dict:
 
     # Personne n'a activé la veille auto → aucun scan (zéro appel IA inutile). Un compte dont l'essai
     # est terminé sans forfait n'est pas servi : les fonctions d'IA sont en pause (quota.exiger_ia).
+    # Réunion du 22/10, décision 2 : une adresse non confirmée n'est pas servie (aucun courriel, aucun projet enregistré
+    # pour elle) ; elle l'est au premier passage après la confirmation, avec les délibérations que la veille lit alors.
     from app.core.quota import _billing_user, essai_termine
     demo_ids = _demo_user_ids(db)
+    non_confirmes = _comptes_non_confirmes(db)
     opted = [u for u in db.query(User).filter(User.email.isnot(None),
                                               User.amont_alerts_enabled.is_(True)).all()
-             if u.id not in demo_ids and not essai_termine(_billing_user(u, db))]
+             if u.id not in demo_ids and u.id not in non_confirmes and not essai_termine(_billing_user(u, db))]
     if not opted:
         return {"scanned": 0, "users_notified": 0, "new_signals": 0, "opted_in": 0}
 

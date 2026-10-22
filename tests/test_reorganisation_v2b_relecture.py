@@ -275,15 +275,28 @@ def test_s5_le_commentaire_d_auth_py_reste_vrai():
     assert "ni le rappel planifié de la part ni l'alerte d'attestations à ses partenaires" in c
     a = (ROOT / "app" / "services" / "alerts.py").read_text(encoding="utf-8")
     # Réunion du 22/10 : les alertes de marchés (moteur, lot 1) lisent la même fonction (une seule notion des comptes
-    # non confirmés) ; chaque appel est rattaché à sa tâche planifiée, les deux de la relecture comprises.
-    assert a.count("_comptes_non_confirmes(db)") == 3
+    # non confirmés) ; chaque appel est rattaché à sa tâche planifiée, les deux de la relecture comprises. Décision 2
+    # du 22/10 (une seule règle pour les courriels planifiés vers le compte lui-même) : le récapitulatif « pièces à
+    # renouveler », la veille amont et « Demandez vos notes » (carnet_notes) la lisent aussi.
+    assert a.count("_comptes_non_confirmes(db)") == 5
     import ast
-    appelants = sorted(f.name for f in ast.walk(ast.parse(a)) if isinstance(f, ast.FunctionDef)
-                       and f.name != "_comptes_non_confirmes"
-                       and any(isinstance(n, ast.Call) and getattr(n.func, "id", "") == "_comptes_non_confirmes"
-                               for n in ast.walk(f)))
-    assert appelants == ["_piece_alerts_due", "run_cotraitance_reminders", "run_tender_alerts"], appelants
-    assert "Les alertes de marchés ne partent pas non plus vers une adresse non confirmée" in c
+
+    def appelants(src):
+        return sorted(f.name for f in ast.walk(ast.parse(src)) if isinstance(f, ast.FunctionDef)
+                      and f.name != "_comptes_non_confirmes"
+                      and any(isinstance(n, ast.Call) and getattr(n.func, "id", "") == "_comptes_non_confirmes"
+                              for n in ast.walk(f)))
+    assert appelants(a) == ["_piece_alerts_due", "run_amont_alerts", "run_cotraitance_reminders",
+                            "run_document_expiry_alerts", "run_tender_alerts"], appelants(a)
+    cn = (ROOT / "app" / "services" / "carnet_notes.py").read_text(encoding="utf-8")
+    assert appelants(cn) == ["envoyer_rappels"] and cn.count("_comptes_non_confirmes(db)") == 1
+    for x in ("Vers le compte lui-même, une seule règle (réunion du 22/10, décision 2) : aucune tâche planifiée n'écrit "
+              "à une adresse non confirmée", "ni les alertes de marchés (alerts.run_tender_alerts)",
+              "ni « Demandez vos notes » (carnet_notes.envoyer_rappels)",
+              "ni le récapitulatif « pièces à renouveler » (alerts.run_document_expiry_alerts)",
+              "une seule fonction, alerts._comptes_non_confirmes", "ils partent au premier passage après la confirmation",
+              "« Demandez vos notes » seulement dans ses 14 jours"):
+        assert x in c, x
 
 
 # ═══ S6. « Rien n'attend de réponse » seulement une fois tout lu ════════════════════════════════════════════════════
