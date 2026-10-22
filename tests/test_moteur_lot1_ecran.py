@@ -39,27 +39,36 @@ TROUVER = zone(HTML, "vue-sourcing")
 
 BULLE_A_VENIR = ("Marchés déjà attribués dont le contrat arrive à terme : préparez votre réponse et vos partenaires "
                  "avant la republication. La fin du contrat est estimée d'après les données publiées des marchés "
-                 "attribués : la date de notification et la durée publiée. Classés selon votre métier, votre zone et la "
-                 "date de fin estimée.")
+                 "attribués : la date de notification et la durée publiée. À défaut, d'après les avis d'attribution du "
+                 "BOAMP : la date de publication de l'avis et une durée lue dans son intitulé, ou estimée. Classés selon "
+                 "votre métier, votre zone et la date de fin estimée.")
 CREDIT = ("Une recherche complémentaire peut consommer 1 analyse : remboursée si elle ne trouve rien, toujours "
           "remboursée en outre-mer et en Corse.")
 BULLE_CREDIT = ("La recherche dans les données publiées des marchés attribués ne consomme aucune analyse. Si elle ne "
                 "donne rien, ou si ces données ne répondent pas, Adjugo cherche aussi dans les avis d'attribution du "
                 "BOAMP, lus par l'IA : cette recherche complémentaire consomme 1 analyse, remboursée si elle ne trouve "
                 "aucune fin de contrat, et toujours remboursée dès qu'un des départements demandés est en outre-mer ou "
-                "en Corse. Il faut une analyse disponible pour la lancer. Ses durées de contrat sont lues dans "
-                "l'intitulé de l'avis ou estimées selon le type de contrat.")
+                "en Corse. Sans analyse restante, elle n'est lancée qu'avec le paiement à l'usage activé (forfaits Pro "
+                "et Business) : elle est alors facturée au tarif à l'usage, et remboursée dans les mêmes cas. Ses fins "
+                "de contrat partent de la date de publication de l'avis d'attribution, avec une durée lue dans son "
+                "intitulé, sinon estimée selon le type de contrat (36 mois quand il est inconnu).")
+FACTURE_A = "Vos analyses du mois sont utilisées : la recherche complémentaire serait facturée"
+FACTURE_B = "(paiement à l'usage), et remboursée dans les mêmes cas."
 APRES_DEBIT = "Recherche complémentaire dans les avis d'attribution du BOAMP : 1 analyse consommée."
 APRES_REMB = "Recherche complémentaire dans les avis d'attribution du BOAMP : analyse remboursée."
-BULLE_NON_LUE = ("Un rectificatif de cet avis porte sur sa date limite, mais Adjugo n'a pas pu lire la nouvelle date "
-                 "avec certitude : lisez-la sur le rectificatif. L'ancienne date n'est pas montrée : elle peut ne plus "
-                 "être la bonne.")
-SOUS_TITRE = ("D'après votre premier métier, dans « Ce que je cherche », et le département de votre code postal.")
+BULLE_NON_LUE = ("Un rectificatif de cet avis peut changer sa date limite, et Adjugo n'a pas pu la lire avec "
+                 "certitude : lisez-la sur le rectificatif. L'ancienne date n'est pas montrée : elle peut ne plus être "
+                 "la bonne.")
+SOUS_TITRE = ("D'après votre premier métier, dans « Ce que je cherche », et les départements de la recherche ci-dessus.")
 MANQUE_METIER = ("Dites d'abord votre métier : la recherche part de la première spécialité de « Ce que je cherche ».")
+MANQUE_METIER_CPV = ("Ajoutez votre métier en mots dans « Spécialités » : la recherche part de la première spécialité de "
+                     "« Ce que je cherche ». Vos codes CPV seuls ne suffisent pas à ce bouton.")
+DUREE_PAR_DEFAUT = "(durée estimée par défaut, type de contrat inconnu)"
 FIT = "Dites ce que vous cherchez pour un classement adapté"
 FIT_TITRE = "Renseignez vos spécialités et votre zone pour un classement adapté à votre entreprise"
 # Les libellés nouveaux de l'écran, chacun un nœud de texte entier (translateDOM ne traduit qu'un nœud entier).
 LIBELLES = [BULLE_A_VENIR, CREDIT, BULLE_CREDIT, APRES_DEBIT, APRES_REMB, BULLE_NON_LUE, SOUS_TITRE, MANQUE_METIER,
+            MANQUE_METIER_CPV, FACTURE_A, FACTURE_B, DUREE_PAR_DEFAUT,
             "Fin du contrat estimée le", "(durée publiée)", "(durée lue dans l'intitulé de l'avis)",
             "(durée estimée selon le type de contrat)", "attribution publiée le", "notifié le",
             "Voir la fiche acheteur", "Voir l'avis d'attribution",
@@ -302,7 +311,7 @@ def test_e11_voir_les_marches_lit_le_metier_de_ce_que_je_cherche_sous_node():
     assert r["chemin"] == ["go:criteria", "focus#crit-spec"]
     # Le gabarit : la demande ne s'affiche que tant qu'il manque le métier ; le sous-titre dit d'où viennent les mots.
     assert '<div v-if="src.manqueMetier && !srcMetier()" class="trouver-manque-metier small" role="status">' in TROUVER
-    assert f"<span>{MANQUE_METIER}</span>" in TROUVER
+    assert f"<span v-else>{MANQUE_METIER}</span>" in TROUVER      # sans codes CPV (revue : test_r5_*)
     assert ('<button ref="srcDireMetier" type="button" class="btn sm" @click="srcDireMetier()"><i '
             'data-lucide="pencil"></i>Dire mon métier</button>') in TROUVER
     assert f'<div class="muted small" style="margin-top:6px">{SOUS_TITRE}</div>' in TROUVER
@@ -341,11 +350,13 @@ def test_e12_a_venir_fin_du_contrat_bulle_juste_et_neutre():
 def test_e12_la_duree_dite_avec_sa_source_sous_node():
     script = (_fonction("dureeFinDeContrat") + "\nconsole.log(JSON.stringify(JSON.parse(process.argv[1]).map(c => "
               "dureeFinDeContrat(c[0], c[1]))));")
-    cas = [[{"duree_estimee": False}, "DECP"], [{"duree_estimee": False}, "BOAMP"], [{"duree_estimee": True}, "BOAMP"],
-           [{"duree_estimee": True}, "DECP"], [{}, ""]]
+    cas = [[{"duree_estimee": False}, "DECP"], [{"duree_estimee": False}, "BOAMP"],
+           [{"duree_estimee": True, "type_contrat": "marché"}, "BOAMP"],
+           [{"duree_estimee": True, "type_contrat": "accord-cadre"}, "DECP"], [{}, ""],
+           [{"duree_estimee": True, "type_contrat": ""}, "BOAMP"]]
     assert _node(script, json.dumps(cas)) == [
         "(durée publiée)", "(durée lue dans l'intitulé de l'avis)", "(durée estimée selon le type de contrat)",
-        "(durée estimée selon le type de contrat)", "(durée publiée)"]
+        "(durée estimée selon le type de contrat)", "(durée publiée)", DUREE_PAR_DEFAUT]
 
 
 def _compteurs(uid):
@@ -375,7 +386,8 @@ def _maj(uid, **cols):
 def test_e12_le_credit_annonce_avant_le_clic_est_celui_du_code(client, auth, monkeypatch):
     """La ligne sous les champs, avant « Chercher les fins de contrat », et sa bulle, vérifiées sur la route : la DECP ne
     consomme rien ; le repli (BOAMP + IA) consomme 1 analyse s'il trouve, la rend s'il ne trouve rien, la rend toujours
-    en outre-mer et en Corse (seul ou avec la métropole) ; il faut une analyse disponible, même là. La réponse dit
+    en outre-mer et en Corse (seul ou avec la métropole) ; sans analyse restante, refusé, même là, sauf au paiement à
+    l'usage (test_r1_* de tests/test_moteur_lot1_ecran_revue.py). La réponse dit
     ensuite à l'écran d'où viennent les fins de contrat et ce qu'est devenue l'analyse. Sur 0f8eb32 : aucune ligne,
     et la réponse du repli ne disait ni sa source ni le sort de l'analyse."""
     from app.services import decp, renewal
@@ -387,7 +399,8 @@ def test_e12_le_credit_annonce_avant_le_clic_est_celui_du_code(client, auth, mon
     assert ('<p v-if="!estDemo()" id="avenir-credit" class="avenir-credit small muted"><i data-lucide="coins" '
             f'aria-hidden="true"></i><span>{CREDIT}</span><button type="button" class="tip tip-l">') in RADAR
     assert f'<span class="tip-b" role="tooltip">{BULLE_CREDIT}</span>' in RADAR
-    assert ":aria-describedby=\"estDemo() ? null : 'avenir-credit'\"" in RADAR
+    assert (":aria-describedby=\"estDemo() ? null : (srcRenHorsForfait() ? 'avenir-credit avenir-facture' : "
+            "'avenir-credit')\"") in RADAR
     assert f"{{{{ src.renewals.analyse==='debitee' ? \"{APRES_DEBIT}\" : \"{APRES_REMB}\" }}}}" in RADAR
 
     uid = _user_id(auth["email"])
@@ -425,7 +438,8 @@ def test_e12_le_credit_annonce_avant_le_clic_est_celui_du_code(client, auth, mon
         for deps in (["974"], ["971"], ["988"], ["2A", "2B"], ["20"], ["29", "974"], ["2B", "56"]):
             r, c = demande(deps)
             assert r.status_code == 200 and c == (0, 0) and r.json()["analyse"] == "remboursee", deps
-        # « Il faut une analyse disponible pour la lancer », même en outre-mer.
+        # « Sans analyse restante, elle n'est lancée qu'avec le paiement à l'usage activé (forfaits Pro et Business) » :
+        # l'essai n'en a jamais ; refusé, même en outre-mer.
         _maj(uid, trial_analyses_used=10 ** 6, analyses_used_this_month=0)
         r = client.post("/api/sourcing/renewals", headers=auth["headers"], json={"query": "voirie", "departements": ["974"]})
         assert r.status_code == 402, r.text

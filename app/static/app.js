@@ -587,15 +587,24 @@ function zoneDuCodePostal(cp) {
 function metierCherche(criteres) {
   return String((criteres && criteres.specialites) || "").split(/[,;]/).map(s => s.trim()).filter(Boolean)[0] || "";
 }
+// Revue de la partie écran : des codes CPV sans aucune spécialité. Le produit tient alors le métier pour dit (premiers
+// pas : criteria_v2.ce_que_je_cherche_dit, « spécialités ou codes CPV »), mais ce bouton ne cherche qu'avec des mots (le
+// BOAMP ne lit pas les codes CPV : sans mot, il chercherait « travaux ») ; l'écran dit donc ce qui manque, tel quel.
+function cpvSeulsCherche(criteres) {
+  return !metierCherche(criteres) && !!String((criteres && criteres.codes_cpv) || "").trim();
+}
 // Point 12 : d'où vient la durée d'une fin de contrat. `source` : celle de la réponse de /api/sourcing/renewals, « DECP »
 // (durée publiée : app/services/decp.py), « BOAMP » pour le repli payant (durée lue par l'IA dans l'intitulé de l'avis
-// d'attribution, ou estimée selon le type de contrat quand elle n'y est pas : app/services/renewal.py).
+// d'attribution, ou estimée quand elle n'y est pas : app/services/renewal.py, _DEFAULT_DUREE). Revue : estimée « selon le
+// type de contrat » seulement quand ce type est connu (48 mois pour un accord-cadre, 30 pour un marché) ; sans type
+// (l'IA n'en donne pas, ou n'a rien rendu), 36 mois par défaut, et l'écran le dit.
 function dureeFinDeContrat(r, source) {
-  if (r && r.duree_estimee) return "(durée estimée selon le type de contrat)";
+  if (r && r.duree_estimee) return r.type_contrat ? "(durée estimée selon le type de contrat)" : "(durée estimée par défaut, type de contrat inconnu)";
   return source === "BOAMP" ? "(durée lue dans l'intitulé de l'avis)" : "(durée publiée)";
 }
 // Point 10 : ce que la carte dit d'un avis rectifié du BOAMP (champs du serveur, app/sourcing/schemas.py), dates ISO.
-// « non_lue » : un rectificatif porte sur la date limite, mais sa nouvelle date n'a pas pu être lue — jamais l'ancienne
+// « non_lue » : un rectificatif porte (ou, par prudence du serveur, peut porter) sur la date limite, mais sa nouvelle
+// date n'a pas pu être lue — jamais l'ancienne
 // date à la place ; « repoussee » / « avancee » : la date que fixe le rectificatif, l'ancienne étant connue ; « rectifie » :
 // un avis rectifié dont la date ne change pas. Le rectificatif cité est celui qui fixe la date (date_limite_rectificatif),
 // sinon le dernier paru. null : aucun rectificatif.
@@ -1495,7 +1504,7 @@ const __adjApp = createApp({
         alerts: [],
         // source : « DECP » ou « BOAMP » (repli payant) ; analyse : « debitee » / « remboursee » après un repli payant.
         renewals: { list: [], loading: false, done: false, prep: "", source: "", analyse: "" },
-        searched: false, empty: null, prefilled: false, manqueMetier: false,
+        searched: false, empty: null, prefilled: false, manqueMetier: false, cpvSeuls: false,
         marketEst: null, marketEstBusy: false,
       },
       ao: { project: null, dossier: null, generating: false, uploading: false, back: "dashboard",
@@ -5749,6 +5758,14 @@ const __adjApp = createApp({
     srcRenDuree(r) { return dureeFinDeContrat(r, this.src.renewals.source); },
     // La démo de pitch n'est jamais débitée : la ligne du crédit de « À venir » ne lui est pas montrée.
     estDemo() { return estCompteDemo(this.user); },
+    // Revue de la partie écran : les analyses du mois sont utilisées et le paiement à l'usage est activé (forfaits Pro et
+    // Business, seuls à pouvoir l'activer : stripe_pay, overage_billable) ; le repli payant partirait alors quand même,
+    // facturé hors forfait (quota.consume_analysis). Hors essai (l'essai n'a jamais de paiement à l'usage).
+    srcRenHorsForfait() {
+      const u = this.stats && this.stats.usage;
+      return !!u && u.quota_scope !== "essai" && !!u.overage_enabled && (u.plan === "pro" || u.plan === "business")
+        && typeof u.analyses_remaining === "number" && u.analyses_remaining <= 0 && !!u.overage_price;
+    },
     async srcRenewals() {
       if (this.src.renewals.loading) return;   // Entrée maintenue dans les champs de l'onglet « À venir » : une seule recherche
       this.src.renewals.loading = true; this.src.renewals.done = false;
@@ -5861,20 +5878,23 @@ const __adjApp = createApp({
     // (srcDireMetier), et ne lance rien — avant, la recherche partait sans mot et le BOAMP cherchait « travaux ».
     async srcSearchMine() {
       this.srcPrefillFromProfile();
+      let enregistre = null;
       if (!this.srcMetier()) {
         // Relue sans écraser « Ce que je cherche » (une saisie non enregistrée y reste) : seule la spécialité vide est prise.
         try {
-          const enregistre = await this.api("GET", "/api/criteria/");
+          enregistre = await this.api("GET", "/api/criteria/");
           if (metierCherche(enregistre) && this.criteria && !String(this.criteria.specialites || "").trim()) this.criteria.specialites = enregistre.specialites;
         } catch (e) {}
       }
       const metier = this.srcMetier();
       if (!metier) {
+        // Des codes CPV sans spécialité (à l'écran ou enregistrés) : la demande dit que ces codes ne suffisent pas ici.
+        this.src.cpvSeuls = cpvSeulsCherche(this.criteria) || cpvSeulsCherche(enregistre);
         this.src.manqueMetier = true;
         this.$nextTick(() => { const b = this.$refs.srcDireMetier; if (b && b.focus) b.focus(); });
         return;
       }
-      this.src.manqueMetier = false;
+      this.src.manqueMetier = false; this.src.cpvSeuls = false;
       this.src.query = metier;
       this.srcSearch();
     },

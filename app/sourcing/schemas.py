@@ -89,8 +89,10 @@ class NormalizedTender(BaseModel):
     rectificatifs: list[Provenance] = []
     rectifie_le: Optional[str] = None          # date de parution du dernier rectificatif rattaché (ISO)
     date_limite_initiale: Optional[str] = None # date limite de l'avis initial, quand un rectificatif l'a changée
-    # True : un rectificatif change la date limite mais sa nouvelle date n'a pas pu être lue sans doute
-    # possible → date_limite reste vide (« non précisée »), jamais l'ancienne date ni une date devinée.
+    # True : un rectificatif change (ou, forme jamais observée, peut changer : boamp.lire_rectificatif, par prudence) la
+    # date limite, mais sa nouvelle date n'a pas pu être lue sans doute possible → date_limite reste vide (« non
+    # précisée »), jamais l'ancienne date ni une date devinée. La bulle de l'écran dit « peut changer » (revue de la
+    # partie écran du lot 1).
     date_limite_rectifiee_non_lue: bool = False
     # Le rectificatif qui fixe la date limite (ou la rend « non précisée ») et sa date de parution : le dernier qui parle
     # de la date limite, pas forcément le dernier paru (rectifie_le). L'écran dit « Date limite repoussée au …

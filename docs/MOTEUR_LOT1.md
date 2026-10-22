@@ -58,8 +58,9 @@ change (voir « Ce qui ne change pas », plus bas).*
    peut différer de celle de cette page (c'est la date du rectificatif). Le lien du rectificatif et « modifiée le … »
    sont dans les données ; l'écran les montrera après la 2b. [S.2] *Écran* : montrés (« Date limite repoussée au …
    (rectificatif du …) », avec le lien du rectificatif qui fixe la date).
-7. Plus de faux « métier correspondant » sur une carte BOAMP : sa note d'adéquation peut baisser. Une recherche avec
-   des codes CPV ne ramène plus d'avis BOAMP sans rapport par ces codes (les mots-clés ne changent pas). [S.3]
+7. Plus de faux « métier correspondant » sur une carte BOAMP : sa note d'adéquation peut baisser (*Écran* : cette
+   note n'est plus affichée ; seul l'ordre des cartes bouge). Une recherche avec des codes CPV ne ramène plus d'avis
+   BOAMP sans rapport par ces codes (les mots-clés ne changent pas). [S.3]
 8. Outre-mer : une recherche « 971 », « 972 », « 973 », « 974 » ou « 976 » ne montre plus les avis des autres
    départements d'outre-mer, et la zone de la note est juste pour une entreprise d'outre-mer (un avis de la
    Guadeloupe n'est plus « dans votre zone » pour une entreprise de La Réunion). [S.4, R.3]
@@ -89,9 +90,12 @@ change (voir « Ce qui ne change pas », plus bas).*
     département, sans crédit. Code inchangé (la recherche sur « 974 » est juste). **À valider par Eliot**, comme la
     Corse (point 12). [V.5] *Décidé le 22/10 (b)* : remboursé, comme la Corse (point 12).
 12 ter. *Relecture* : une durée que l'IA n'a pas vraiment rendue (0, « 36 » en texte) est remplacée par la durée par
-    défaut du type de contrat ET dite estimée : la carte affiche « (estimée) » au lieu de « (réelle) », et le journal
-    du repli la compte en « durée estimée ». Défaut antérieur au lot. [V.6]
-13. Chaque repli payant est noté dans le journal : rien de visible. [Services 8]
+    défaut du type de contrat ET dite estimée (avant la partie écran, la carte disait « (estimée) » au lieu de
+    « (réelle) »), et le journal du repli la compte en « durée estimée ». Défaut antérieur au lot. [V.6] *Écran* : la
+    carte dit « (durée estimée selon le type de contrat) », ou « (durée estimée par défaut, type de contrat inconnu) »
+    quand l'IA ne donne pas de type (36 mois).
+13. Chaque repli payant est noté dans le journal, que le client ne voit pas. [Services 8] *Écran* : cette ligne reste
+    invisible, mais l'écran dit maintenant, après chaque repli, si l'analyse a été consommée ou remboursée.
 
 **Partenaires**
 14. « Chercher » (page du marché) et « Répartition proposée » : des PME seulement ; les grandes entreprises et les
@@ -219,7 +223,8 @@ avec le même avis au BOAMP (objet, acheteur, date limite) échouait faute de da
   *Réunion (§ R.4) : seulement quand l'acheteur est écrit de la même façon des deux côtés ; sur les deux cas réels
   du 21/10/2026, aucun ne fusionne.*
 - L'ordre des résultats bouge un peu : le critère « délai de réponse » d'une carte Mégalis compte maintenant
-  (il était mis de côté, faute de date) ; le nombre « adéquation N/100 » d'une carte Mégalis peut changer.
+  (il était mis de côté, faute de date) ; le nombre « adéquation N/100 » d'une carte Mégalis peut changer. *Écran* :
+  ce nombre n'est plus affiché ; seul l'ordre bouge.
 - Une consultation Mégalis dont la date lue est passée est retirée comme toutes les autres (en pratique, la page de
   recherche de Mégalis ne liste que les consultations en cours).
 
@@ -353,7 +358,8 @@ gardés, complétude 1,0 ; aucune clause `descripteur_code` dans la requête), `
 (« 45 » : 0 point ; avant : 12 points ; un vrai CPV, avec ou sans clé, correspond toujours).
 
 **Ce qui change pour le client.**
-- Plus de faux « métier correspondant » sur une carte BOAMP ; la note d'adéquation de ces cartes peut baisser.
+- Plus de faux « métier correspondant » sur une carte BOAMP ; la note d'adéquation de ces cartes peut baisser
+  (*Écran* : elle n'est plus affichée ; seul l'ordre bouge).
 - Une recherche avec des codes CPV ne ramène plus d'avis BOAMP sans rapport par ces codes (les mots-clés, eux, ne
   changent pas).
 - L'analyse sur l'annonce seule (repli quand le dossier n'est pas accessible) reçoit « DESCRIPTEURS : non précisé »
@@ -833,7 +839,7 @@ Aucune autre requête réseau.
 | **Avant** | `renewal.detect_renewals` posait `estimated = duree is None`, puis remplaçait par la durée par défaut toute durée qui n'est pas un nombre positif, sans la dire estimée : une IA qui répond 0 ou « 36 » donnait « durée 36 mois (réelle) » à l'écran et « durée lue » au journal du repli (point 8), la mesure que la décision 12 doit trancher. Défaut antérieur au lot. |
 | **Après** | Une durée n'est lue que si l'IA rend un nombre strictement positif (pas un booléen) ; sinon la durée par défaut du type de contrat, **estimée**. Une durée lue reste celle que l'IA dit lire dans l'objet de l'avis (non revérifiée). |
 | **Preuve** | `test_duree_lue_seulement_si_l_ia_rend_un_nombre_de_mois` (vrais avis d'attribution du 29 ; réponses 0, « 36 », null, 24, et un booléen) ; échoue sur `0afc1ed` et `ef5c096` (`[False, False, True]`). |
-| **Pour le client** | Point 12 ter : « (estimée) » au lieu de « (réelle) » dans ces cas. |
+| **Pour le client** | Point 12 ter : dite estimée au lieu de « (réelle) » dans ces cas. *Écran* : « (durée estimée selon le type de contrat) », ou « (durée estimée par défaut, type de contrat inconnu) » sans type (36 mois). |
 
 ### V.7 Alertes : jamais vers une adresse non confirmée, rien de perdu
 
@@ -985,7 +991,8 @@ PostgreSQL). La bulle de « Mes alertes » était déjà corrigée (décision 3 
 Fichiers : `app/static/app.html` (cartes de « Publiés », état vide, onglet « À venir »), `app/static/app.js` (quatre
 fonctions pures et leurs méthodes : `metierCherche`, `dureeFinDeContrat`, `rectifDeCarte`, `estCompteDemo` ;
 `srcSearchMine`, `srcPrefillFromProfile`, `srcRenewals`), `app/static/styles.css`, `app/static/i18n.js` (25 phrases
-en néerlandais et en espagnol, 815 clés), `app/static/demo/deliberation.html`, empreintes SRI. Trois ajouts au serveur,
+en néerlandais et en espagnol, 815 clés ; 8 de plus à la revue, 823 clés, et une cinquième fonction pure,
+`cpvSeulsCherche`, avec la méthode `srcRenHorsForfait` : § « Revue », plus bas), `app/static/demo/deliberation.html`, empreintes SRI. Trois ajouts au serveur,
 sans changer ce qu'il trouve ni ce qu'il débite : `atexo.nom_organisme` (nom de l'organisme Mégalis),
 `date_limite_rectificatif` et `date_limite_rectificatif_le` sur la fiche (`boamp._appliquer`, `schemas.py`, avec la
 garde des liens de `base.py` et la fusion de `search.py`), `source` et `analyse` dans la réponse du repli payant
@@ -1008,24 +1015,35 @@ sans réseau, IA ni analyse (ce que son écran change : `docs/MISE_EN_LIGNE_22_1
    le courriel d'alerte. Rien d'autre n'est réécrit (majuscules et sigles gardés).
 3. Avis rectifiés du BOAMP : « Date limite repoussée au 06/11/2026 (rectificatif du 06/10/2026) », le lien mène au
    rectificatif ; « avancée » si la nouvelle date précède l'ancienne ; « Date limite non précisée (rectificatif du …) »
-   avec une bulle (i) quand la nouvelle date n'a pas pu être lue, jamais l'ancienne date ; « Avis rectifié
+   avec une bulle (i) quand la nouvelle date n'a pas pu être lue, jamais l'ancienne date (*Revue* : la bulle dit
+   qu'un rectificatif « peut changer » la date limite, vrai aussi quand le serveur le suppose par prudence) ; « Avis
+   rectifié
    (rectificatif du …) » quand la date ne change pas. La date limite de la carte s'écrit « 06/11/2026 » (avant :
    « 2026-11-06 »).
 4. « Voir les marchés pour mon entreprise » cherche le premier métier de « Ce que je cherche » ; sans métier, rien
    n'est cherché : « Dites d'abord votre métier … » et le bouton « Dire mon métier », qui ouvre « Ce que je cherche »,
-   le curseur dans « Spécialités ».
+   le curseur dans « Spécialités ». *Revue* : avec des codes CPV et aucune spécialité, la demande dit « Ajoutez votre
+   métier en mots dans « Spécialités » … Vos codes CPV seuls ne suffisent pas à ce bouton. » ; le sous-titre dit
+   « … et les départements de la recherche ci-dessus » (le champ, pré-rempli par le code postal et modifiable).
 
 **Trouver des marchés › À venir**
 5. « Fin du contrat estimée le 25/10/2026 (durée publiée) » au lieu de « Renouvellement ~ [fin moins 120 jours] ». Au
-   repli payant : « (durée lue dans l'intitulé de l'avis) » ou « (durée estimée selon le type de contrat) », et
-   « attribution publiée le … » au lieu de « notifié le … ». Le département affiché est celui de l'avis (avant, au
+   repli payant : « (durée lue dans l'intitulé de l'avis) », « (durée estimée selon le type de contrat) » ou, sans
+   type (*Revue*), « (durée estimée par défaut, type de contrat inconnu) », et « attribution publiée le … » au lieu de
+   « notifié le … ». Le département affiché est celui de l'avis (avant, au
    repli : ses descripteurs, « dépt Voirie »).
 6. La bulle dit la vraie source et reste neutre : « … préparez votre réponse et vos partenaires avant la
-   republication. La fin du contrat est estimée d'après les données publiées des marchés attribués … ».
+   republication. La fin du contrat est estimée d'après les données publiées des marchés attribués … ». *Revue* : elle
+   dit aussi le repli, « À défaut, d'après les avis d'attribution du BOAMP : la date de publication de l'avis et une
+   durée lue dans son intitulé, ou estimée. »
 7. Le crédit, avant le clic, sous les champs : « Une recherche complémentaire peut consommer 1 analyse : remboursée si
    elle ne trouve rien, toujours remboursée en outre-mer et en Corse. », avec sa bulle (i). Après un repli : « …
    1 analyse consommée. » ou « … analyse remboursée. », et le compteur d'analyses est relu. La démo ne voit pas la
-   ligne (elle n'est jamais débitée).
+   ligne (elle n'est jamais débitée). *Revue* : la bulle dit la règle sans analyse restante, « … elle n'est lancée
+   qu'avec le paiement à l'usage activé (forfaits Pro et Business) : elle est alors facturée au tarif à l'usage, et
+   remboursée dans les mêmes cas » ; et un compte Pro ou Business dont les analyses du mois sont utilisées, paiement à
+   l'usage activé, lit avant le clic « Vos analyses du mois sont utilisées : la recherche complémentaire serait
+   facturée 5 € (paiement à l'usage), et remboursée dans les mêmes cas. » (prix lu dans le compteur).
 
 **Démo**
 8. La page d'exemple d'une délibération ne dit plus « récupérées automatiquement par Adjugo » ni « Sur un compte réel,
@@ -1045,8 +1063,8 @@ sans réseau, IA ni analyse (ce que son écran change : `docs/MISE_EN_LIGNE_22_1
 | | |
 |---|---|
 | **Avant** | `srcPrefillFromProfile` lisait `specialites` dans la fiche Identité, qui n'a pas ce champ (`CompanyOut`) : la recherche partait sans mot dès que le code postal donnait un département, et le BOAMP cherchait alors « travaux » sans le dire (`boamp.py`). Sans code postal ni mot, l'écran renvoyait vers Mon entreprise. |
-| **Après** | `srcSearchMine` prend `metierCherche(criteria)`, la première spécialité de « Ce que je cherche » (`criteria_v2.specialites`, coupée aux virgules et points-virgules), relue au serveur si elle manque à l'écran (sans écraser une saisie non enregistrée). Elle remplace les mots du champ : le bouton dit « pour mon entreprise ». Sans métier, aucune recherche : `src.manqueMetier`, la phrase et le bouton « Dire mon métier » (`srcDireMetier` : `go("criteria")`, curseur dans `#crit-spec`), le curseur posé sur ce bouton ; la phrase disparaît dès qu'un métier est saisi. Le département ne change pas (code postal, `zoneDuCodePostal`). `srcPrefillFromProfile` ne lit plus que le code postal. Le sous-titre dit d'où viennent les mots. |
-| **Preuve** | `test_e11_voir_les_marches_lit_le_metier_de_ce_que_je_cherche_sous_node` (vraies méthodes sous Node : métier présent, mots tapés ailleurs, aucun métier, métier enregistré par un collègue, serveur en panne ; le chemin direct). |
+| **Après** | `srcSearchMine` prend `metierCherche(criteria)`, la première spécialité de « Ce que je cherche » (`criteria_v2.specialites`, coupée aux virgules et points-virgules), relue au serveur si elle manque à l'écran (sans écraser une saisie non enregistrée). Elle remplace les mots du champ : le bouton dit « pour mon entreprise ». Sans métier, aucune recherche : `src.manqueMetier`, la phrase et le bouton « Dire mon métier » (`srcDireMetier` : `go("criteria")`, curseur dans `#crit-spec`), le curseur posé sur ce bouton ; la phrase disparaît dès qu'un métier est saisi. Les départements ne changent pas : ceux du champ de la recherche, pré-rempli une fois par le code postal (`srcPrefillFromProfile`, `zoneDuCodePostal`), que le client peut modifier ou vider (toute la France). `srcPrefillFromProfile` ne lit plus que le code postal. Le sous-titre dit d'où viennent les mots et les départements (*Revue* : il promettait « le département de votre code postal »). *Revue* : des codes CPV sans spécialité (`cpvSeulsCherche`, à l'écran ou relus au serveur) : `src.cpvSeuls`, et la demande dit que ces codes ne suffisent pas à ce bouton, qui cherche avec des mots. |
+| **Preuve** | `test_e11_voir_les_marches_lit_le_metier_de_ce_que_je_cherche_sous_node` (vraies méthodes sous Node : métier présent, mots tapés ailleurs, aucun métier, métier enregistré par un collègue, serveur en panne ; le chemin direct) ; *Revue* : `test_r5_des_codes_cpv_sans_specialite_l_ecran_dit_ce_qui_manque`, `test_r6_le_sous_titre_dit_les_departements_de_la_recherche`. |
 | **Pour le client** | Point 4. |
 
 ### É.12 L'onglet « À venir »
@@ -1054,8 +1072,8 @@ sans réseau, IA ni analyse (ce que son écran change : `docs/MISE_EN_LIGNE_22_1
 | | |
 |---|---|
 | **Avant** | « Renouvellement ~ » montrait `renouvellement_estime`, la fin moins 120 jours : une date de republication devinée. La bulle disait « sources réelles BOAMP » (la source principale est la DECP) et « positionnez-vous auprès du client avant la republication ». Rien n'annonçait le crédit du repli payant (décision 12). « notifié le » et « (réelle) » aussi sur les fins de contrat du repli, dont la date est celle de la parution de l'avis d'attribution et la durée lue par l'IA. |
-| **Après** | Pastille « Fin du contrat estimée le … » + `dureeFinDeContrat` : « (durée publiée) » pour la DECP (fin = date de notification + `dureemois`, `decp.py`), « (durée lue dans l'intitulé de l'avis) » ou « (durée estimée selon le type de contrat) » au repli. `renouvellement_estime` ne sert plus qu'au tri et à la fenêtre du serveur. La réponse du repli dit `"source": "BOAMP"` et `"analyse": "debitee"` ou `"remboursee"` (même débit, même remboursement qu'avant) ; l'écran l'affiche et relit le compteur. La ligne du crédit et sa bulle disent la règle de `sourcing.renewals` telle qu'elle est (lue dans le code) : la DECP ne consomme rien ; le repli consomme 1 analyse (`consume_analysis`), la rend s'il ne trouve rien ou échoue, et toujours dès qu'un des départements demandés commence par « 97 » ou « 98 » ou vaut « 2A », « 2B » ou « 20 » (`_repli_rembourse_par_zone`, décision 1 du 22/10), seul ou avec d'autres ; une analyse disponible est exigée avant, même là (refus sinon : 402 quand le quota est atteint). La ligne n'est pas montrée à la démo (`estCompteDemo`, même règle que `demo_search.is_demo`), dont les fins de contrat ne coûtent rien. La carte passe le bouton « Préparer à plusieurs » sous le texte à 375 px. |
-| **Preuve** | `test_e12_a_venir_fin_du_contrat_bulle_juste_et_neutre`, `test_e12_la_duree_dite_avec_sa_source_sous_node`, `test_e12_le_credit_annonce_avant_le_clic_est_celui_du_code` (par la route : DECP sans débit ; repli débité ; repli vide remboursé ; « 974 », « 971 », « 988 », « 2A, 2B », « 20 », « 29, 974 », « 2B, 56 » remboursés même s'ils trouvent ; 402 en outre-mer sans analyse disponible), `test_e12_apres_le_repli_l_ecran_dit_ce_qu_est_devenue_l_analyse_sous_node`, `test_e12_la_demo_de_pitch_garde_ses_fins_de_contrat_sans_credit`. |
+| **Après** | Pastille « Fin du contrat estimée le … » + `dureeFinDeContrat` : « (durée publiée) » pour la DECP (fin = date de notification + `dureemois`, `decp.py`), « (durée lue dans l'intitulé de l'avis) », « (durée estimée selon le type de contrat) » ou, sans type, « (durée estimée par défaut, type de contrat inconnu) » (*Revue* : 36 mois, `_DEFAULT_DUREE`) au repli. `renouvellement_estime` ne sert plus qu'au tri et à la fenêtre du serveur. La réponse du repli dit `"source": "BOAMP"` et `"analyse": "debitee"` ou `"remboursee"` (même débit, même remboursement qu'avant) ; l'écran l'affiche et relit le compteur. La ligne du crédit et sa bulle disent la règle de `sourcing.renewals` telle qu'elle est (lue dans le code) : la DECP ne consomme rien ; le repli consomme 1 analyse (`consume_analysis`), la rend s'il ne trouve rien ou échoue, et toujours dès qu'un des départements demandés commence par « 97 » ou « 98 » ou vaut « 2A », « 2B » ou « 20 » (`_repli_rembourse_par_zone`, décision 1 du 22/10), seul ou avec d'autres ; sans analyse restante, le repli n'est lancé qu'avec le paiement à l'usage activé et facturable (forfait Pro ou Business, client Stripe : `quota.overage_billable`), qui le facture hors forfait (`overage_count`, `report_overage`) et l'annule dans les mêmes cas de remboursement (`refund_analysis`, `cancel_overage`) ; sinon refus (402), même là (*Revue* : la bulle disait « Il faut une analyse disponible pour la lancer », faux au paiement à l'usage). Le compte dans ce cas (analyses du mois utilisées, paiement à l'usage activé, forfait Pro ou Business : `srcRenHorsForfait`, lu dans `stats.usage`) voit en plus, avant le clic, le prix lu dans le compteur (`overage_price`, `quota.OVERAGE_PRICE`). La ligne n'est pas montrée à la démo (`estCompteDemo`, même règle que `demo_search.is_demo`), dont les fins de contrat ne coûtent rien. La carte passe le bouton « Préparer à plusieurs » sous le texte à 375 px. |
+| **Preuve** | `test_e12_a_venir_fin_du_contrat_bulle_juste_et_neutre`, `test_e12_la_duree_dite_avec_sa_source_sous_node`, `test_e12_le_credit_annonce_avant_le_clic_est_celui_du_code` (par la route : DECP sans débit ; repli débité ; repli vide remboursé ; « 974 », « 971 », « 988 », « 2A, 2B », « 20 », « 29, 974 », « 2B, 56 » remboursés même s'ils trouvent ; 402 en outre-mer sans analyse disponible à l'essai), `test_e12_apres_le_repli_l_ecran_dit_ce_qu_est_devenue_l_analyse_sous_node`, `test_e12_la_demo_de_pitch_garde_ses_fins_de_contrat_sans_credit` ; *Revue* : `test_r1_le_credit_dit_vrai_au_paiement_a_l_usage`, `test_r2_la_bulle_d_a_venir_dit_les_deux_sources`, `test_r3_duree_par_defaut_sans_type_de_contrat`. |
 | **Pour le client** | Points 5 à 7. |
 
 ### É.13 La page d'exemple de la démo
@@ -1097,10 +1115,33 @@ réécrite) ne change pas.
 - Le repli payant ne filtre pas les départements après la lecture : une demande « 29 » peut montrer un avis que le
   BOAMP range d'abord en « 44 » (jeu réel), comme en production.
 
+### Revue
+
+*Douze remarques de la revue de la partie écran (`ba07980`), neuf distinctes (trois en double, écrites par deux
+relecteurs). Chacune reproduite sur `ba07980` ; toutes réelles, une en partie seulement (R5). Corrigées dans l'écran
+(textes, une ligne, une fonction pure, une méthode), ses traductions et ces deux documents ; côté serveur, un
+commentaire seulement (`schemas.py`). Ni prix, ni quota, ni règle de débit, ni IA, ni changement de base de données.
+Tests : `tests/test_moteur_lot1_ecran_revue.py` (7 tests, sans réseau), qui échouent tous sur `ba07980` ; les tests de
+`tests/test_moteur_lot1_ecran.py` qui fixaient les anciens textes suivent.*
+
+| | Avant (`ba07980`) | Après | Preuve |
+|---|---|---|---|
+| **R1** (remarques 1 et 6, majeur) | La bulle du crédit : « Il faut une analyse disponible pour la lancer. » Faux au paiement à l'usage : à 0 analyse restante, `quota.consume_analysis` laisse partir le repli et le facture hors forfait (forfait Pro ou Business, client Stripe, paiement à l'usage activé) ; rien ne le disait avant le clic. Le contrat (É.12) et le bilan (sections 1 et 3) répétaient la règle. | La bulle dit la règle du code (« Sans analyse restante, elle n'est lancée qu'avec le paiement à l'usage activé (forfaits Pro et Business) : elle est alors facturée au tarif à l'usage, et remboursée dans les mêmes cas. ») ; une ligne de plus, avant le clic, pour ce compte seulement (`srcRenHorsForfait` : forfait Pro ou Business, hors essai, paiement à l'usage activé, 0 analyse restante) : « Vos analyses du mois sont utilisées : la recherche complémentaire serait facturée 5 € (paiement à l'usage), et remboursée dans les mêmes cas. », le prix lu dans `stats.usage.overage_price` ; décrite par le bouton (`aria-describedby`) ; cachée à la démo. | `test_r1_le_credit_dit_vrai_au_paiement_a_l_usage` : par la route, Pro, client Stripe, paiement à l'usage activé, 30 sur 30 : 200, « debitee », 31 utilisées, 1 hors forfait déclarée ; repli vide : remboursé, déclaration annulée ; « 974 » : remboursé ; paiement à l'usage coupé : 402, rien de débité ; `GET /api/agent/stats` et la vraie méthode sous Node (la ligne pour ce compte, pas pour un compte qui a des analyses, l'essai, un compte Starter, ni sans compteur). |
+| **R2** (remarques 2 et 7) | La bulle d'en-tête : « … d'après les données publiées des marchés attribués : la date de notification et la durée publiée », pour toutes les fins de contrat. Au repli, la date est la parution de l'avis d'attribution du BOAMP (`renewal._fetch_attributions`, `dateparution`) et la durée est lue par l'IA ou fixée par défaut ; la carte dit « attribution publiée le » : l'écran se contredisait. | Une phrase de plus, vraie pour les deux sources : « À défaut, d'après les avis d'attribution du BOAMP : la date de publication de l'avis et une durée lue dans son intitulé, ou estimée. » La bulle du crédit le dit aussi (« Ses fins de contrat partent de la date de publication de l'avis d'attribution … »). | `test_r2_la_bulle_d_a_venir_dit_les_deux_sources` (la phrase, et le calcul de `renewal.py` qu'elle décrit). |
+| **R3** (remarques 3 et 8) | « (durée estimée selon le type de contrat) » aussi sans type : la durée est alors 36 mois par défaut (`_DEFAULT_DUREE[None]`), et toutes le sont quand l'IA ne rend rien (`enrich = {}`). | `dureeFinDeContrat` : « selon le type de contrat » seulement si `type_contrat` est renseigné, sinon « (durée estimée par défaut, type de contrat inconnu) » ; la bulle du crédit dit « (36 mois quand il est inconnu) ». | `test_r3_duree_par_defaut_sans_type_de_contrat` (le vrai `detect_renewals`, IA en panne puis types rendus : 36, 48, 30 mois ; l'écran sous Node). |
+| **R4** (remarque 4) | La bulle de « Date limite non précisée » : « Un rectificatif de cet avis porte sur sa date limite ». Le serveur pose aussi cet état, par prudence, sur des formes dont il ne sait pas s'ils en parlent (bloc `infosRectif` absent, autre délai : `boamp.lire_rectificatif`, `_lire_element`) ; jamais observées dans les jeux réels, mais chemins réels du code. | « Un rectificatif de cet avis peut changer sa date limite, et Adjugo n'a pas pu la lire avec certitude : lisez-la sur le rectificatif. L'ancienne date n'est pas montrée : elle peut ne plus être la bonne. » | `test_r4_la_bulle_non_precisee_reste_vraie_quand_le_serveur_est_prudent` (les deux formes passées par `_appliquer`, puis `rectifDeCarte` sous Node). |
+| **R5** (remarque 5, mineur) | Des codes CPV dans « Mes métiers » sans aucune spécialité : « Dites d'abord votre métier », alors que le produit tient ce métier pour dit (`criteria_v2.ce_que_je_cherche_dit` : « spécialités ou codes CPV », la tâche « Dire ce que vous cherchez » des premiers pas). En partie rejetée : ces premiers pas ne sont pas « affichés juste en dessous dans la même carte » (la carte montre la tâche « Ajouter 3 marchés à Mes marchés ») ; la contradiction, elle, est réelle. | La demande dit ce qui manque : « Ajoutez votre métier en mots dans « Spécialités » : la recherche part de la première spécialité de « Ce que je cherche ». Vos codes CPV seuls ne suffisent pas à ce bouton. » (`cpvSeulsCherche`, `src.cpvSeuls`). La recherche n'est pas lancée sur les codes : le BOAMP ne les lit pas (§ S.3) et chercherait « travaux » sans le dire, le défaut que le point 11 retire. | `test_r5_des_codes_cpv_sans_specialite_l_ecran_dit_ce_qui_manque` (la route enregistre des codes CPV seuls, le métier est « dit » ; sous Node : codes à l'écran, codes relus au serveur, rien, serveur en panne, métier et codes). |
+| **R6** (remarque 9) | Le sous-titre promettait « le département de votre code postal ». Le bouton cherche dans le champ « Départements » de la recherche, pré-rempli une fois par le code postal : vidé, toute la France ; « 56 » tapé, le 56. | Le comportement ne change pas (un champ que le client a changé n'est pas réécrit) ; le sous-titre dit « D'après votre premier métier, dans « Ce que je cherche », et les départements de la recherche ci-dessus. » | `test_r6_le_sous_titre_dit_les_departements_de_la_recherche` (sous Node : pré-rempli, vidé, autre département). |
+| **R7** (remarques 10, 11 et 12) | Le bilan et ce contrat disaient encore « (estimée) » (point 12 ter, V.6), « rien de visible » (point 13), une note d'adéquation que le client verrait bouger (deux puces de « Publiés » dans le bilan ; point 7, § S.1 et S.3 ici), et « Trois chantiers » en tête du bilan, au-dessus d'un tableau de quatre lignes. | Notes *Écran* ajoutées ou phrases reprises ; « Trois chantiers … ont été réunis …, puis la partie écran du lot 1 posée au-dessus ». | `test_r7_contrat_et_bilan_disent_l_ecran_d_apres_la_revue`. |
+
+Rien n'est rejeté en entier. À noter pour R1 : un compte dont le paiement à l'usage est resté activé après le retour
+à un forfait sans abonnement (rétrogradé par Stripe) ne voit pas la ligne, et le repli lui est refusé (402,
+`overage_billable`) : la ligne ne s'affiche que là où elle est vraie.
+
 ### Vérifications
 
 - Les 13 tests nouveaux, sur une extraction `git archive` de `0f8eb32` (tests copiés) : 13 échecs, chacun sur le
   défaut qu'il couvre (« confiance » dans la carte, organisme avec sa parenthèse, champ du rectificatif absent,
   fonctions de l'écran absentes, « Renouvellement », ligne du crédit absente, page de la démo, traductions, ce contrat).
 - Suites complètes, navigateur et fichiers servis : `docs/MISE_EN_LIGNE_22_10.md`, section 5, « Partie écran du lot 1
-  du moteur ».
+  du moteur » ; pour la revue, « Revue de la partie écran du lot 1 ».

@@ -3,15 +3,16 @@
 Ce document est pour Eliot. Il dit ce que la prochaine mise en ligne change pour les clients, ce qu'elle corrige,
 ce qu'il reste à décider avant, comment la faire et la défaire, et ce qui a été vérifié.
 
-**Ce qui part.** Trois chantiers, finis et vérifiés chacun de son côté, sont réunis sur la branche de cette réunion,
-au-dessus de la production actuelle (`feat/produit-acheteur-collectivites` = `0afc1ed`, mise en ligne le 20/10) :
+**Ce qui part.** Trois chantiers, finis et vérifiés chacun de son côté, ont été réunis sur la branche de cette
+réunion, au-dessus de la production actuelle (`feat/produit-acheteur-collectivites` = `0afc1ed`, mise en ligne le
+20/10), puis la partie écran du lot 1 du moteur posée au-dessus (quatrième ligne) :
 
 | Chantier | Commit | Contrat (le détail) |
 |---|---|---|
 | Réorganisation de l'interface, vague 2b : prise en main, marché d'exemple, espace du partenaire, courriel d'invitation | `52e0d59` | `docs/REORGANISATION_V2B.md` |
 | Moteur de recherche, lot 1 « Dire juste », partie serveur | `723c9cc` | `docs/MOTEUR_LOT1.md` |
 | Suite de tests verte sur PostgreSQL (rien ne change pour les clients) | `8b66841` | `docs/TESTS_POSTGRES.md` |
-| Moteur de recherche, lot 1 « Dire juste », partie écran (ajoutée le 22/10, au-dessus de `0f8eb32`) | le commit qui suit `0f8eb32` | `docs/MOTEUR_LOT1.md`, section « Écran » |
+| Moteur de recherche, lot 1 « Dire juste », partie écran (ajoutée le 22/10, au-dessus de `0f8eb32`) | `ba07980`, puis sa revue (le commit qui suit `ba07980`) | `docs/MOTEUR_LOT1.md`, section « Écran » (et « Revue ») |
 
 **Ce qui ne part pas.** Les pages annexes du site public (`/plateforme`, `/profils/…`, `/secteurs/…`, `/faq`)
 restent hors de cette mise en ligne tant que vous n'avez pas relu leurs textes. Une branche à part,
@@ -98,14 +99,15 @@ non confirmée ; la bulle (i) de « Mes alertes » est corrigée.
 ### Trouver des marchés › Publiés (la recherche)
 
 - **Mégalis** : les cartes montrent enfin leur date limite. Avant, elles affichaient « limite non précisée » (10
-  sur 10 sur la page réelle du 21/10). L'ordre et la note d'adéquation d'une carte Mégalis peuvent donc bouger un
-  peu.
+  sur 10 sur la page réelle du 21/10). L'ordre des cartes Mégalis peut donc bouger un peu : leur note change, mais
+  n'est plus affichée (partie écran, plus bas).
 - **Avis rectifiés du BOAMP** : la carte montre la nouvelle date limite. Un avis repoussé reste visible après son
   ancienne date, et un avis européen rectifié n'apparaît plus deux fois. Si la nouvelle date ne peut pas être lue
   sans doute, la carte affiche « limite non précisée », jamais l'ancienne date.
 - **Avis annulés ou déclarés sans suite** : ils disparaissent.
-- **Faux « métier correspondant »** : le vocabulaire interne du BOAMP n'est plus lu comme un code métier. La note
-  d'adéquation de certaines cartes BOAMP baisse. Une recherche par codes CPV ne ramène plus d'avis sans rapport.
+- **Faux « métier correspondant »** : le vocabulaire interne du BOAMP n'est plus lu comme un code métier.
+  Certaines cartes BOAMP descendent dans l'ordre : leur note baisse, mais n'est plus affichée. Une recherche par
+  codes CPV ne ramène plus d'avis sans rapport.
 - **Outre-mer** : « 974 » ne montre plus les avis de la Guadeloupe ou de la Martinique. C'est ce que cherche
   désormais toute entreprise dont le code postal est à La Réunion, car le champ « Départements » est pré-rempli
   « 974 » (plus haut). La zone de la note est juste pour une entreprise d'outre-mer dont la zone enregistrée dans
@@ -122,7 +124,9 @@ non confirmée ; la bulle (i) de « Mes alertes » est corrigée.
   classement adapté ».
 - **Partie écran : les rectificatifs se voient.** « Date limite repoussée au 06/11/2026 (rectificatif du
   06/10/2026) », le lien mène au rectificatif qui a fixé la date (pas forcément le dernier paru) ; « Date limite non
-  précisée (rectificatif du …) », avec une bulle (i), quand sa nouvelle date n'a pas pu être lue, jamais l'ancienne ;
+  précisée (rectificatif du …) », avec une bulle (i), quand sa nouvelle date n'a pas pu être lue, jamais l'ancienne
+  (la bulle dit qu'un rectificatif « peut changer » la date limite : le serveur le suppose aussi, par prudence, pour
+  des formes jamais observées) ;
   « Avis rectifié (rectificatif du …) » quand la date ne change pas. La date limite s'écrit « 06/11/2026 » (avant,
   « 2026-11-06 »).
 - **Partie écran : Mégalis** donne le nom de l'organisme sans « (code postal - ville) » : sur la carte, dans Mes
@@ -130,7 +134,10 @@ non confirmée ; la bulle (i) de « Mes alertes » est corrigée.
 - **Partie écran : « Voir les marchés pour mon entreprise »** cherche le premier métier de Ce que je cherche. Avant,
   il le cherchait dans la fiche Identité, qui ne l'a pas : la recherche partait sans mot, et le BOAMP cherchait
   « travaux » sans le dire. Sans métier, rien n'est cherché : l'écran le demande, avec le bouton « Dire mon métier »,
-  qui ouvre Ce que je cherche, le curseur dans « Spécialités ».
+  qui ouvre Ce que je cherche, le curseur dans « Spécialités ». Avec des codes CPV et aucune spécialité, l'écran dit
+  que ces codes seuls ne suffisent pas à ce bouton, qui cherche avec des mots. Les départements sont ceux du champ de
+  la recherche, pré-rempli par le code postal et modifiable ; le sous-titre le dit (« … et les départements de la
+  recherche ci-dessus »).
 
 ### Trouver des marchés › À venir (fins de contrat)
 
@@ -146,22 +153,29 @@ non confirmée ; la bulle (i) de « Mes alertes » est corrigée.
   (« 29, 974 ») est remboursée en entier ; en production, elle était débitée si elle trouvait en métropole. Partout
   ailleurs, la règle ne change pas : débité s'il trouve, remboursé sinon.
 - « 6 » saisi seul est lu comme « 06 » dans la DECP, sans crédit. Avant, il passait par le repli payant.
-- Une durée de contrat que l'IA n'a pas vraiment lue est affichée « (estimée) », et non plus « (réelle) ».
+- Une durée de contrat que l'IA n'a pas vraiment lue est dite estimée, et non plus « (réelle) » : avec la partie
+  écran, « (durée estimée selon le type de contrat) », ou « (durée estimée par défaut, type de contrat inconnu) »
+  quand l'IA ne donne pas de type (36 mois).
 - Le bouton « Modifier ma zone » met le curseur dans le champ « Départements » de l'onglet, celui qui compte pour
   cette recherche.
-- Chaque repli payant laisse une ligne dans le journal du serveur, sans donnée personnelle. Rien n'est visible à
-  l'écran. En outre-mer et en Corse, elle dit « analyse remboursée (outre-mer ou Corse, jusqu'à l'annonce du crédit à
+- Chaque repli payant laisse une ligne dans le journal du serveur, sans donnée personnelle, que le client ne voit
+  pas ; avec la partie écran, l'écran dit après chaque repli si l'analyse a été consommée ou remboursée. En outre-mer et en Corse, elle dit « analyse remboursée (outre-mer ou Corse, jusqu'à l'annonce du crédit à
   l'écran) ».
 - **Partie écran : « Fin du contrat estimée le 25/10/2026 (durée publiée) »** au lieu de « Renouvellement ~ … », qui
   montrait une date de republication devinée (la fin moins 120 jours). Au repli payant, la durée est dite « lue dans
-  l'intitulé de l'avis » ou « estimée selon le type de contrat », et la date est celle de la publication de l'avis
-  d'attribution (« attribution publiée le … »).
-- **Partie écran : la bulle (i)** dit la vraie source, « les données publiées des marchés attribués », et reste neutre
-  en attendant l'avis juridique : « préparez votre réponse et vos partenaires avant la republication » (avant :
+  l'intitulé de l'avis », « estimée selon le type de contrat » ou, sans type, « estimée par défaut, type de contrat
+  inconnu » (36 mois), et la date est celle de la publication de l'avis d'attribution (« attribution publiée le … »).
+- **Partie écran : la bulle (i)** dit la vraie source, « les données publiées des marchés attribués », et, à défaut,
+  les avis d'attribution du BOAMP (date de publication de l'avis, durée lue ou estimée) ; elle reste neutre en
+  attendant l'avis juridique : « préparez votre réponse et vos partenaires avant la republication » (avant :
   « sources réelles BOAMP » et « positionnez-vous auprès du client »).
 - **Partie écran : le crédit est annoncé avant le clic**, sous les champs : « Une recherche complémentaire peut
   consommer 1 analyse : remboursée si elle ne trouve rien, toujours remboursée en outre-mer et en Corse. », avec une
-  bulle (i) qui dit quand elle a lieu et qu'il faut une analyse disponible. C'est la règle du code, inchangée. Après
+  bulle (i) qui dit quand elle a lieu et ce qu'il faut pour la lancer : une analyse restante, sinon le paiement à
+  l'usage activé (forfaits Pro et Business), qui la facture au tarif à l'usage, remboursée dans les mêmes cas. C'est
+  la règle du code, inchangée. Un compte Pro ou Business dont les analyses du mois sont utilisées, paiement à l'usage
+  activé, lit en plus avant le clic : « Vos analyses du mois sont utilisées : la recherche complémentaire serait
+  facturée 5 € (paiement à l'usage), et remboursée dans les mêmes cas. » (le prix est celui du compteur). Après
   un repli, l'écran dit « 1 analyse consommée » ou « analyse remboursée », et le compteur d'analyses se met à jour. La
   démo de pitch, jamais débitée, ne voit pas cette ligne. Le remboursement en outre-mer et en Corse, posé « jusqu'à
   l'annonce du crédit à l'écran », reste en place : à vous de dire s'il continue (section 3, « Plus tard »).
@@ -342,8 +356,9 @@ d'Eliot »). Restent les décisions 4 à 7.
    corse), seul ou avec d'autres départements. Les fins de contrat trouvées sont montrées. Le journal du repli payant
    écrit alors « analyse remboursée (outre-mer ou Corse, jusqu'à l'annonce du crédit à l'écran) », qu'il ait trouvé ou
    non. Sans département (toute la France) ou en métropole seule, la règle ne change pas : débité s'il trouve,
-   remboursé sinon. Le crédit reste demandé avant le repli, comme avant : un compte sans analyse disponible reçoit le
-   même refus. Ce que cela change par rapport à la production : rien pour une demande qui ne porte que sur ces zones
+   remboursé sinon. Le crédit reste demandé avant le repli, comme avant : un compte sans analyse restante reçoit le
+   même refus, sauf au paiement à l'usage (forfaits Pro et Business), où le repli est facturé hors forfait puis
+   remboursé de même (revue de la partie écran, section 5). Ce que cela change par rapport à la production : rien pour une demande qui ne porte que sur ces zones
    (le repli n'y trouvait rien et était toujours remboursé) ; une demande mixte (« 29, 974 ») est remboursée en entier,
    alors que la production la débitait si elle trouvait en métropole. C'est le seul écart, et il est en faveur du
    client. Prouvé par `test_d1_repli_a_venir_rembourse_en_outre_mer_et_en_corse`, qui échouait sur `130fc9e`.
@@ -865,5 +880,53 @@ disent « Fin du contrat estimée le … (durée publiée) ». Côté serveur, s
 servies à part : ses cartes de recherche gagnent seulement les deux champs vides `date_limite_rectificatif` et
 `date_limite_rectificatif_le`, et ses fins de contrat ne changent pas. `tests/test_demo_*.py` et
 `test_demo_sans_cout.py` restent verts.
+
+Aucune migration nouvelle, aucune variable Railway, rien n'a été mis en ligne ni poussé.
+
+### Revue de la partie écran du lot 1 (22/10/2026)
+
+Douze remarques sur `ba07980`, neuf distinctes (trois écrites deux fois). Chacune reproduite sur `ba07980`, toutes
+réelles ; une seule en partie (un détail de lieu inexact, la contradiction réelle). Le détail, avant, après et
+preuves : `docs/MOTEUR_LOT1.md`, section « Écran », « Revue ». Ce qui change pour les clients est dans la section 1
+ci-dessus (lignes « Partie écran ») :
+
+- **le crédit de « À venir » dit vrai au paiement à l'usage** : la bulle disait « Il faut une analyse disponible pour
+  la lancer », faux pour un forfait Pro ou Business au paiement à l'usage, où le repli part sans analyse restante et
+  est facturé hors forfait. Elle dit la règle du code ; et ce compte, ses analyses du mois utilisées, lit avant le
+  clic qu'une recherche complémentaire serait facturée, au prix du compteur (5 €), et remboursée dans les mêmes cas ;
+- la bulle d'en-tête de « À venir » dit aussi le repli (date de publication de l'avis d'attribution du BOAMP, durée
+  lue ou estimée) ; une durée estimée sans type de contrat est dite « par défaut » (36 mois) ;
+- la bulle de « Date limite non précisée » dit qu'un rectificatif « peut changer » la date limite ;
+- « Voir les marchés pour mon entreprise » : avec des codes CPV et aucune spécialité, l'écran dit que ces codes ne
+  suffisent pas à ce bouton ; le sous-titre dit les départements de la recherche, plus le code postal ;
+- ce bilan et le contrat : plus de « (estimée) », de « rien de visible », de note d'adéquation que le client verrait
+  bouger, ni de « trois chantiers » en tête.
+
+Sept tests nouveaux (`tests/test_moteur_lot1_ecran_revue.py`) : sur une extraction `git archive` de `ba07980` (tests
+copiés), les 7 échouent, chacun sur le défaut qu'il couvre. Les tests de `tests/test_moteur_lot1_ecran.py` qui
+fixaient les anciens textes les suivent. Ni prix, ni quota, ni règle de débit, ni IA, ni migration ; côté serveur, un
+commentaire seulement (`schemas.py`). La démo de pitch : sa bulle d'en-tête de « À venir » gagne la phrase du repli ;
+elle ne voit ni la ligne du crédit ni celle du paiement à l'usage ; ses fins de contrat disent toujours « (durée
+publiée) ».
+
+Vérifications :
+
+- suites complètes, `TZ=UTC`, Python 3.12 installé depuis `requirements.lock`, sans réseau : SQLite, 2 424 sur
+  2 424 ; PostgreSQL 16.2 jetable (`scripts/tests_postgres.py`), 2 424 sur 2 424 (2 417 + 7) ;
+- `scripts/sri_update.py`, puis `--check` : empreintes à jour ;
+- `node --check` : `app.js` et `i18n.js`, 0 erreur ; gabarit de l'application compilé par le Vue du dépôt (dans la
+  suite) ;
+- `scripts/i18n_ajouter.py --check` : 823 clés, néerlandais et espagnol (8 phrases nouvelles) ;
+- **navigateur réel**, serveur local sur ce code, base jetable, réseau sortant coupé (seule la boucle locale), BOAMP,
+  Mégalis et DECP servis depuis les jeux d'essai réels du dépôt, IA simulée, Stripe jamais appelé ; démo ouverte par
+  **lien privé**, clé de test locale écrite dans un fichier, jamais affichée. Vu à 1 280 et à 375 px, en clair et en
+  sombre, en français, néerlandais et espagnol : « À venir » d'un compte Pro au paiement à l'usage, 30 analyses sur
+  30 (la ligne « … serait facturée 5 € (paiement à l'usage) … » avant le clic ; repli sur le 29 : « 1 analyse
+  consommée », 31 utilisées, 1 hors forfait ; une carte « (durée estimée par défaut, type de contrat inconnu) ») ; le
+  même onglet pour un compte à l'essai (pas de ligne) ; la bulle de « Date limite non précisée » ; « Voir les marchés
+  pour mon entreprise » avec des codes CPV seuls (la demande nouvelle, curseur sur « Dire mon métier », puis retour
+  arrière vers Trouver) et avec le champ « Départements » vidé (recherche sur toute la France, comme le dit le
+  sous-titre) ; la démo (Publiés, À venir sans ligne de crédit ni de paiement à l'usage, sa page d'exemple d'une
+  délibération). Aucun défilement horizontal à 375 px, aucune erreur de script.
 
 Aucune migration nouvelle, aucune variable Railway, rien n'a été mis en ligne ni poussé.
