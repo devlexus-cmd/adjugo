@@ -451,8 +451,10 @@ def test_cr1_a_venir_part_du_code_postal_pour_toute_entreprise_sous_node():
         "srcPrefillFromProfile", "srcDeps", "srcRenewals")) + "\n};\n" + r"""
 async function cas(cp, zone) {
   const envois = [];
-  Object.assign(o, { company: { postal_code: cp, specialites: "Voirie" }, criteria: { departements: zone },
-    src: { query: "", dept: "", prefilled: false, searched: false, renewals: { loading: false, done: false, list: [] } },
+  // Partie écran du lot 1 (point 11) : la fiche Identité n'a pas de spécialités, le pré-remplissage ne lit plus que son
+  // code postal ; « Voirie » est tapé dans le champ des mots-clés de l'onglet (avant : une spécialité fictive de la fiche).
+  Object.assign(o, { company: { postal_code: cp }, criteria: { departements: zone },
+    src: { query: "Voirie", dept: "", prefilled: false, searched: false, renewals: { loading: false, done: false, list: [] } },
     notify() {}, go() {},
     api: async (m, p, b) => { envois.push([m, p, JSON.parse(JSON.stringify(b || {}))]); return { renewals: [], count: 0 }; } });
   o.srcPrefillFromProfile();           // go("sourcing") : ouverture de Trouver

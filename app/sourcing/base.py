@@ -21,7 +21,8 @@ def sanitize_tender_links(tender):
     invalide devient vide — l'UI n'affiche alors simplement pas de lien (jamais inventé)."""
     try:
         provs = ([tender.provenance] + list(getattr(tender, "also_seen_in", None) or [])
-                 + list(getattr(tender, "rectificatifs", None) or []))
+                 + list(getattr(tender, "rectificatifs", None) or [])
+                 + [getattr(tender, "date_limite_rectificatif", None)])
         for prov in provs:
             if prov is not None and prov.source_url:
                 prov.source_url = safe_link_url(prov.source_url, _MAX_LINK_LEN) or ""

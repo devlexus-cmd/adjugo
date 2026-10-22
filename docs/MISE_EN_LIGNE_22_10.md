@@ -11,6 +11,7 @@ au-dessus de la production actuelle (`feat/produit-acheteur-collectivites` = `0a
 | Réorganisation de l'interface, vague 2b : prise en main, marché d'exemple, espace du partenaire, courriel d'invitation | `52e0d59` | `docs/REORGANISATION_V2B.md` |
 | Moteur de recherche, lot 1 « Dire juste », partie serveur | `723c9cc` | `docs/MOTEUR_LOT1.md` |
 | Suite de tests verte sur PostgreSQL (rien ne change pour les clients) | `8b66841` | `docs/TESTS_POSTGRES.md` |
+| Moteur de recherche, lot 1 « Dire juste », partie écran (ajoutée le 22/10, au-dessus de `0f8eb32`) | le commit qui suit `0f8eb32` | `docs/MOTEUR_LOT1.md`, section « Écran » |
 
 **Ce qui ne part pas.** Les pages annexes du site public (`/plateforme`, `/profils/…`, `/secteurs/…`, `/faq`)
 restent hors de cette mise en ligne tant que vous n'avez pas relu leurs textes. Une branche à part,
@@ -113,6 +114,23 @@ non confirmée ; la bulle (i) de « Mes alertes » est corrigée.
 - **Corse** : « 2A » et « 2B » trouvent enfin les avis du BOAMP, qui écrit « 20A » et « 20B ». Le 21/10, 19 avis
   ouverts étaient concernés ; avant, aucun n'était trouvé. Une zone « 20 » ne trouve toujours rien au BOAMP.
 - Une recherche fait une ou deux requêtes de plus au BOAMP, soit 0,4 à 0,6 seconde chacune.
+- **Partie écran du lot 1 : plus aucun nombre sur la carte.** Ni « confiance N % » (fixée à 70 % pour toute
+  consultation Mégalis), ni « adéquation N/100 » : des pourcentages seulement après le dossier (décision 8 de
+  l'organisation). L'ordre des cartes ne change pas. Les mots « Bon potentiel », « À étudier », « Peu adapté »
+  n'arrivent pas encore : ils attendent le barème corrigé, car aujourd'hui une donnée inconnue avantage le marché.
+  Sans métier ni zone dans Ce que je cherche, la carte invite à les dire : « Dites ce que vous cherchez pour un
+  classement adapté ».
+- **Partie écran : les rectificatifs se voient.** « Date limite repoussée au 06/11/2026 (rectificatif du
+  06/10/2026) », le lien mène au rectificatif qui a fixé la date (pas forcément le dernier paru) ; « Date limite non
+  précisée (rectificatif du …) », avec une bulle (i), quand sa nouvelle date n'a pas pu être lue, jamais l'ancienne ;
+  « Avis rectifié (rectificatif du …) » quand la date ne change pas. La date limite s'écrit « 06/11/2026 » (avant,
+  « 2026-11-06 »).
+- **Partie écran : Mégalis** donne le nom de l'organisme sans « (code postal - ville) » : sur la carte, dans Mes
+  marchés pour un marché analysé désormais, et dans le courriel d'alerte. Rien d'autre ne change (fusion avec le BOAMP, note, alertes).
+- **Partie écran : « Voir les marchés pour mon entreprise »** cherche le premier métier de Ce que je cherche. Avant,
+  il le cherchait dans la fiche Identité, qui ne l'a pas : la recherche partait sans mot, et le BOAMP cherchait
+  « travaux » sans le dire. Sans métier, rien n'est cherché : l'écran le demande, avec le bouton « Dire mon métier »,
+  qui ouvre Ce que je cherche, le curseur dans « Spécialités ».
 
 ### Trouver des marchés › À venir (fins de contrat)
 
@@ -134,6 +152,19 @@ non confirmée ; la bulle (i) de « Mes alertes » est corrigée.
 - Chaque repli payant laisse une ligne dans le journal du serveur, sans donnée personnelle. Rien n'est visible à
   l'écran. En outre-mer et en Corse, elle dit « analyse remboursée (outre-mer ou Corse, jusqu'à l'annonce du crédit à
   l'écran) ».
+- **Partie écran : « Fin du contrat estimée le 25/10/2026 (durée publiée) »** au lieu de « Renouvellement ~ … », qui
+  montrait une date de republication devinée (la fin moins 120 jours). Au repli payant, la durée est dite « lue dans
+  l'intitulé de l'avis » ou « estimée selon le type de contrat », et la date est celle de la publication de l'avis
+  d'attribution (« attribution publiée le … »).
+- **Partie écran : la bulle (i)** dit la vraie source, « les données publiées des marchés attribués », et reste neutre
+  en attendant l'avis juridique : « préparez votre réponse et vos partenaires avant la republication » (avant :
+  « sources réelles BOAMP » et « positionnez-vous auprès du client »).
+- **Partie écran : le crédit est annoncé avant le clic**, sous les champs : « Une recherche complémentaire peut
+  consommer 1 analyse : remboursée si elle ne trouve rien, toujours remboursée en outre-mer et en Corse. », avec une
+  bulle (i) qui dit quand elle a lieu et qu'il faut une analyse disponible. C'est la règle du code, inchangée. Après
+  un repli, l'écran dit « 1 analyse consommée » ou « analyse remboursée », et le compteur d'analyses se met à jour. La
+  démo de pitch, jamais débitée, ne voit pas cette ligne. Le remboursement en outre-mer et en Corse, posé « jusqu'à
+  l'annonce du crédit à l'écran », reste en place : à vous de dire s'il continue (section 3, « Plus tard »).
 
 ### Trouver des marchés › Mes alertes, et les courriels d'alerte
 
@@ -223,7 +254,9 @@ Les prix, les forfaits, les quotas et la règle de débit et de remboursement ne
 en faveur du client : le repli payant de l'onglet « À venir » est remboursé dès que la demande porte sur l'outre-mer
 ou la Corse, même avec un département de métropole (décision 1). Aucune offre ni
 carte d'offre ne change (décision 14, réservée). Les pages juridiques et la vitrine ne bougent pas, et aucune IA
-n'est ajoutée. La démo de pitch est identique, à quelques ajouts près (section 5).
+n'est ajoutée. La démo de pitch est identique, à quelques ajouts près (section 5) ; la partie écran du lot 1 y
+retire les nombres des cartes et y change les fins de contrat comme partout (section 5, « Partie écran du lot 1 du
+moteur »).
 
 ---
 
@@ -282,6 +315,13 @@ contrats).
     inscriptions. (Revue et contre-relecture de la réunion, section 5)
 16. **« Offre commune figée le … »** prenait le jour UTC sur la page du marché et dans l'espace du partenaire avec
     compte. La page du partenaire sans compte prenait le jour local. (Revue de la réunion, section 5)
+17. **« Voir les marchés pour mon entreprise »** lisait le métier là où il n'est pas et cherchait « travaux » sans le
+    dire. (Moteur § É.11)
+18. **Cartes de recherche** : une « confiance 70 % » constante pour Mégalis et une note sur 100 avant le dossier ;
+    les rectificatifs, lus par le serveur, invisibles. **À venir** : une date de republication devinée, une bulle qui
+    citait la mauvaise source, et un crédit débité sans être annoncé. (Moteur § É.10, É.12)
+19. **Page d'exemple de la démo** : elle disait les délibérations « récupérées automatiquement par Adjugo », alors
+    que cette veille est masquée. (Moteur § É.13)
 
 ---
 
@@ -431,6 +471,15 @@ d'Eliot »). Restent les décisions 4 à 7.
   n'enregistre aucun projet, et un projet lu entre-temps puis sorti des délibérations récentes n'est jamais ajouté.
   Autre choix : enregistrer les projets et garder le courriel pour après la confirmation, ce qui demande un repère
   « non envoyé ». (Relecture des décisions, section 5)
+- **Repli payant de « À venir », outre-mer et Corse, après l'annonce du crédit** (partie écran du lot 1). La décision 1
+  remboursait ces zones « jusqu'à l'annonce du crédit à l'écran ». L'écran l'annonce maintenant, et dit « toujours
+  remboursée en outre-mer et en Corse », ce que fait le code : rien n'a changé dans le débit sans vous. Deux choix :
+  (a) garder ce remboursement, et seule la ligne du journal (« … jusqu'à l'annonce du crédit à l'écran ») est à
+  reformuler ; (b) l'arrêter, et la fin de la phrase de l'écran, sa bulle et leurs traductions changent dans le même
+  geste. (Moteur, section « Écran »)
+- **Recherche sans mot** : « Rechercher » (Publiés) et « Chercher les fins de contrat » (À venir), lancés sans mot,
+  cherchent toujours « travaux » sans le dire. Seul « Voir les marchés pour mon entreprise » était dans le lot.
+  (Moteur, section « Écran »)
 - **Collègue invité : aucun lien de confirmation** (production, inchangé) : ni l'invitation ni la connexion n'en
   envoient, et l'écran « Confirmez votre adresse email » lui dit pourtant « Un lien de confirmation vous a été envoyé
   par email ». Il doit cliquer « Renvoyer l'email de vérification ». Deux remèdes possibles : envoyer le lien avec le
@@ -774,5 +823,47 @@ Vérifications, sur le code de la relecture :
 - les cinq tests nouveaux, lancés sur une extraction `git archive` de `baf68de` : 5 échecs ;
 - aucun fichier servi ne change : `scripts/sri_update.py --check`, `node --check` (8 fichiers et 9 scripts intégrés)
   et `scripts/i18n_ajouter.py --check` (790 clés) restent verts ; gabarit compilé dans la suite.
+
+Aucune migration nouvelle, aucune variable Railway, rien n'a été mis en ligne ni poussé.
+
+### Partie écran du lot 1 du moteur (22/10/2026)
+
+Posée au-dessus de `0f8eb32` : points 10 à 13 de la note du 21/10 (contrat : `docs/MOTEUR_LOT1.md`, section
+« Écran » ; ce qui change pour les clients : section 1, lignes « Partie écran »). La bulle de « Mes alertes », déjà
+corrigée, n'est pas touchée. Treize tests nouveaux (`tests/test_moteur_lot1_ecran.py`) : sur une extraction
+`git archive` de `0f8eb32`, les 13 échouent, chacun sur le défaut qu'il couvre. Un test existant est adapté :
+`test_cr1_a_venir_part_du_code_postal_pour_toute_entreprise_sous_node` donnait à la fiche Identité une spécialité
+fictive, que le pré-remplissage ne lit plus ; ce qu'il vérifie ne change pas.
+
+Côté serveur, trois ajouts, sans rien changer à ce qui est trouvé ni débité : le nom de l'organisme Mégalis nettoyé
+(`atexo.nom_organisme` ; la clé de fusion et le lieu lisent toujours le texte de la page), le rectificatif qui fixe la
+date sur la fiche (`date_limite_rectificatif`, `date_limite_rectificatif_le`), et la source et le sort de l'analyse
+dans la réponse du repli payant (`source`, `analyse`). Ni prix, ni quota, ni règle de débit, ni IA, ni migration.
+
+Vérifications :
+
+- suites complètes, `TZ=UTC`, Python 3.12 installé depuis `requirements.lock`, sans réseau : SQLite, 2 417 sur
+  2 417 ; PostgreSQL 16.2 jetable (`scripts/tests_postgres.py`), 2 417 sur 2 417 (2 404 + 13) ;
+- `scripts/sri_update.py`, puis `--check` : empreintes à jour (`app.html`, `sri-manifest.json`) ;
+- `node --check` : `app.js` et `i18n.js`, 0 erreur ; gabarit de l'application compilé par le Vue du dépôt (dans la
+  suite) ;
+- `scripts/i18n_ajouter.py --check` : 815 clés, néerlandais et espagnol (25 phrases nouvelles) ;
+- **navigateur réel**, serveur local sur ce code, base jetable, réseau sortant coupé (seule la boucle locale), BOAMP,
+  Mégalis et DECP servis depuis les jeux d'essai réels du dépôt, IA simulée. Démo ouverte par **lien privé**, clé de
+  test locale écrite dans un fichier, jamais affichée, `DEMO_PUBLIC` absent. Vu à 1 280 et à 375 px, en clair et en
+  sombre : Publiés (six avis rectifiés du BOAMP : quatre « Date limite repoussée au … », dont « 06/11/2026 (rectificatif du
+  06/10/2026) », un « Avis rectifié » et un « Date limite non précisée » avec sa bulle ; les consultations Mégalis au nom nettoyé ; l'invitation « classement adapté ») ; « Voir les
+  marchés pour mon entreprise » avec et sans métier, « Dire mon métier », puis retour arrière vers Trouver, la
+  demande disparue, la recherche partie sur le métier saisi ; À venir sur la DECP (974, « durée publiée ») et au repli
+  payant (29, « 1 analyse consommée », compteur relu) ; la bulle du crédit dans la fenêtre à 375 px ; la démo
+  (Publiés, À venir sans la ligne du crédit, « durée publiée ») et sa page d'exemple d'une délibération. Aucun
+  défilement horizontal à 375 px (largeur du document égale à celle de la fenêtre), aucune erreur de script.
+
+Ce qui change dans la démo de pitch : les cartes de recherche perdent « confiance » et « adéquation » ; après « Voir
+les marchés pour mon entreprise », le champ des mots montre son premier métier (« toiture ») ; ses fins de contrat
+disent « Fin du contrat estimée le … (durée publiée) ». Côté serveur, sa recherche et ses fins de contrat restent
+servies à part : ses cartes de recherche gagnent seulement les deux champs vides `date_limite_rectificatif` et
+`date_limite_rectificatif_le`, et ses fins de contrat ne changent pas. `tests/test_demo_*.py` et
+`test_demo_sans_cout.py` restent verts.
 
 Aucune migration nouvelle, aucune variable Railway, rien n'a été mis en ligne ni poussé.

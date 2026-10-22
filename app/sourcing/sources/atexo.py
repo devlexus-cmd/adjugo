@@ -109,6 +109,20 @@ def _clean(s):
     return re.sub(r"\s+", " ", s or "").strip()
 
 
+# « COMMUNE DE SAINT SAUVEUR (29400 - SAINT-SAUVEUR) » : la plateforme accole au nom de l'organisme son code postal et
+# sa ville. Le nom affiché sur la carte, dans le courriel d'alerte et dans Mes marchés est le nom seul (lot 1 « Dire
+# juste », partie écran, point 10 ; étude moteur § 6.2 point 3) ; la parenthèse est aussi retirée quand la page la
+# coupe (« (29750 - LO… »). Seule la forme « (5 chiffres - ville) » en fin de nom est retirée : rien d'autre n'est
+# deviné ni réécrit (majuscules, sigles « SPL » gardés).
+_CP_VILLE_FINAL = re.compile(r"\s*\(\s*\d{5}\s*-[^()]*\)?\s*$")
+
+
+def nom_organisme(organisme: str) -> str:
+    """Le nom de l'organisme sans « (code postal - ville) » final ; le texte tel quel s'il ne reste rien."""
+    brut = _clean(organisme)
+    return _CP_VILLE_FINAL.sub("", brut).strip() or brut
+
+
 def _parse_date(text):
     """Date limite d'un bloc de résultat lu en TEXTE (repli quand la case « clôture » manque) : la dernière
     date « jour mois année » du bloc, le mois lu dans la table explicite de app/sourcing/dates_fr.py
@@ -181,8 +195,10 @@ def _parse_page(html, source_name, base):
         cons_url = base + (href if href.startswith("/") else "/" + href)
         cons_url = re.split(r"#|&code=", cons_url)[0]
         trouvee, cloture = _date_cloture(node)
+        # Le nom affiché est nettoyé (nom_organisme) ; le lieu et la clé de fusion lisent toujours le texte de la page,
+        # tel qu'avant : la note, la fusion avec le BOAMP et la mémoire des alertes ne changent pas.
         te = NormalizedTender(
-            objet=titre[:400], acheteur=organisme or None,
+            objet=titre[:400], acheteur=nom_organisme(organisme) or None,
             date_limite=cloture if trouvee else _parse_date(t),
             lieu=organisme or None, departements=[dep] if dep else [],
             nature="Marché public", dce_url=cons_url,

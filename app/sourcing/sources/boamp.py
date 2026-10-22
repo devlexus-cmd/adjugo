@@ -292,12 +292,13 @@ class BoampSource(TenderSource):
         """Applique à la fiche `t` ses rectificatifs, du plus ancien au plus récent : le dernier qui parle de la
         date limite la fixe (lue sans doute possible, sinon vide et signalée « non lue »)."""
         rects = sorted(rects, key=_ordre)
-        date_avant, date_courante, concerne = t.date_limite, t.date_limite, False
+        date_avant, date_courante, concerne, fixe_par = t.date_limite, t.date_limite, False, None
         for r in rects:
             lecture = lire_rectificatif(r)
             if lecture["concerne"]:
                 concerne = True
                 date_courante = lecture["date"]
+                fixe_par = r
         t.rectificatifs = [Provenance(source=self.name, official_ref=_idweb(r),
                                       source_url=(r.get("url_avis") or _URL_AVIS.format(_idweb(r))))
                            for r in rects if _idweb(r)]
@@ -307,6 +308,13 @@ class BoampSource(TenderSource):
                 t.date_limite_initiale = date_avant
                 t.date_limite = date_courante
             t.date_limite_rectifiee_non_lue = date_courante is None
+            # Le rectificatif qui fixe cette date (ou la rend « non précisée ») : le dernier qui parle de la date limite,
+            # pas forcément le dernier paru (rectifie_le). L'écran dit « (rectificatif du …) » avec son lien.
+            if fixe_par is not None and _idweb(fixe_par):
+                t.date_limite_rectificatif = Provenance(
+                    source=self.name, official_ref=_idweb(fixe_par),
+                    source_url=(fixe_par.get("url_avis") or _URL_AVIS.format(_idweb(fixe_par))))
+                t.date_limite_rectificatif_le = (fixe_par.get("dateparution") or "")[:10] or None
         t.confidence = self._confidence(t)
         t.dedup_key = _dedup_key(t)
 

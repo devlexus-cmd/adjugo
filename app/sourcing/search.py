@@ -224,7 +224,7 @@ def _dedup_tenders(tenders: list[NormalizedTender]) -> list[NormalizedTender]:
             # du BOAMP n'a pas permis de lire (date_limite_rectifiee_non_lue) n'est JAMAIS comblée par celle
             # d'un doublon : elle pourrait être l'ancienne (lot 1, point 2).
             for f in ("acheteur", "montant_estime", "date_limite", "dce_url", "procedure",
-                      "rectifie_le", "date_limite_initiale"):
+                      "rectifie_le", "date_limite_initiale", "date_limite_rectificatif", "date_limite_rectificatif_le"):
                 if f == "date_limite" and existing.date_limite_rectifiee_non_lue:
                     continue
                 if getattr(existing, f) in (None, "", []) and getattr(t, f) not in (None, "", []):

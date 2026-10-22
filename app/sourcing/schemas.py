@@ -92,6 +92,11 @@ class NormalizedTender(BaseModel):
     # True : un rectificatif change la date limite mais sa nouvelle date n'a pas pu être lue sans doute
     # possible → date_limite reste vide (« non précisée »), jamais l'ancienne date ni une date devinée.
     date_limite_rectifiee_non_lue: bool = False
+    # Le rectificatif qui fixe la date limite (ou la rend « non précisée ») et sa date de parution : le dernier qui parle
+    # de la date limite, pas forcément le dernier paru (rectifie_le). L'écran dit « Date limite repoussée au …
+    # (rectificatif du …) » avec ce lien (lot 1, partie écran, point 10). None si aucun rectificatif ne parle de la date.
+    date_limite_rectificatif: Optional[Provenance] = None
+    date_limite_rectificatif_le: Optional[str] = None
     raw: dict[str, Any] = {}                   # payload brut (traçabilité)
 
     @field_validator("dce_url", mode="before")

@@ -23,7 +23,7 @@
 <script src="/static/vendor/lucide-1.20.0.min.js" integrity="sha384-vEpkK5oidsrH6UhRc6tAPlgJZ/qXFwumFY+Kx8vBSeZ7NBag809YZCSmxFYGe/pt"></script>
 <!-- Chiffrement par membre du détail de chiffrage (co-traitance v2) : window.AdjugoCrypto, chargé AVANT app.js -->
 <script src="/static/cotraitance-crypto.js" integrity="sha384-q8DL80RVudBWgsaCfc4AJZ3iCrB4O6OoIs5lA81bOty2NmjC5qh+tkxKPVJDzShC"></script>
-<script src="/static/i18n.js" integrity="sha384-yyO9vA7wJ1wHk2t9xqCFECkv2IXqHRswQMkPX1tLokM9S9u5KsGHnFc6VwyyB3If" defer></script>
+<script src="/static/i18n.js" integrity="sha384-9l8ANhwMBOLmpPuawRM9yDzUdiOJ9j7Jn4GcU0l4LAkz1ttjNIyQxIAXkGXXzdAH" defer></script>
 </head>
 <body>
 <div id="app">
@@ -1575,14 +1575,21 @@
           <!-- Onglets de Trouver des marchés (réorganisation, vague 1, 1.3) : « Publiés » (la recherche, plus bas),
                « À venir » (les contrats qui arrivent à échéance, anciennement le radar en haut des résultats) et
                « Mes alertes ». L'onglet est choisi par onglets-rubrique (trouverOnglet). -->
-          <!-- À venir : contrats déjà attribués dont la fin estimée approche -->
+          <!-- À venir : contrats déjà attribués dont la fin estimée approche. Lot 1 « Dire juste », partie écran, point 12
+               (docs/MOTEUR_LOT1.md, « Écran ») : la bulle dit la vraie source (la DECP, données publiées des marchés
+               attribués) et reste neutre en attendant l'avis juridique ; la date de republication devinée n'est plus
+               affichée ; le crédit du repli payant (sourcing.renewals) est annoncé avant le clic, et dit après. -->
           <div data-test="trouver-radar" v-if="trouverOnglet==='avenir'" class="card pad">
-            <div class="row wrap" style="gap:8px"><i data-lucide="calendar-clock" style="color:var(--accent-text)"></i><b style="font-size:13.5px">Contrats qui arrivent à échéance</b><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Marchés <b>déjà attribués</b> dont le contrat arrive à terme : positionnez-vous auprès du client <b>avant la republication</b>. Dates de fin <b>estimées</b> (durée citée si disponible), sources réelles BOAMP. Classés selon votre métier, votre zone et la date de fin estimée.</span></button></div>
+            <div class="row wrap" style="gap:8px"><i data-lucide="calendar-clock" style="color:var(--accent-text)"></i><b style="font-size:13.5px">Contrats qui arrivent à échéance</b><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Marchés déjà attribués dont le contrat arrive à terme : préparez votre réponse et vos partenaires avant la republication. La fin du contrat est estimée d'après les données publiées des marchés attribués : la date de notification et la durée publiée. Classés selon votre métier, votre zone et la date de fin estimée.</span></button></div>
             <div class="row wrap" style="margin-top:10px">
               <input class="inp" v-model="src.query" placeholder="Mots-clés métier (rénovation, gros œuvre…)" @keyup.enter="srcRenewals()" style="flex:1;min-width:200px" aria-label="Mots-clés métier">
               <input ref="srcRenDep" class="inp" v-model="src.dept" placeholder="Départements (29, 56…)" @keyup.enter="srcRenewals()" style="width:165px" aria-label="Départements">
-              <button class="btn primary" @click="srcRenewals()" :disabled="src.renewals.loading"><span v-if="src.renewals.loading" class="spin"></span><i v-else data-lucide="search"></i>Chercher les fins de contrat</button>
+              <button class="btn primary" @click="srcRenewals()" :disabled="src.renewals.loading" :aria-describedby="estDemo() ? null : 'avenir-credit'"><span v-if="src.renewals.loading" class="spin"></span><i v-else data-lucide="search"></i>Chercher les fins de contrat</button>
             </div>
+            <!-- Le crédit avant le clic (décision 12) ; la démo de pitch n'est jamais débitée (demo_search.renewals_results) :
+                 elle ne voit pas cette ligne. -->
+            <p v-if="!estDemo()" id="avenir-credit" class="avenir-credit small muted"><i data-lucide="coins" aria-hidden="true"></i><span>Une recherche complémentaire peut consommer 1 analyse : remboursée si elle ne trouve rien, toujours remboursée en outre-mer et en Corse.</span><button type="button" class="tip tip-l"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">La recherche dans les données publiées des marchés attribués ne consomme aucune analyse. Si elle ne donne rien, ou si ces données ne répondent pas, Adjugo cherche aussi dans les avis d'attribution du BOAMP, lus par l'IA : cette recherche complémentaire consomme 1 analyse, remboursée si elle ne trouve aucune fin de contrat, et toujours remboursée dès qu'un des départements demandés est en outre-mer ou en Corse. Il faut une analyse disponible pour la lancer. Ses durées de contrat sont lues dans l'intitulé de l'avis ou estimées selon le type de contrat.</span></button></p>
+            <p v-if="src.renewals.analyse" class="avenir-credit small muted" role="status"><i data-lucide="coins" aria-hidden="true"></i><span>{{ src.renewals.analyse==='debitee' ? "Recherche complémentaire dans les avis d'attribution du BOAMP : 1 analyse consommée." : "Recherche complémentaire dans les avis d'attribution du BOAMP : analyse remboursée." }}</span></p>
             <!-- État vide (vague 2b, B1, étude § 7.3) : ce que montre l'onglet, et « Modifier ma zone ». Les projets votés en
                  conseil n'y sont pas annoncés : cette fonction (Veille V1) n'est pas en ligne. Relecture de la vague 2b :
                  la zone de cette recherche est le champ « Départements » de l'onglet (srcDeps), jamais celle de « Ce que je
@@ -1591,18 +1598,21 @@
               <span class="muted">{{ src.renewals.done ? "Aucune échéance proche sur ce périmètre." : "Contrats de votre zone qui arrivent à échéance." }}</span>
               <button type="button" class="linkbtn small" @click="srcRenZone()">Modifier ma zone</button>
             </div>
-            <div v-for="r in src.renewals.list" :key="r.idweb" class="row" style="padding:10px;margin-top:8px;border:1px solid var(--border);border-radius:10px;align-items:flex-start;gap:10px">
-              <div style="flex:1;min-width:0">
+            <div v-for="r in src.renewals.list" :key="r.idweb" class="row avenir-carte" style="padding:10px;margin-top:8px;border:1px solid var(--border);border-radius:10px;align-items:flex-start;gap:10px">
+              <div style="flex:1 1 260px;min-width:0">
+                <!-- « Fin du contrat estimée le … (durée publiée) » : la fin calculée par le serveur (date de notification +
+                     durée publiée dans la DECP ; au repli, date de l'avis d'attribution + durée lue ou estimée), jamais la
+                     date de republication devinée (renouvellement_estime, fin − 120 jours), qui ne sert plus qu'au tri. -->
                 <div class="row wrap" style="gap:6px">
-                  <span class="pill go">Renouvellement ~ {{ fmtDate(r.renouvellement_estime) }}</span>
+                  <span class="pill go avenir-fin"><span>Fin du contrat estimée le</span><span>{{ fmtDate(r.fin_estimee) }}</span><span>{{ srcRenDuree(r) }}</span></span>
                   <span v-if="r.type_contrat" class="pill st-envoye">{{ r.type_contrat }}</span>
-                  <span class="pill" :class="r.duree_estimee?'a_etudier':'neutral'" style="font-size:10px">durée {{ r.duree_mois }} mois{{ r.duree_estimee?' (estimée)':' (réelle)' }}</span>
+                  <span class="pill" :class="r.duree_estimee?'a_etudier':'neutral'" style="font-size:10px">durée {{ r.duree_mois }} mois</span>
                   <span v-if="r.montant" class="pill neutral" style="font-size:10px">{{ Math.round(r.montant).toLocaleString('fr-FR') }} €</span>
                   <span v-if="r.source_plateforme" class="pill neutral" style="font-size:10px">{{ r.source_plateforme }}</span>
                 </div>
                 <div class="strong" style="margin-top:7px;line-height:1.35">{{ r.objet }}</div>
-                <div class="muted small" style="margin-top:3px">{{ r.acheteur||'Acheteur' }}<span v-if="r.lieu"> · dépt {{ r.lieu }}</span> · notifié le {{ fmtDate(r.date_attribution) }} · fin estimée {{ fmtDate(r.fin_estimee) }}</div>
-                <a v-if="r.url" :href="safeUrl(r.url)" target="_blank" rel="noopener" class="small" style="margin-top:5px;display:inline-flex;align-items:center;gap:5px;color:var(--accent-text);font-weight:500"><i data-lucide="external-link" style="width:12px;height:12px"></i>{{ r.source_plateforme!==undefined ? 'Voir la fiche acheteur' : 'Voir l\'avis d\'attribution' }}</a>
+                <div class="muted small" style="margin-top:3px">{{ r.acheteur||'Acheteur' }}<span v-if="r.dept"> · dépt {{ r.dept }}</span> · <span>{{ src.renewals.source==='BOAMP' ? 'attribution publiée le' : 'notifié le' }}</span> {{ fmtDate(r.date_attribution) }}</div>
+                <a v-if="r.url" :href="safeUrl(r.url)" target="_blank" rel="noopener" class="small" style="margin-top:5px;display:inline-flex;align-items:center;gap:5px;color:var(--accent-text);font-weight:500"><i data-lucide="external-link" style="width:12px;height:12px"></i>{{ src.renewals.source==='BOAMP' ? 'Voir l\'avis d\'attribution' : 'Voir la fiche acheteur' }}</a>
               </div>
               <!-- Décision 11 : le premier geste de travail crée la carte dans Mes marchés, à l'étape « À venir », avant la
                    publication ; on y invite ses partenaires. -->
@@ -1676,7 +1686,13 @@
             <div class="eic"><i data-lucide="target"></i></div>
             <h4>Trouvez vos marchés</h4><p>Marchés réels issus des sources officielles (BOAMP, TED, Mégalis Bretagne).</p>
             <button class="btn primary" style="margin-top:12px" @click="srcSearchMine()"><i data-lucide="sparkles"></i>Voir les marchés pour mon entreprise</button>
-            <div class="muted small" style="margin-top:6px">D'après vos spécialités et votre département.</div>
+            <!-- Lot 1 « Dire juste », partie écran, point 11 : le métier vient de « Ce que je cherche » (sa première
+                 spécialité) ; sans métier, l'écran le demande, avec le chemin, au lieu de chercher « travaux » sans le dire. -->
+            <div class="muted small" style="margin-top:6px">D'après votre premier métier, dans « Ce que je cherche », et le département de votre code postal.</div>
+            <div v-if="src.manqueMetier && !srcMetier()" class="trouver-manque-metier small" role="status">
+              <span>Dites d'abord votre métier : la recherche part de la première spécialité de « Ce que je cherche ».</span>
+              <button ref="srcDireMetier" type="button" class="btn sm" @click="srcDireMetier()"><i data-lucide="pencil"></i>Dire mon métier</button>
+            </div>
             <p v-if="ppRappel('suivre')" class="pp-rappel small"><i data-lucide="rocket" aria-hidden="true"></i><span>Vos premiers pas :</span> <span>{{ ppRappel('suivre').titre }}</span> <span class="pill pp-st" :class="ppRappel('suivre').pill">{{ ppRappel('suivre').libelle }}</span></p>
           </div>
           <!-- 0 résultat après recherche : carte ACTIONNABLE (élargir en un clic) (#2) -->
@@ -1695,17 +1711,26 @@
           <div data-test="trouver-carte" v-for="(t,ti) in src.tenders" :key="ti" class="card pad" style="margin-top:10px">
             <div class="row" style="align-items:flex-start;gap:12px">
               <div style="flex:1;min-width:0">
+                <!-- Lot 1 « Dire juste », partie écran, point 10 (docs/MOTEUR_LOT1.md, « Écran ») : aucun nombre avant le
+                     dossier (décision 8 : ni « confiance N % », ni « adéquation N/100 ») ; les mots « Bon potentiel », « À
+                     étudier », « Peu adapté » attendent le barème corrigé de la V1. Les cartes restent rangées par la note
+                     (search.py) : sans métier ni zone, on invite à les dire. -->
                 <div class="row" style="gap:6px;flex-wrap:wrap">
                   <span class="pill neutral">{{ t.provenance.source }}</span>
-                  <span class="pill" :class="confClass(t.confidence)">confiance {{ Math.round(t.confidence*100) }}%</span>
-                  <!-- Pré-tri = adéquation À VOS CRITÈRES (hors DCE). Sans critères renseignés,
-                       le score ne mesure pas l'adéquation au client → on invite à les définir. -->
-                  <span v-if="t.score && t.score.fit_assessable===false" class="pill" style="font-size:10px;background:rgba(234,179,8,.12);color:#92400e;cursor:pointer" @click="go('criteria')" title="Renseignez vos spécialités et votre zone pour un score adapté à votre entreprise"><i data-lucide="settings" style="width:11px;height:11px;vertical-align:-1px"></i> Dites ce que vous cherchez pour un score adapté</span>
-                  <span v-else-if="t.score && typeof t.score.total==='number'" class="pill" :class="t.score.total>=66?'go':t.score.total>=40?'a_etudier':'neutral'" :title="'Adéquation à VOS critères (pré-tri avant analyse du DCE)'">adéquation {{ t.score.total }}/100</span>
+                  <button v-if="t.score && t.score.fit_assessable===false" type="button" class="pill a_etudier trouver-fit" @click="go('criteria')" title="Renseignez vos spécialités et votre zone pour un classement adapté à votre entreprise"><i data-lucide="settings" aria-hidden="true"></i><span>Dites ce que vous cherchez pour un classement adapté</span></button>
                   <a :href="safeUrl(t.provenance.source_url)" target="_blank" class="small row" style="gap:3px;color:var(--accent-text);font-weight:500">Voir l'annonce officielle<i data-lucide="external-link" style="width:13px;height:13px"></i></a>
                 </div>
                 <div class="strong" style="margin-top:7px;line-height:1.4">{{ t.objet }}</div>
-                <div class="muted small" style="margin-top:3px">{{ t.acheteur||'Client non précisé' }} · dépt {{ t.departements.join(', ')||'non précisé' }} · limite {{ t.date_limite||'non précisée' }}</div>
+                <div class="muted small" style="margin-top:3px">{{ t.acheteur||'Client non précisé' }} · dépt {{ t.departements.join(', ')||'non précisé' }}<template v-if="!srcRectif(t) || srcRectif(t).etat==='rectifie'"> · limite {{ t.date_limite ? fmtDate(t.date_limite) : 'non précisée' }}</template></div>
+                <!-- Rectificatifs du BOAMP (lot 1, partie serveur, § S.2) : la date que fixe le rectificatif, avec son lien ;
+                     une date qui n'a pas pu être lue n'est jamais remplacée par l'ancienne. -->
+                <p v-if="srcRectif(t)" class="trouver-rectif small">
+                  <template v-if="srcRectif(t).etat==='non_lue'"><b>Date limite non précisée</b></template>
+                  <template v-else-if="srcRectif(t).etat==='rectifie'"><span>Avis rectifié</span></template>
+                  <template v-else><b>{{ srcRectif(t).etat==='avancee' ? 'Date limite avancée au' : 'Date limite repoussée au' }}</b> <b>{{ srcRectif(t).date }}</b></template>
+                  <template v-if="srcRectif(t).lien"><span>&nbsp;(</span><a :href="safeUrl(srcRectif(t).lien)" target="_blank" rel="noopener"><span>{{ srcRectif(t).le ? 'rectificatif du' : 'voir le rectificatif' }}</span><span v-if="srcRectif(t).le">&nbsp;{{ srcRectif(t).le }}</span></a><span>)</span></template>
+                  <button v-if="srcRectif(t).etat==='non_lue'" type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Un rectificatif de cet avis porte sur sa date limite, mais Adjugo n'a pas pu lire la nouvelle date avec certitude : lisez-la sur le rectificatif. L'ancienne date n'est pas montrée : elle peut ne plus être la bonne.</span></button>
+                </p>
               </div>
             </div>
             <div class="row" style="margin-top:10px;gap:8px;align-items:center">
@@ -4632,6 +4657,6 @@
 <script src="/static/redaction-partenaire.js" integrity="sha384-0jgm5b/r+FlC5YZVhiyqvLZyxecxtCABbOw03QuJfDDsfua5T9wxISR2Hfis2Dh+" defer></script>
 <script src="/static/sources-publiques.js" integrity="sha384-/0soYF6qmMI5KHOb/uzkHBoYNeOr5+R784XFb0c0+HjUkhtEyVBgunl6Xo08Dok+" defer></script>
 <script src="/static/carnet-notes.js" integrity="sha384-/jbwJaEiImCDEsYHkGeIht+znVCg4i9vSGuAfG6SRpjAST+OI5nP9fPwr8Py0NPV" defer></script>
-<script src="/static/app.js" integrity="sha384-lcSg8Ov/Q57pQcEXsJtyEouyNkpRqcnmhxsLnk7TkfvW5a+qrgaD3Qpvgbz+rouv" defer></script>
+<script src="/static/app.js" integrity="sha384-BCngVx42pwUFOstJ9kat7HJlLhaXX0XsjKLXBw1C9XG401RGVf0KlveNO0D7JMwJ" defer></script>
 </body>
 </html>

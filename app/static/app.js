@@ -580,6 +580,43 @@ function zoneDuCodePostal(cp) {
   const d = depDuCodePostal(cp);
   return d === "20" ? "2A, 2B" : d;
 }
+// ══════════ Moteur, lot 1 « Dire juste », partie écran (docs/MOTEUR_LOT1.md, section « Écran ») — fonctions pures ══════════
+// Point 11 : le métier de « Voir les marchés pour mon entreprise » est la première spécialité de « Ce que je cherche »
+// (app/routers/criteria_v2.py, `specialites`), comme la recherche la reçoit ; « » sans spécialité (l'écran la demande).
+// La fiche Identité n'a pas ce champ : l'ancien code l'y cherchait, ne trouvait rien, et le BOAMP cherchait « travaux ».
+function metierCherche(criteres) {
+  return String((criteres && criteres.specialites) || "").split(/[,;]/).map(s => s.trim()).filter(Boolean)[0] || "";
+}
+// Point 12 : d'où vient la durée d'une fin de contrat. `source` : celle de la réponse de /api/sourcing/renewals, « DECP »
+// (durée publiée : app/services/decp.py), « BOAMP » pour le repli payant (durée lue par l'IA dans l'intitulé de l'avis
+// d'attribution, ou estimée selon le type de contrat quand elle n'y est pas : app/services/renewal.py).
+function dureeFinDeContrat(r, source) {
+  if (r && r.duree_estimee) return "(durée estimée selon le type de contrat)";
+  return source === "BOAMP" ? "(durée lue dans l'intitulé de l'avis)" : "(durée publiée)";
+}
+// Point 10 : ce que la carte dit d'un avis rectifié du BOAMP (champs du serveur, app/sourcing/schemas.py), dates ISO.
+// « non_lue » : un rectificatif porte sur la date limite, mais sa nouvelle date n'a pas pu être lue — jamais l'ancienne
+// date à la place ; « repoussee » / « avancee » : la date que fixe le rectificatif, l'ancienne étant connue ; « rectifie » :
+// un avis rectifié dont la date ne change pas. Le rectificatif cité est celui qui fixe la date (date_limite_rectificatif),
+// sinon le dernier paru. null : aucun rectificatif.
+function rectifDeCarte(t) {
+  if (!t) return null;
+  const rects = Array.isArray(t.rectificatifs) ? t.rectificatifs.filter(Boolean) : [];
+  const fixe = t.date_limite_rectificatif || null;
+  if (!rects.length && !fixe) return null;
+  const dernier = rects.length ? rects[rects.length - 1] : null;
+  const parDate = (fixe && fixe.source_url) ? { lien: fixe.source_url, le: t.date_limite_rectificatif_le || "" }
+    : { lien: (dernier && dernier.source_url) || "", le: t.rectifie_le || "" };
+  if (t.date_limite_rectifiee_non_lue) return Object.assign({ etat: "non_lue", date: "" }, parDate);
+  const avant = t.date_limite_initiale || "", apres = t.date_limite || "";
+  if (avant && apres && avant !== apres) return Object.assign({ etat: apres > avant ? "repoussee" : "avancee", date: apres }, parDate);
+  return { etat: "rectifie", date: "", lien: (dernier && dernier.source_url) || parDate.lien, le: t.rectifie_le || parDate.le };
+}
+// Le compte de la démo de pitch (même règle que app/services/demo_search.is_demo) : ses fins de contrat sont servies à part,
+// sans réseau, sans IA ni analyse débitée (demo_search.renewals_results) ; l'annonce du crédit ne la concerne pas.
+function estCompteDemo(user) {
+  return String((user && user.email) || "").trim().toLowerCase() === DEMO_EMAIL_APP;
+}
 // Confirmation d'email vivante (décision 12 (a)) : l'écran revérifie seul, sans marteler le serveur — toutes les 5 s
 // pendant 2 minutes, puis toutes les 15 s jusqu'à 15 minutes, puis chaque minute ; seulement quand l'onglet est visible,
 // et tout de suite quand on y revient. `ecouleMs` : depuis l'affichage de l'écran (ou le dernier retour sur l'onglet).
@@ -1456,8 +1493,9 @@ const __adjApp = createApp({
         offset: 0, hasMore: false, loadingMore: false,
         analyzing: false, analysis: null, projectId: null, chosen: null, lectureMsg: "",
         alerts: [],
-        renewals: { list: [], loading: false, done: false, prep: "" },
-        searched: false, empty: null, prefilled: false,
+        // source : « DECP » ou « BOAMP » (repli payant) ; analyse : « debitee » / « remboursee » après un repli payant.
+        renewals: { list: [], loading: false, done: false, prep: "", source: "", analyse: "" },
+        searched: false, empty: null, prefilled: false, manqueMetier: false,
         marketEst: null, marketEstBusy: false,
       },
       ao: { project: null, dossier: null, generating: false, uploading: false, back: "dashboard",
@@ -5707,13 +5745,22 @@ const __adjApp = createApp({
       const el = this.$refs.srcRenDep;
       if (el && el.focus) { el.focus(); try { el.select(); } catch (e) {} }
     },
+    // Lot 1, partie écran, point 12 : la durée d'une fin de contrat dite avec sa source (dureeFinDeContrat).
+    srcRenDuree(r) { return dureeFinDeContrat(r, this.src.renewals.source); },
+    // La démo de pitch n'est jamais débitée : la ligne du crédit de « À venir » ne lui est pas montrée.
+    estDemo() { return estCompteDemo(this.user); },
     async srcRenewals() {
       if (this.src.renewals.loading) return;   // Entrée maintenue dans les champs de l'onglet « À venir » : une seule recherche
       this.src.renewals.loading = true; this.src.renewals.done = false;
       this.src.renewals.list = [];   // vide le scan précédent (sinon résultats périmés affichés)
+      this.src.renewals.source = ""; this.src.renewals.analyse = "";
       try {
         const r = await this.api("POST", "/api/sourcing/renewals", { query: this.src.query || "travaux", departements: this.srcDeps() });
         this.src.renewals.list = r.renewals || []; this.src.renewals.done = true;
+        // Repli payant (« BOAMP ») : l'écran dit ce qu'est devenue l'analyse, et le compteur d'analyses est relu.
+        this.src.renewals.source = r.source === "BOAMP" ? "BOAMP" : (r.source || "");
+        this.src.renewals.analyse = (r.analyse === "debitee" || r.analyse === "remboursee") ? r.analyse : "";
+        if (this.src.renewals.analyse) this.loadStats();
         this.notify(r.count ? (r.count + " marché(s) en fin de contrat détecté(s)") : "Aucune échéance proche sur ce périmètre", r.count ? "ok" : "err");
       } catch (err) {
         if ((err.message || "").toLowerCase().includes("uota")) { this.notify("Quota d'analyses atteint", "err"); this.go("billing"); }
@@ -5799,19 +5846,47 @@ const __adjApp = createApp({
     },
     srcLoadMore() { return this.srcSearch(true); },
     // ── #3 Pré-remplissage de la 1re recherche depuis le profil (fin de la page blanche) ──
+    // Le département seulement : le métier n'est pas dans la fiche Identité (l'ancien code y lisait `specialites`, champ
+    // qui n'existe pas) ; « Voir les marchés pour mon entreprise » le lit dans « Ce que je cherche » (srcSearchMine).
     srcPrefillFromProfile() {
       if (this.src.prefilled || this.src.searched) return;
       const c = this.company || {};
-      const spec = (c.specialites || "").split(/[,;]/).map(s => s.trim()).filter(Boolean)[0];
-      if (spec && !this.src.query) this.src.query = spec;
       const dep = zoneDuCodePostal(c.postal_code);
       if (dep && !this.src.dept) this.src.dept = dep;
       this.src.prefilled = true;
     },
-    srcSearchMine() {   // « Voir les marchés pour mon entreprise »
+    srcMetier() { return metierCherche(this.criteria); },
+    // « Voir les marchés pour mon entreprise » (lot 1, partie écran, point 11) : la première spécialité de « Ce que je
+    // cherche », relue si elle manque (un collègue a pu l'enregistrer) ; sans elle, l'écran la demande, avec le chemin
+    // (srcDireMetier), et ne lance rien — avant, la recherche partait sans mot et le BOAMP cherchait « travaux ».
+    async srcSearchMine() {
       this.srcPrefillFromProfile();
-      if (!(this.src.query || "").trim() && !this.src.dept) { this.go("company"); this.notify("Complétez vos spécialités et votre zone", "err"); return; }
+      if (!this.srcMetier()) {
+        // Relue sans écraser « Ce que je cherche » (une saisie non enregistrée y reste) : seule la spécialité vide est prise.
+        try {
+          const enregistre = await this.api("GET", "/api/criteria/");
+          if (metierCherche(enregistre) && this.criteria && !String(this.criteria.specialites || "").trim()) this.criteria.specialites = enregistre.specialites;
+        } catch (e) {}
+      }
+      const metier = this.srcMetier();
+      if (!metier) {
+        this.src.manqueMetier = true;
+        this.$nextTick(() => { const b = this.$refs.srcDireMetier; if (b && b.focus) b.focus(); });
+        return;
+      }
+      this.src.manqueMetier = false;
+      this.src.query = metier;
       this.srcSearch();
+    },
+    // Le chemin direct : Mon entreprise › Ce que je cherche, le curseur dans « Spécialités ».
+    srcDireMetier() {
+      this.go("criteria");
+      this.$nextTick(() => { const el = document.getElementById("crit-spec"); if (el && el.focus) el.focus(); });
+    },
+    // Lot 1, partie écran, point 10 : la ligne du rectificatif d'une carte (rectifDeCarte), dates au format de l'écran.
+    srcRectif(t) {
+      const x = rectifDeCarte(t);
+      return x && Object.assign({}, x, { date: x.date ? this.fmtDate(x.date) : "", le: x.le ? this.fmtDate(x.le) : "" });
     },
     // ── #2 Élargir la recherche en un clic ──
     srcWiden(kind) {
@@ -6196,7 +6271,6 @@ const __adjApp = createApp({
       this.openAo(p);   // ao.share est posé tout de suite (avant le premier appel réseau)
       if (inviter) this.aoInviter();   // le formulaire d'invitation, en tête de la page du marché
     },
-    confClass(c) { return c >= 0.8 ? "go" : c >= 0.5 ? "a_etudier" : "neutral"; },
     critStatus(s) { return ({ ok: "go", partiel: "a_etudier", inconnu: "neutral" })[s] || "neutral"; },
     // ══════════ Atelier du dossier de présentation (rédaction, vague 2) ══════════
     // Contrat : docs/REDACTION_V2_API.md. Carte sur la page du marché (état + UN bouton) et vue

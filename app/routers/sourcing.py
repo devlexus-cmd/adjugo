@@ -352,11 +352,15 @@ def renewals(request: Request, req: RenewalRequest,
     # fenêtre, ou erreur) : pas de valeur rendue = pas de quota débité. En outre-mer et en Corse, toujours remboursé,
     # même s'il trouve (décision 1 de la réunion du 22/10 : _repli_rembourse_par_zone) ; le journal le dit.
     par_zone = _repli_rembourse_par_zone(deps)
-    if par_zone or not res.get("renewals"):
+    rembourse = par_zone or not res.get("renewals")
+    if rembourse:
         refund_analysis(current_user, db)
     _journal_repli_a_venir(motif, deps, res, REMBOURSE_PAR_ZONE if par_zone
                            else ("débitée" if res.get("renewals") else "remboursée"))
-    return res
+    # Partie écran du lot 1 (point 12) : l'onglet dit d'où viennent ces fins de contrat (avis d'attribution du BOAMP,
+    # durée lue ou estimée, pas la durée publiée de la DECP) et ce qu'est devenue l'analyse, débitée ou remboursée.
+    # Rien d'autre ne change : même débit, même remboursement.
+    return {**res, "source": "BOAMP", "analyse": "remboursee" if rembourse else "debitee"}
 
 
 # Sort de l'analyse noté au journal quand le repli est remboursé parce qu'il porte sur l'outre-mer ou la Corse.

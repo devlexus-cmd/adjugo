@@ -2,7 +2,7 @@
 
 Contrat du lot 1 du moteur de recherche des marchés. Note de décisions : « Projets à venir et moteur de recherche :
 les décisions » (21/10/2026), section « La première étape que je lancerais : le lot 1 « Dire juste » », points 1 à 9
-(partie serveur) ; les points 10 à 13 (écran) viennent après la vague 2b. Étude de référence : « Le moteur de recherche
+(partie serveur) ; les points 10 à 13 (écran) viennent après la vague 2b (section « Écran », à la fin). Étude de référence : « Le moteur de recherche
 d'appels d'offres : étude définitive » (12/10/2026), § 2, § 4.4, § 6.2, § 6.6, § 7, § 8, § 9. Base :
 `feat/produit-acheteur-collectivites` = `0afc1ed` (production du 20/10/2026, Postgres).
 
@@ -33,7 +33,8 @@ change (voir « Ce qui ne change pas », plus bas).*
 **Trouver des marchés (recherche)**
 1. Mégalis : les cartes montrent leur date limite (avant : « limite non précisée » ; 10 dates vides sur 10 sur la page
    réelle du 21/10/2026). L'ordre des résultats bouge un peu, et le nombre « adéquation N/100 » d'une carte Mégalis
-   peut changer (son délai de réponse compte enfin). [S.1]
+   peut changer (son délai de réponse compte enfin). [S.1] *Écran* : ce nombre n'est plus affiché ; seul l'ordre
+   bouge.
 2. Mégalis et BOAMP : une même consultation peut ne faire qu'une carte (« vu aussi sur »), mais seulement quand
    l'acheteur est écrit de la même façon des deux côtés. Sur les deux cas réels du 21/10/2026, aucun ne fusionne : ces
    consultations restent en deux cartes, comme avant. [S.1, R.4]
@@ -55,7 +56,8 @@ change (voir « Ce qui ne change pas », plus bas).*
    05/11/2026 »), sinon « limite non précisée », jamais l'ancienne date (forme jamais observée). [C.1]
 6. Le lien « Voir l'annonce officielle » reste celui de l'avis initial ; sur un avis rectifié, la date de la carte
    peut différer de celle de cette page (c'est la date du rectificatif). Le lien du rectificatif et « modifiée le … »
-   sont dans les données ; l'écran les montrera après la 2b. [S.2]
+   sont dans les données ; l'écran les montrera après la 2b. [S.2] *Écran* : montrés (« Date limite repoussée au …
+   (rectificatif du …) », avec le lien du rectificatif qui fixe la date).
 7. Plus de faux « métier correspondant » sur une carte BOAMP : sa note d'adéquation peut baisser. Une recherche avec
    des codes CPV ne ramène plus d'avis BOAMP sans rapport par ces codes (les mots-clés ne changent pas). [S.3]
 8. Outre-mer : une recherche « 971 », « 972 », « 973 », « 974 » ou « 976 » ne montre plus les avis des autres
@@ -972,3 +974,133 @@ l'onglet « Publiés » est enregistrée telle quelle. » « 10 au plus » est v
 comptés » ne l'est que pour les avis que l'envoi lit (25 demandés au BOAMP et à TED, 3 pages au plus de Mégalis) : la
 deuxième phrase le dit. Néerlandais et espagnol ajoutés (790 clés). Preuve :
 `test_d3_la_bulle_de_mes_alertes_dit_ce_que_fait_le_courriel`, `test_d3_ce_que_dit_la_bulle_est_vrai`.
+
+---
+
+## Écran
+
+*Partie écran du lot : points 10 à 13 de la note du 21/10/2026, posés sur `0f8eb32` (partie serveur, vague 2b, tests
+PostgreSQL). La bulle de « Mes alertes » était déjà corrigée (décision 3 du 22/10) : elle n'est pas touchée.*
+
+Fichiers : `app/static/app.html` (cartes de « Publiés », état vide, onglet « À venir »), `app/static/app.js` (quatre
+fonctions pures et leurs méthodes : `metierCherche`, `dureeFinDeContrat`, `rectifDeCarte`, `estCompteDemo` ;
+`srcSearchMine`, `srcPrefillFromProfile`, `srcRenewals`), `app/static/styles.css`, `app/static/i18n.js` (25 phrases
+en néerlandais et en espagnol, 815 clés), `app/static/demo/deliberation.html`, empreintes SRI. Trois ajouts au serveur,
+sans changer ce qu'il trouve ni ce qu'il débite : `atexo.nom_organisme` (nom de l'organisme Mégalis),
+`date_limite_rectificatif` et `date_limite_rectificatif_le` sur la fiche (`boamp._appliquer`, `schemas.py`, avec la
+garde des liens de `base.py` et la fusion de `search.py`), `source` et `analyse` dans la réponse du repli payant
+(`sourcing.renewals`). Tests : `tests/test_moteur_lot1_ecran.py` (13 tests, sans réseau), qui échouent tous sur
+`0f8eb32` ; un test existant adapté (plus bas). Ni prix, ni quota, ni règle de débit, ni IA, ni changement de base de
+données ; le robot de Mégalis inchangé ; la démo de pitch garde sa recherche et ses fins de contrat servies à part,
+sans réseau, IA ni analyse (ce que son écran change : `docs/MISE_EN_LIGNE_22_10.md`, section 5).
+
+### Ce qui change pour le client
+
+**Trouver des marchés › Publiés**
+1. Plus aucun nombre sur la carte : ni « confiance N % » (fixée à 70 % pour toute consultation Mégalis), ni « adéquation
+   N/100 » (décision 8 de l'organisation : des pourcentages seulement après le dossier). Les cartes restent rangées par
+   la même note, sans la montrer. Les mots « Bon potentiel », « À étudier », « Peu adapté » n'arrivent pas : ils
+   attendent le barème corrigé de la V1, car aujourd'hui une donnée inconnue avantage le marché (`scoring.py`). Sans
+   métier ni zone dans « Ce que je cherche », l'invitation reste : « Dites ce que vous cherchez pour un classement
+   adapté » (avant : « … pour un score adapté »), en vrai bouton.
+2. Mégalis : le nom de l'organisme sans « (code postal - ville) » (« COMMUNE DE SAINT SAUVEUR » au lieu de « COMMUNE
+   DE SAINT SAUVEUR (29400 - SAINT-SAUVEUR) »), sur la carte, dans Mes marchés pour un marché analysé désormais et dans
+   le courriel d'alerte. Rien d'autre n'est réécrit (majuscules et sigles gardés).
+3. Avis rectifiés du BOAMP : « Date limite repoussée au 06/11/2026 (rectificatif du 06/10/2026) », le lien mène au
+   rectificatif ; « avancée » si la nouvelle date précède l'ancienne ; « Date limite non précisée (rectificatif du …) »
+   avec une bulle (i) quand la nouvelle date n'a pas pu être lue, jamais l'ancienne date ; « Avis rectifié
+   (rectificatif du …) » quand la date ne change pas. La date limite de la carte s'écrit « 06/11/2026 » (avant :
+   « 2026-11-06 »).
+4. « Voir les marchés pour mon entreprise » cherche le premier métier de « Ce que je cherche » ; sans métier, rien
+   n'est cherché : « Dites d'abord votre métier … » et le bouton « Dire mon métier », qui ouvre « Ce que je cherche »,
+   le curseur dans « Spécialités ».
+
+**Trouver des marchés › À venir**
+5. « Fin du contrat estimée le 25/10/2026 (durée publiée) » au lieu de « Renouvellement ~ [fin moins 120 jours] ». Au
+   repli payant : « (durée lue dans l'intitulé de l'avis) » ou « (durée estimée selon le type de contrat) », et
+   « attribution publiée le … » au lieu de « notifié le … ». Le département affiché est celui de l'avis (avant, au
+   repli : ses descripteurs, « dépt Voirie »).
+6. La bulle dit la vraie source et reste neutre : « … préparez votre réponse et vos partenaires avant la
+   republication. La fin du contrat est estimée d'après les données publiées des marchés attribués … ».
+7. Le crédit, avant le clic, sous les champs : « Une recherche complémentaire peut consommer 1 analyse : remboursée si
+   elle ne trouve rien, toujours remboursée en outre-mer et en Corse. », avec sa bulle (i). Après un repli : « …
+   1 analyse consommée. » ou « … analyse remboursée. », et le compteur d'analyses est relu. La démo ne voit pas la
+   ligne (elle n'est jamais débitée).
+
+**Démo**
+8. La page d'exemple d'une délibération ne dit plus « récupérées automatiquement par Adjugo » ni « Sur un compte réel,
+   ce lien ouvre la vraie délibération ».
+
+### É.10 Les cartes de « Publiés »
+
+| | |
+|---|---|
+| **Avant** | `app.html` : « confiance {{ … }}% » (`atexo.py` : 0.7 pour toute consultation Mégalis) et « adéquation {{ t.score.total }}/100 », contraires à la décision 8 ; « limite 2026-11-06 » ; « COMMUNE DE … (29400 - …) » ; les champs du rectificatif envoyés par le serveur (§ S.2) mais jamais affichés. La fiche ne portait que la date du **dernier** rectificatif paru (`rectifie_le`) : sur 26-90336, repoussé au 06/11 par 26-96286 (06/10) puis rectifié sur ses lots le 21/10 (lien construit avec le rectificatif réel 26-102445), l'écran aurait écrit « rectificatif du 21/10/2026 », faux. |
+| **Après** | Plus de pastilles de nombre ni de `confClass`. La ligne du rectificatif vient de `rectifDeCarte` (`app.js`) : états `repoussee`, `avancee`, `non_lue`, `rectifie`. Le serveur dit maintenant quel rectificatif fixe la date : `date_limite_rectificatif` (son lien, sa référence) et `date_limite_rectificatif_le` (sa parution), posés par `boamp._appliquer` sur le dernier rectificatif qui parle de la date limite ; un rectificatif européen qui redit la même date en est un (26-101475 pour 26-95098 : « Avis rectifié »). Le lien passe la garde des liens (`base.sanitize_tender_links`) ; un doublon d'une autre source le reçoit s'il ne l'a pas (`search._dedup_tenders`). Sans ces champs (réponse d'avant), l'écran cite le dernier rectificatif. `atexo.nom_organisme` retire « (5 chiffres - ville) » en fin de nom, même coupé ; le lieu et la clé de fusion lisent toujours le texte de la page, donc la note, la fusion avec le BOAMP et la mémoire des alertes ne changent pas. |
+| **Preuve** | `test_e10_carte_sans_nombre_avant_le_dossier_ni_mot_de_verdict`, `test_e10_nom_de_l_organisme_megalis_nettoye_sans_rien_changer_d_autre` (page réelle de Mégalis du 21/10), `test_e10_le_rectificatif_cite_est_celui_qui_fixe_la_date`, `test_e10_ligne_du_rectificatif_sur_les_avis_reels_sous_node` (avis réels du jeu du 21/10 passés par la vraie recherche BOAMP : 26-90336 « repoussée au 06/11/2026 (rectificatif du 06/10/2026) », 26-94570 « non précisée » sans la date du 29/10, 26-95098 « Avis rectifié »). |
+| **Pour le client** | Points 1 à 3 de la liste. |
+
+### É.11 « Voir les marchés pour mon entreprise »
+
+| | |
+|---|---|
+| **Avant** | `srcPrefillFromProfile` lisait `specialites` dans la fiche Identité, qui n'a pas ce champ (`CompanyOut`) : la recherche partait sans mot dès que le code postal donnait un département, et le BOAMP cherchait alors « travaux » sans le dire (`boamp.py`). Sans code postal ni mot, l'écran renvoyait vers Mon entreprise. |
+| **Après** | `srcSearchMine` prend `metierCherche(criteria)`, la première spécialité de « Ce que je cherche » (`criteria_v2.specialites`, coupée aux virgules et points-virgules), relue au serveur si elle manque à l'écran (sans écraser une saisie non enregistrée). Elle remplace les mots du champ : le bouton dit « pour mon entreprise ». Sans métier, aucune recherche : `src.manqueMetier`, la phrase et le bouton « Dire mon métier » (`srcDireMetier` : `go("criteria")`, curseur dans `#crit-spec`), le curseur posé sur ce bouton ; la phrase disparaît dès qu'un métier est saisi. Le département ne change pas (code postal, `zoneDuCodePostal`). `srcPrefillFromProfile` ne lit plus que le code postal. Le sous-titre dit d'où viennent les mots. |
+| **Preuve** | `test_e11_voir_les_marches_lit_le_metier_de_ce_que_je_cherche_sous_node` (vraies méthodes sous Node : métier présent, mots tapés ailleurs, aucun métier, métier enregistré par un collègue, serveur en panne ; le chemin direct). |
+| **Pour le client** | Point 4. |
+
+### É.12 L'onglet « À venir »
+
+| | |
+|---|---|
+| **Avant** | « Renouvellement ~ » montrait `renouvellement_estime`, la fin moins 120 jours : une date de republication devinée. La bulle disait « sources réelles BOAMP » (la source principale est la DECP) et « positionnez-vous auprès du client avant la republication ». Rien n'annonçait le crédit du repli payant (décision 12). « notifié le » et « (réelle) » aussi sur les fins de contrat du repli, dont la date est celle de la parution de l'avis d'attribution et la durée lue par l'IA. |
+| **Après** | Pastille « Fin du contrat estimée le … » + `dureeFinDeContrat` : « (durée publiée) » pour la DECP (fin = date de notification + `dureemois`, `decp.py`), « (durée lue dans l'intitulé de l'avis) » ou « (durée estimée selon le type de contrat) » au repli. `renouvellement_estime` ne sert plus qu'au tri et à la fenêtre du serveur. La réponse du repli dit `"source": "BOAMP"` et `"analyse": "debitee"` ou `"remboursee"` (même débit, même remboursement qu'avant) ; l'écran l'affiche et relit le compteur. La ligne du crédit et sa bulle disent la règle de `sourcing.renewals` telle qu'elle est (lue dans le code) : la DECP ne consomme rien ; le repli consomme 1 analyse (`consume_analysis`), la rend s'il ne trouve rien ou échoue, et toujours dès qu'un des départements demandés commence par « 97 » ou « 98 » ou vaut « 2A », « 2B » ou « 20 » (`_repli_rembourse_par_zone`, décision 1 du 22/10), seul ou avec d'autres ; une analyse disponible est exigée avant, même là (refus sinon : 402 quand le quota est atteint). La ligne n'est pas montrée à la démo (`estCompteDemo`, même règle que `demo_search.is_demo`), dont les fins de contrat ne coûtent rien. La carte passe le bouton « Préparer à plusieurs » sous le texte à 375 px. |
+| **Preuve** | `test_e12_a_venir_fin_du_contrat_bulle_juste_et_neutre`, `test_e12_la_duree_dite_avec_sa_source_sous_node`, `test_e12_le_credit_annonce_avant_le_clic_est_celui_du_code` (par la route : DECP sans débit ; repli débité ; repli vide remboursé ; « 974 », « 971 », « 988 », « 2A, 2B », « 20 », « 29, 974 », « 2B, 56 » remboursés même s'ils trouvent ; 402 en outre-mer sans analyse disponible), `test_e12_apres_le_repli_l_ecran_dit_ce_qu_est_devenue_l_analyse_sous_node`, `test_e12_la_demo_de_pitch_garde_ses_fins_de_contrat_sans_credit`. |
+| **Pour le client** | Points 5 à 7. |
+
+### É.13 La page d'exemple de la démo
+
+| | |
+|---|---|
+| **Avant** | `app/static/demo/deliberation.html` : « Les délibérations réelles sont publiées par les collectivités et récupérées automatiquement par Adjugo » et, en bandeau, « Sur un compte réel, ce lien ouvre la vraie délibération ». Faux : la veille des projets à venir est masquée (`PROJETS_A_VENIR` éteint, adresses en 404, § 7). |
+| **Après** | Bandeau : « Document fictif, à titre d'illustration : une délibération réelle se lit sur le site de la collectivité qui la publie. » Pied : « … La veille des projets votés en conseil, « Projets à venir », n'est pas encore ouverte : Adjugo ne lit pas aujourd'hui ces délibérations. » À réécrire au rallumage de la veille (vague 1), qui relie de nouveau cette page aux projets de la démo (`demo_seed.py`). |
+| **Preuve** | `test_e13_la_page_d_exemple_de_la_demo_dit_vrai`. |
+| **Pour le client** | Point 8 (page reliée à rien tant que la veille est masquée). |
+
+### Textes et contrat
+
+`test_ecran_lot1_textes_traduits_sans_mot_banni_ni_emoji` (25 libellés, chacun un nœud de texte entier, traduits en
+néerlandais et en espagnol, sans mot banni ni émoji, « vérifié » absent) ; `test_ecran_lot1_contrat_et_bilan_de_mise_en_ligne`.
+
+Test existant adapté, avec sa raison : `tests/test_mise_en_ligne_22_10.py::test_cr1_a_venir_part_du_code_postal_pour_toute_entreprise_sous_node`
+donnait à la fiche Identité une spécialité fictive (« Voirie »), que `srcPrefillFromProfile` recopiait dans les mots.
+La fiche n'a pas ce champ ; le pré-remplissage ne la lit plus. « Voirie » est maintenant tapé dans le champ des mots de
+l'onglet ; ce que le test vérifie (le département pris du code postal, la zone de « Ce que je cherche » jamais lue ni
+réécrite) ne change pas.
+
+### À décider par Eliot
+
+- **Remboursement en outre-mer et en Corse.** La décision 1 du 22/10 le posait « jusqu'à l'annonce du crédit à
+  l'écran ». L'écran l'annonce désormais. Le code le garde (aucun changement de débit sans vous) et l'écran dit donc
+  « toujours remboursée en outre-mer et en Corse », ce qui est vrai. Deux choix : (a) le garder, et seule la ligne de
+  journal `REMBOURSE_PAR_ZONE` (« … jusqu'à l'annonce du crédit à l'écran ») est à reformuler ; (b) le retirer
+  (`_repli_rembourse_par_zone`), et la fin de la phrase de l'écran, sa bulle et leurs traductions partent avec, dans le
+  même changement.
+
+### Vu en passant, non corrigé
+
+- « Rechercher » (Publiés) sans mot et « Chercher les fins de contrat » (À venir) sans mot cherchent toujours
+  « travaux » sans le dire (`boamp.py`, `srcRenewals` dans `app.js`, `decp.py`) ; seul le bouton « Voir les marchés
+  pour mon entreprise » était dans le point 11.
+- Des noms d'acheteur du BOAMP arrivent avec une entité HTML (« Centre hospitalier d&#039;Argenteuil », jeu réel du
+  21/10) : la carte l'affiche telle quelle, comme en production.
+- Le repli payant ne filtre pas les départements après la lecture : une demande « 29 » peut montrer un avis que le
+  BOAMP range d'abord en « 44 » (jeu réel), comme en production.
+
+### Vérifications
+
+- Les 13 tests nouveaux, sur une extraction `git archive` de `0f8eb32` (tests copiés) : 13 échecs, chacun sur le
+  défaut qu'il couvre (« confiance » dans la carte, organisme avec sa parenthèse, champ du rectificatif absent,
+  fonctions de l'écran absentes, « Renouvellement », ligne du crédit absente, page de la démo, traductions, ce contrat).
+- Suites complètes, navigateur et fichiers servis : `docs/MISE_EN_LIGNE_22_10.md`, section 5, « Partie écran du lot 1
+  du moteur ».
