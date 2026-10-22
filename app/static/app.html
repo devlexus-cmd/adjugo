@@ -23,7 +23,7 @@
 <script src="/static/vendor/lucide-1.20.0.min.js" integrity="sha384-vEpkK5oidsrH6UhRc6tAPlgJZ/qXFwumFY+Kx8vBSeZ7NBag809YZCSmxFYGe/pt"></script>
 <!-- Chiffrement par membre du détail de chiffrage (co-traitance v2) : window.AdjugoCrypto, chargé AVANT app.js -->
 <script src="/static/cotraitance-crypto.js" integrity="sha384-q8DL80RVudBWgsaCfc4AJZ3iCrB4O6OoIs5lA81bOty2NmjC5qh+tkxKPVJDzShC"></script>
-<script src="/static/i18n.js" integrity="sha384-N7LVzFlt6yI9Utihv9vbgpkLxUOxbBoLzdC+oCS6tWoINP3IX74QgMtFnb3SIDG9" defer></script>
+<script src="/static/i18n.js" integrity="sha384-VToQNBSjmDkNCiBC3Wxx+XSu0ElcVD3pIdSFS9P+vSm936+1/VuC6VuOFdmxoZt0" defer></script>
 </head>
 <body>
 <div id="app">
@@ -138,7 +138,7 @@
               <div v-if="!aFaire().length && aFaireLu()" class="muted small notif-vide">Rien n'attend de réponse de votre part.</div>
               <button v-for="t in aFaire()" :key="'nf'+t.k" type="button" class="notif-l" @click="aFaireOuvrir(t)">
                 <i :data-lucide="t.ic" aria-hidden="true"></i>
-                <span class="notif-tx"><b class="small">{{ t.titre }}</b><span class="muted small">{{ t.detail }}</span></span>
+                <span class="notif-tx"><b class="small"><span v-for="(m,mi) in t.morceauxTitre" :key="'nft'+t.k+mi">{{ m }}</span></b><span class="muted small"><span v-for="(m,mi) in t.morceauxDetail" :key="'nfd'+t.k+mi">{{ m }}</span></span></span>
                 <span class="notif-cta small">{{ t.cta }}</span>
               </button>
             </div>
@@ -253,7 +253,7 @@
             <ul v-else class="afaire-liste">
               <li v-for="t in aFaire().slice(0, 6)" :key="'af'+t.k" class="afaire-l">
                 <i :data-lucide="t.ic" aria-hidden="true"></i>
-                <span class="afaire-tx"><b class="small">{{ t.titre }}</b><span class="muted small">{{ t.detail }}</span></span>
+                <span class="afaire-tx"><b class="small"><span v-for="(m,mi) in t.morceauxTitre" :key="'aft'+t.k+mi">{{ m }}</span></b><span class="muted small"><span v-for="(m,mi) in t.morceauxDetail" :key="'afd'+t.k+mi">{{ m }}</span></span></span>
                 <button type="button" class="btn sm" @click="aFaireOuvrir(t)">{{ t.cta }}</button>
               </li>
             </ul>
@@ -427,7 +427,8 @@
             <!-- Vague 2b (B3) : avant comme après l'invitation, l'écran du partenaire en lecture (/app/marches/<id>/apercu-partenaire). -->
             <div class="mk-apercu"><button data-test="marche-apercu" type="button" class="linkbtn small" @click="apercuDepuisMarche()"><i data-lucide="eye" aria-hidden="true"></i>Voir ce que verra votre partenaire</button></div>
             <div class="cards cols-4" style="margin-top:14px">
-              <div class="kpi"><div class="kh"><span>Date limite</span><i data-lucide="calendar-clock"></i></div><div class="v" style="font-size:15px">{{ aoDetails().date_limite || ao.project.deadline || 'non précisée' }}</div></div>
+              <!-- Sans analyse, la date de l'API s'écrit JJ/MM/AAAA, comme dans Mes marchés et chez le partenaire (contrôle des bugs, 22/10/2026). -->
+              <div class="kpi"><div class="kh"><span>Date limite</span><i data-lucide="calendar-clock"></i></div><div class="v" style="font-size:15px">{{ aoDetails().date_limite || (ao.project.deadline ? fmtDate(ao.project.deadline) : 'non précisée') }}</div></div>
               <div class="kpi"><div class="kh"><span>Montant estimé</span><i data-lucide="banknote"></i></div><div class="v" style="font-size:15px">{{ aoDetails().budget_estime || 'non publié' }}</div></div>
               <div class="kpi"><div class="kh"><span>Lieu</span><i data-lucide="map-pin"></i></div><div class="v" style="font-size:15px">{{ aoDetails().lieu_execution || 'non précisé' }}</div></div>
               <div class="kpi"><div class="kh"><span>Délai</span><i data-lucide="timer"></i></div><div class="v" style="font-size:15px">{{ aoDetails().delai_execution || 'non précisé' }}</div></div>
@@ -4667,6 +4668,6 @@
 <script src="/static/redaction-partenaire.js" integrity="sha384-0jgm5b/r+FlC5YZVhiyqvLZyxecxtCABbOw03QuJfDDsfua5T9wxISR2Hfis2Dh+" defer></script>
 <script src="/static/sources-publiques.js" integrity="sha384-/0soYF6qmMI5KHOb/uzkHBoYNeOr5+R784XFb0c0+HjUkhtEyVBgunl6Xo08Dok+" defer></script>
 <script src="/static/carnet-notes.js" integrity="sha384-BlD0ZOe8GvU2A/UrOZPvlBWhqfWmplvFwf6Tr3MsW7XgMQW5bveM9WFMCBRKUH1Q" defer></script>
-<script src="/static/app.js" integrity="sha384-8UPh2Xnme9doVdg9BEltJ95o6rCl1dLUyo9feNLhpXtbR65tyhvQX038ltNVIch3" defer></script>
+<script src="/static/app.js" integrity="sha384-MKZtZBvo+Zht0ppr7ok3WNBma2ZId3wR7TF1ItZV3W9dtCSCht2QLL/1K6f1lQL3" defer></script>
 </body>
 </html>

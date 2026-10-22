@@ -444,6 +444,10 @@ function barrePartenaire(d) {
 // limites de vos marchés dans les 7 jours, parts de partenaires encore attendues, pièces à renouveler. Jamais un total
 // ni zéro : une liste vide n'affiche rien. Chaque ligne dit son action et l'écran qu'elle ouvre (`cible`).
 // `d` : { shared, recues, projects, enCours, expiring } ; `aujourdhui` : « AAAA-MM-JJ ».
+// Titre et détail en morceaux (`morceauxTitre`, `morceauxDetail`), chacun affiché dans son propre élément : chaque libellé
+// fixe est une clé du dictionnaire de traduction (translateDOM ne traduit qu'un nœud entier), les nombres et les noms
+// restent tels quels. `titre` et `detail` les joignent (contrôle des bugs, 22/10/2026 : « Date limite dans 2 jours »,
+// « Parts reçues 0 sur 1 », « 2 pièces à renouveler » restaient en français en néerlandais et en espagnol).
 const A_FAIRE_JOURS = 7;
 function listeAFaire(d, aujourdhui) {
   d = d || {};
@@ -452,37 +456,38 @@ function listeAFaire(d, aujourdhui) {
   (d.shared || []).forEach((s, i) => {
     const g = s.groupement || {}, r = s.redaction || {}, cible = { view: "sharedao", partage: s.project_id, jeton: s.token };
     const marche = s.project || "Marché";
-    if (g.a_valider) out.push({ k: "accord-" + s.project_id + (i ? "-" + i : ""), ic: "signature", rang: 0, titre: "Votre accord est demandé",
-      detail: marche + (s.mandataire ? " · chef de file : " + s.mandataire : ""), cta: "Lire et donner mon accord", cible });
+    if (g.a_valider) out.push({ k: "accord-" + s.project_id + (i ? "-" + i : ""), ic: "signature", rang: 0, morceauxTitre: ["Votre accord est demandé"],
+      morceauxDetail: [marche].concat(s.mandataire ? [" · chef de file : ", s.mandataire] : []), cta: "Lire et donner mon accord", cible });
     if (r.a_faire || r.a_revalider || r.a_valider || r.questions) out.push({ k: "redaction-" + s.project_id + (i ? "-" + i : ""), ic: "file-pen-line", rang: 1,
-      titre: "Une partie du dossier de présentation vous attend", detail: marche, cta: "Ouvrir", cible });
+      morceauxTitre: ["Une partie du dossier de présentation vous attend"], morceauxDetail: [marche], cta: "Ouvrir", cible });
   });
   (d.recues || []).filter(i => i && !i._declined && i.statut !== "acceptee").forEach(i => out.push({
-    k: "invitation-" + i.token, ic: "inbox", rang: 2, titre: "Invitation à répondre ensemble",
-    detail: (i.project || "Marché") + (i.mandataire ? " · chef de file : " + i.mandataire : ""), cta: "Voir l'invitation",
+    k: "invitation-" + i.token, ic: "inbox", rang: 2, morceauxTitre: ["Invitation à répondre ensemble"],
+    morceauxDetail: [i.project || "Marché"].concat(i.mandataire ? [" · chef de file : ", i.mandataire] : []), cta: "Voir l'invitation",
     cible: { view: "shared" } }));      // Mes marchés, filtre « Où je suis partenaire » (A2)
   (d.projects || []).forEach(p => {
     if (!p || p.deleted_at || ["suivi", "nouveau", "decide", "en_cours"].indexOf(p.status || "nouveau") < 0 || auj === null) return;
     const t = jour(p.deadline); if (t === null) return;
     const n = Math.round((t - auj) / 86400000); if (n < 0 || n > A_FAIRE_JOURS) return;
-    out.push({ k: "date-" + p.id, ic: "clock", rang: 3, tri: n, cta: "Ouvrir", detail: p.name || "Marché",
-      titre: n === 0 ? "Date limite aujourd'hui" : (n === 1 ? "Date limite demain" : "Date limite dans " + n + " jours"),
+    out.push({ k: "date-" + p.id, ic: "clock", rang: 3, tri: n, cta: "Ouvrir", morceauxDetail: [p.name || "Marché"],
+      morceauxTitre: n === 0 ? ["Date limite aujourd'hui"] : (n === 1 ? ["Date limite demain"] : ["Date limite dans ", String(n), " jours"]),
       cible: { view: "aodetail", projet: p.id } });
   });
   (d.enCours || []).forEach(g => {
     const n = Number(g && g.n_membres) || 0, ns = Number(g && g.n_parts) || 0;
     if (!n || ns >= n) return;
-    out.push({ k: "parts-" + g.project_id, ic: "handshake", rang: 4, titre: "Parts reçues " + ns + " sur " + n,
-      detail: g.name || "Marché", cta: "Ouvrir", cible: { view: "aodetail", projet: g.project_id } });
+    out.push({ k: "parts-" + g.project_id, ic: "handshake", rang: 4, morceauxTitre: ["Parts reçues ", String(ns), " sur ", String(n)],
+      morceauxDetail: [g.name || "Marché"], cta: "Ouvrir", cible: { view: "aodetail", projet: g.project_id } });
   });
   const ex = (d.expiring || []).filter(Boolean);
   if (ex.length) {
     const p0 = ex.slice().sort((a, b) => String(a.expiration_date).localeCompare(String(b.expiration_date)))[0];
     const passe = auj !== null && jour(p0.expiration_date) !== null && jour(p0.expiration_date) < auj;
     out.push({ k: "pieces", ic: "folder-lock", rang: 5, cta: "Voir", cible: { view: "documents" },
-      titre: ex.length + " " + (ex.length > 1 ? "pièces à renouveler" : "pièce à renouveler"),
-      detail: (p0.name || "Pièce") + (dd(p0.expiration_date) ? (passe ? " · expirée le " : " · expire le ") + dd(p0.expiration_date) : "") });
+      morceauxTitre: [String(ex.length), ex.length > 1 ? " pièces à renouveler" : " pièce à renouveler"],
+      morceauxDetail: [p0.name || "Pièce"].concat(dd(p0.expiration_date) ? [passe ? " · expirée le " : " · expire le ", dd(p0.expiration_date)] : []) });
   }
+  out.forEach(t => { t.titre = t.morceauxTitre.join(""); t.detail = t.morceauxDetail.join(""); });
   return out.sort((a, b) => a.rang - b.rang || (a.tri || 0) - (b.tri || 0));
 }
 
@@ -1769,7 +1774,12 @@ const __adjApp = createApp({
       } catch (e) { console.warn("a11y enhancement skipped:", e); }
     },
     renderI18n() { if (this.lang && this.lang !== "fr") this.$nextTick(() => translateDOM(this.lang)); },
-    applyLang(code) { this.lang = code || "fr"; document.documentElement.setAttribute("lang", this.lang); this.renderI18n(); },
+    applyLang(code) {
+      this.lang = code || "fr"; document.documentElement.setAttribute("lang", this.lang); this.renderI18n();
+      // La langue arrive souvent après l'écran (fiche de l'entreprise lue ou enregistrée) : le titre de l'onglet suit
+      // tout de suite, sans toucher à l'historique ; rien avant la connexion.
+      if (this.token && this._adresseActive) { try { this._titreOnglet(); } catch (e) {} }
+    },
     // ── Thème + icônes ──
     setTheme(t) { this.theme = t; localStorage.setItem("adjugo_theme", t); this.applyTheme(); },
     applyTheme() {
@@ -2216,8 +2226,8 @@ const __adjApp = createApp({
     _adresseSynchro(adr, garderDefil) {
       if (!adr || !this.token || !this._adresseActive) return;
       try {
-        const st = history.state || {}, titre = this.enteteTitre();
-        document.title = (titre ? titre + " · " : "") + "Adjugo";
+        const st = history.state || {};
+        this._titreOnglet();
         this._nIci = st.n || 0;
         if (adr === location.pathname && !location.search) return;
         if (this._adresseSuit || adr === location.pathname) {
@@ -2231,6 +2241,12 @@ const __adjApp = createApp({
         history.pushState({ adjugo: 1, n: (st.n || 0) + 1 }, "", adr);
         this._nIci = (st.n || 0) + 1;
       } catch (e) {}
+    },
+    // Le titre de l'onglet : le titre de l'en-tête, dans la langue de l'écran (décision 16) ; un libellé sans traduction
+    // reste en français. Avant, « Accueil · Adjugo » sur un écran qui disait « Start » (contrôle des bugs, 22/10/2026).
+    _titreOnglet() {
+      const titre = this.enteteTitre(), dict = this.lang && this.lang !== "fr" && window.ADJUGO_I18N && window.ADJUGO_I18N[this.lang];
+      document.title = (titre ? ((dict && dict[titre]) || titre) + " · " : "") + "Adjugo";
     },
     // Précédent / suivant du navigateur (relecture de la vague 2a). Une fenêtre de l'application ouverte (confirmation,
     // invitation, fiche d'un partenaire, tiroir, cloche, fenêtres de l'atelier ou de Mes preuves) est toujours fermée
@@ -3258,7 +3274,15 @@ const __adjApp = createApp({
     },
     apercuPieces() { return ((this.apercu.d && this.apercu.d.pieces_attendues) || []).map(x => x && x.label).filter(Boolean).join(", "); },
     // Le compte à rebours de son écran (invite.html) : le partenaire sait combien de temps il lui reste pour sa part.
-    paJours(dl) { if (!dl) return null; const n = Math.ceil((new Date(dl) - new Date()) / 86400000); return isNaN(n) ? null : n; },
+    // Des jours du calendrier de l'APPAREIL entre aujourd'hui et la date limite (« AAAA-MM-JJ ») : 0 le jour même,
+    // négatif une fois passée, null sans date lisible. Des tranches de 24 h depuis minuit UTC disaient encore « Dernier
+    // jour » le lendemain de la date limite à 0 h 30 à Paris (contrôle des bugs, 22/10/2026). Même règle que
+    // joursAvantDateLimite dans invite.html.
+    paJours(dl) {
+      const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(dl || "")); if (!m) return null;
+      const a = new Date(), n = Math.round((Date.UTC(+m[1], +m[2] - 1, +m[3]) - Date.UTC(a.getFullYear(), a.getMonth(), a.getDate())) / 86400000);
+      return isNaN(n) ? null : n;
+    },
     paDelai(dl) {
       const n = this.paJours(dl); if (n === null) return "";
       if (n < 0) return "Date limite dépassée : contactez le chef de file.";
@@ -3679,10 +3703,14 @@ const __adjApp = createApp({
       try { localStorage.setItem("adjugo_notifs_seen", this.notifsSeen); } catch (e) {}
     },
     // « À faire » : une seule liste (listeAFaire, en tête du fichier), pour la cloche et l'accueil.
+    // « Aujourd'hui » est le jour de l'APPAREIL (« AAAA-MM-JJ »), jamais le jour UTC : entre minuit et 2 h à Paris, le
+    // jour UTC est encore la veille, et « Date limite aujourd'hui » parlait d'une date limite déjà passée (contrôle des
+    // bugs, 22/10/2026).
     aFaire() {
+      const d = new Date(), p = n => (n < 10 ? "0" : "") + n;
       return listeAFaire({ shared: this.shared, recues: this.reseau.recues.list, projects: this.projects,
                            enCours: (this.grpDash && this.grpDash.en_cours) || [], expiring: this.expiring },
-                         new Date().toISOString().slice(0, 10));
+                         d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate()));
     },
     // « Rien n'attend de réponse de votre part » n'est vrai qu'une fois lus les pièces à renouveler et les invitations
     // reçues (le reste de la liste est lu avant l'ouverture de l'écran) ; avant, ou si l'une n'a pas pu être lue, la

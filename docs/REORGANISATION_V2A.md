@@ -1322,3 +1322,75 @@ lignes ; un statut connu est enregistré. Laissé : une liste de lignes vide res
   par un partenaire sans type choisi : sa liste de pièces, le coffre-fort croisé, le suivi du groupement du chef de
   file) range encore « Avis d'attribution 2025.pdf » et « Contribution.pdf » en RIB, « Cahier des charges.pdf » en
   qualification (constaté par appel direct). C'est la co-traitance, hors de ce groupe : signalé, non corrigé ici.
+
+## O. Contrôle des bugs (22/10/2026), groupe « écrans »
+
+Six défauts de la cloche et de « À faire », du compte à rebours de la part du partenaire, de l'en-tête du marché, du
+titre de l'onglet et de la barre basse (signalements 19 à 24). Chacun a été **reproduit** sur `cfe04e1` avant d'être
+corrigé ; aucun n'est rejeté. Tests : `tests/test_controle_bugs_ecrans.py` (9 tests, tous en échec sur `cfe04e1`,
+chacun sur son défaut ; fonctions de `app.js` et `invite.html` exécutées sous Node avec un fuseau horaire, plus une
+mesure de la barre basse dans un vrai Chromium quand Playwright est installé). Aucun prix, quota ni offre ne change ;
+ni page juridique, ni démonstration, ni serveur touchés.
+
+### O.1 « À faire » : le jour de l'appareil (19)
+
+**Reproduit** (horloge figée, `TZ=Europe/Paris`) : le 23/10 à 0 h 30 à Paris, « À faire » disait « Date limite
+aujourd'hui » d'une date limite du 22 (déjà passée), « demain » du 23 (le jour même), « dans 7 jours » du 29 (dans
+6 jours), et oubliait le marché du 30 ; aux Antilles le soir, l'écart allait dans l'autre sens. `aFaire()` passait le
+jour UTC (`toISOString`). **Corrigé** : « aujourd'hui » est le jour du calendrier de l'appareil, comme le jour de Paris
+du serveur (§ A1.3 : « aujourd'hui, demain, dans N jours »). Rien ne change en journée.
+
+### O.2 « Il vous reste N jours pour soumettre votre part » : des jours du calendrier (20)
+
+**Reproduit** : le compte à rebours de l'aperçu « Voir ce que verra votre partenaire » (`paJours`) et celui de
+l'écran du partenaire (`invite.html`) comptaient des tranches de 24 h depuis minuit UTC : le lendemain de la date
+limite, à 0 h 30 à Paris, « Dernier jour : soumettez votre part aujourd'hui » ; le jour même à 21 h en Guadeloupe,
+« Date limite dépassée ». **Corrigé** : une seule règle des deux côtés (`paJours`, `joursAvantDateLimite`), des jours
+du calendrier de l'appareil ; 0 le jour même, négatif une fois passée, rien sans date lisible. Vérifié dans un vrai
+navigateur sur le lien d'un partenaire (« Il vous reste 2 jours… », puis « Date limite dépassée » à 0 h 30 le
+lendemain).
+
+### O.3 En-tête du marché : la date limite JJ/MM/AAAA (21)
+
+**Reproduit** : sans analyse, la carte « Date limite » affichait « 2026-10-24 » (la date telle que l'API la renvoie),
+quand Mes marchés, le coffre-fort croisé et l'écran du partenaire écrivent « 24/10/2026 ». **Corrigé** : `fmtDate`,
+la date de l'analyse d'abord quand elle existe, « non précisée » sans date.
+
+### O.4 Le titre de l'onglet suit la langue de l'écran (22)
+
+**Reproduit** (organisation aux Pays-Bas puis en Espagne) : l'écran disait « Start », « Mijn aanbestedingen »,
+« Inicio », l'onglet du navigateur et son historique « Accueil · Adjugo », « Mes marchés · Adjugo ». **Corrigé**
+(`_titreOnglet`) : le titre de l'onglet est celui de l'en-tête, traduit par le même dictionnaire (décision 16) ; un
+libellé sans traduction reste en français ; une langue lue ou changée après l'ouverture de l'écran met le titre à
+jour aussitôt, sans entrée d'historique, et rien avant la connexion. Le navigateur simulé des tests d'adresses
+(`_NAV`) exécute aussi cette méthode.
+
+### O.5 Barre basse à 375 px : le libellé traduit en entier (23)
+
+**Reproduit** dans un vrai navigateur : « Mijn aanbestedingen » (107 px) et « Mis licitaciones » (79 px) coupés en
+« Mijn aanbes… » et « Mis licitacio… » dans des colonnes de 73 px, contre « 375 px : les 5 mots tiennent » (§ A1.3).
+**Corrigé** (`styles.css`) : une colonne ne descend jamais sous la largeur de son libellé
+(`minmax(min-content,1fr)`). En français, rien ne bouge : 5 colonnes égales de 73,4 px. En néerlandais, « Mijn
+aanbestedingen » prend 107 px, les quatre autres 65 px ; en espagnol, 79,5 et 71,9 px ; aucun libellé coupé, aucun
+défilement de côté (mesuré à 375 px, polices du système, dans l'application réelle et dans le test).
+
+### O.6 « À faire » traduit en entier (24)
+
+**Reproduit** : en néerlandais et en espagnol, la cloche et le bloc de l'accueil gardaient « Date limite dans
+2 jours », « Parts reçues 0 sur 1 », « 2 pièces à renouveler », « · chef de file : », « · expirée le », à côté de
+« Uiterste datum vandaag » et « Openen » traduits : la traduction ne remplace qu'un texte entier. **Corrigé** :
+`listeAFaire` rend titre et détail en morceaux (`morceauxTitre`, `morceauxDetail`), chacun affiché dans son élément,
+comme « Vos premiers pas » ; les nombres et les noms restent tels quels ; `titre` et `detail` en français sont
+inchangés. Sept libellés traduits (829 → 836 clés), dans les mots déjà employés : « Uiterste datum over 2 dagen »,
+« Ontvangen delen 0 van 1 », « 2 te vernieuwen documenten », « · penvoerder: », « · verlopen op » ; « Fecha límite
+dentro de 2 días », « Partes recibidas 0 de 1 », « 2 documentos a renovar », « · mandatario: », « · caducado el ».
+Vérifié dans l'application réelle, cloche et accueil, en néerlandais, en espagnol et en français.
+
+### O.7 Laissé, avec sa raison
+
+- **La date de l'écran du partenaire aux Antilles** : `invite.html` écrit la date limite par
+  `new Date("2026-10-24").toLocaleDateString(…)`, minuit UTC lu dans le fuseau de l'appareil : « 23 octobre 2026 » en
+  Martinique pour une date limite du 24 (constaté sous Node). Hors de la liste de ce groupe : signalé, non corrigé.
+- **Un nom pris pour un libellé** : un nom de marché ou d'entreprise identique à un libellé du dictionnaire (un
+  marché nommé « Accueil ») est traduit comme lui ; c'était déjà le cas pour une ligne sans chef de file, la règle de
+  la traduction n'a pas changé.

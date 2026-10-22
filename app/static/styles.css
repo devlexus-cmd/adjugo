@@ -662,10 +662,13 @@ ol.gstep { list-style:none; padding-left:0; padding-right:0; }
   .afaire-l > .btn { margin-left:26px; }
 }
 /* Barre basse sur téléphone (décision 18) : Accueil, Trouver, Mes marchés, Partenaires, Menu. Partout où le menu
-   latéral se replie ; « Menu » ouvre le menu complet (le bouton de l'en-tête n'est plus utile). */
+   latéral se replie ; « Menu » ouvre le menu complet (le bouton de l'en-tête n'est plus utile). Une colonne ne descend
+   jamais sous la largeur de son libellé : 5 colonnes égales tant que chacun y tient (le français à 375 px), sinon la
+   colonne du libellé long prend ce qu'il lui faut (« Mijn aanbestedingen », « Mis licitaciones » : plus coupés,
+   contrôle des bugs, 22/10/2026). */
 .barre-basse { display:none; }
 @media (max-width:860px) {
-  .barre-basse { display:grid; grid-template-columns:repeat(5, minmax(0,1fr)); gap:0; position:fixed; left:0; right:0; bottom:0; z-index:50; padding:4px 4px calc(4px + env(safe-area-inset-bottom, 0px)); background:color-mix(in srgb,var(--surface) 92%,transparent); backdrop-filter:blur(18px) saturate(1.6); -webkit-backdrop-filter:blur(18px) saturate(1.6); border-top:1px solid var(--border); }
+  .barre-basse { display:grid; grid-template-columns:repeat(5, minmax(min-content,1fr)); gap:0; position:fixed; left:0; right:0; bottom:0; z-index:50; padding:4px 4px calc(4px + env(safe-area-inset-bottom, 0px)); background:color-mix(in srgb,var(--surface) 92%,transparent); backdrop-filter:blur(18px) saturate(1.6); -webkit-backdrop-filter:blur(18px) saturate(1.6); border-top:1px solid var(--border); }
   .bb-i { position:relative; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; min-width:0; min-height:52px; padding:4px 0; border:0; border-radius:12px; background:none; color:var(--text-2); font:inherit; font-size:10.5px; font-weight:600; letter-spacing:-.01em; line-height:1.2; cursor:pointer; }
   .bb-i > span:not(.bb-badge) { max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .bb-i .lucide { width:20px; height:20px; }

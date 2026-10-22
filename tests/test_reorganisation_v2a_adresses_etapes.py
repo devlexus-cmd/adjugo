@@ -160,7 +160,9 @@ console.log(JSON.stringify({
 
 # ═══ 1. Retour arrière sur plusieurs niveaux, liens profonds (méthodes réelles, navigateur simulé) ═════════════
 
-_NAV = ["_adresseSynchro", "_sansHistorique", "_adresseDemandee", "_ouvrirAdresse", "_appliquerAdresse",
+# Contrôle des bugs (22/10/2026, groupe « ecrans ») : _adresseSynchro pose le titre de l'onglet par _titreOnglet (le
+# titre traduit, tests/test_controle_bugs_ecrans.py) ; le navigateur simulé exécute donc aussi cette méthode réelle.
+_NAV = ["_adresseSynchro", "_titreOnglet", "_sansHistorique", "_adresseDemandee", "_ouvrirAdresse", "_appliquerAdresse",
         "_retourHistorique", "partageRetour", "aoBack", "adresseCourante"]
 _HARNAIS = """
 const _calc = o.adresseCourante; delete o.adresseCourante;       // une propriété calculée, comme dans Vue
@@ -581,7 +583,10 @@ def test_barre_basse_de_cinq_sur_telephone():
     assert b not in zone(HTML, "menu") and b not in zone(HTML, "contenu")
     i = CSS.index(".barre-basse { display:none; }")
     bloc = CSS[i:CSS.index("\n}\n", i)]
-    assert "@media (max-width:860px) {" in bloc and "grid-template-columns:repeat(5, minmax(0,1fr))" in bloc
+    # Contrôle des bugs (22/10/2026, groupe « ecrans ») : une colonne ne descend plus sous la largeur de son libellé
+    # (« Mijn aanbestedingen » était coupé à 375 px) ; en français, toujours 5 colonnes égales
+    # (tests/test_controle_bugs_ecrans.py, mesuré dans un navigateur).
+    assert "@media (max-width:860px) {" in bloc and "grid-template-columns:repeat(5, minmax(min-content,1fr))" in bloc
     for regle in (".top .menu-btn { display:none; }", "env(safe-area-inset-bottom, 0px)",
                   ".content { padding-bottom:calc(84px", ".app ~ .toast { bottom:calc(74px",
                   ".bandeau-cookies.avec-menu { bottom:calc(72px", "min-height:52px"):
