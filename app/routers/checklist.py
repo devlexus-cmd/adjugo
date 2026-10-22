@@ -213,6 +213,35 @@ def _mots_significatifs(piece_name) -> list:
     return [m for m in _mots(piece_name) if (len(m) > 1 or m.isdigit()) and m not in _MOTS_VIDES]
 
 
+# Mots-clés de trois lettres que l'on trouve à l'intérieur de mots courants : « rib » dans « attribution »,
+# « contribution » ; « rge » dans « charges », « décharge ». Ils ne comptent que comme un mot à part entière (contrôle
+# des bugs, octobre 2026 : un « Avis d'attribution 2025.pdf » cochait le RIB, un « Cahier des charges » la
+# qualification). Les autres mots-clés, eux, se lisent comme avant.
+_MOTS_CLES_ENTIERS = frozenset({"rib", "rge"})
+_CASSE = re.compile(r"(?<=[a-z])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])")     # « MonRIB », « RIBEntreprise »
+
+
+def _texte_a_mots(texte) -> str:
+    """Le texte normalisé (minuscules, sans accents), un changement de casse valant une séparation de mots
+    (« RibEntreprise » → « rib entreprise »), pour lire les mots-clés entiers."""
+    return _norm(_CASSE.sub(" ", str(texte or "")))
+
+
+def _mot_cle_present(terme: str, texte_norm: str, texte_mots: str) -> bool:
+    """Un mot-clé est dans un nom : tel quel en général (« qualif », « methodologi » sont des débuts de mots), mais
+    comme un mot entier pour les mots-clés de `_MOTS_CLES_ENTIERS` (ni lettre avant, ni lettre après)."""
+    if terme in _MOTS_CLES_ENTIERS:
+        return re.search(r"(?<![a-z])" + terme + r"(?![a-z])", texte_mots) is not None
+    return terme in texte_norm
+
+
+# La catégorie « Fiscal et social » (clé « fiscal ») range les deux attestations : elle ne vaut l'attestation fiscale
+# que si le nom du document ne dit pas l'attestation sociale. Même règle que les attestations du chef de file
+# (invites.vault_doc_type, mots-clés de l'attestation sociale) ; contrôle des bugs, octobre 2026 : « Attestation de
+# vigilance URSSAF.pdf » rangée dans cette catégorie cochait « Attestation de régularité fiscale ».
+_NOM_ATTESTATION_SOCIALE = ("urssaf", "vigilance", "cotisation", "social")
+
+
 def match_document(piece_name, documents):
     """Verifie si un document du coffre-fort correspond a la piece demandee.
 
@@ -247,16 +276,23 @@ def match_document(piece_name, documents):
         "planning": ["planning", "calendrier", "delai", "gantt"],
     }
 
-    familles = [terms for key, terms in keywords.items() if key in piece_lower or any(t in piece_lower for t in terms)]
+    piece_mots = _texte_a_mots(piece_name)
+    familles = [terms for key, terms in keywords.items()
+                if _mot_cle_present(key, piece_lower, piece_mots)
+                or any(_mot_cle_present(t, piece_lower, piece_mots) for t in terms)]
     fallback = None   # un document qui matche mais est expiré : gardé en repli seulement
     for doc in documents:
         doc_name = _norm(doc.name)
+        doc_mots = _texte_a_mots(doc.name)
         doc_cat = _norm(getattr(doc.category, "value", doc.category))
+        if doc_cat == "fiscal" and any(t in doc_name for t in _NOM_ATTESTATION_SOCIALE):
+            doc_cat = ""
 
         # Chercher par mots-cles, puis par les mots de la pièce (relecture de la vague 2a). Contre-relecture : jamais
         # par les mots d'un fichier du dossier de l'acheteur (dossier « DCE », importé par l'entreprise) — son CCAP
         # n'est pas le « CCAP signé » qu'il demande.
-        trouve = any(any(t in doc_name or t in doc_cat for t in terms) for terms in familles)
+        trouve = any(any(_mot_cle_present(t, doc_name, doc_mots) or (doc_cat and t in doc_cat) for t in terms)
+                     for terms in familles)
         if not trouve and mots_piece and getattr(doc, "folder", None) != "DCE":
             mots_doc = set(_mots(doc.name))
             trouve = all(m in mots_doc for m in mots_piece)

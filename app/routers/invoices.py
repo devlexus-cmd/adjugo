@@ -8,6 +8,7 @@ from typing import List
 from datetime import date
 
 from app.core.database import get_db
+from app.core.org import member_ids
 from app.core.security import get_current_user
 from app.models import User, Invoice
 from app.schemas import InvoiceCreate, InvoiceUpdate, InvoiceOut
@@ -15,12 +16,17 @@ from app.schemas import InvoiceCreate, InvoiceUpdate, InvoiceOut
 router = APIRouter(prefix="/api/invoices", tags=["Facturation"])
 
 
-def generate_reference(db: Session, user_id: int, inv_type: str) -> str:
-    """Génère une référence unique : FAC-2026-001 ou DEV-2026-001."""
+def generate_reference(db: Session, owners, inv_type: str) -> str:
+    """Génère une référence unique : FAC-2026-001 ou DEV-2026-001.
+
+    `owners` : les comptes de l'organisation (member_ids). La numérotation suit l'ENTREPRISE, pas le compte
+    (contrôle des bugs, octobre 2026) : deux collègues obtenaient chacun « DEV-2026-001 », deux pièces de la même
+    entreprise sous le même numéro. L'unicité en base reste (user_id, reference) : un numéro compté sur toute
+    l'organisation ne la heurte pas, et un collègue retiré laisse ses pièces au propriétaire sans doublon."""
     prefix = "FAC" if inv_type == "facture" else "DEV" if inv_type == "devis" else "AVO"
     year = date.today().year
     count = db.query(Invoice).filter(
-        Invoice.user_id == user_id,
+        Invoice.user_id.in_(list(owners)),
         Invoice.reference.like(f"{prefix}-{year}-%")
     ).count()
     return f"{prefix}-{year}-{str(count + 1).zfill(3)}"
@@ -50,7 +56,10 @@ def list_invoices(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    query = db.query(Invoice).filter(Invoice.user_id == current_user.id)
+    # Périmètre ORGANISATION, comme Mes marchés et Mes documents : le devis qu'un collègue rattache à un marché se lit
+    # sur la page de ce marché (« Devis et factures liés ») et dans Mes marchés › Devis et factures. Avant (contrôle
+    # des bugs, octobre 2026), chaque compte ne voyait que les siens.
+    query = db.query(Invoice).filter(Invoice.user_id.in_(member_ids(current_user, db)))
     if type:
         query = query.filter(Invoice.type == type)
     if status:
@@ -68,7 +77,7 @@ def create_invoice(
         # Garde AVANT generate_reference : sinon une facture vide consommait un numéro comptable
         # (trou dans la numérotation à sa suppression).
         raise HTTPException(422, "Ajoutez au moins une ligne avant d'enregistrer.")
-    ref = generate_reference(db, current_user.id, data.type)
+    ref = generate_reference(db, member_ids(current_user, db), data.type)
     ht, tva, ttc = calculate_totals(data.items, data.tva_rate)
 
     invoice = Invoice(
@@ -105,7 +114,7 @@ def update_invoice(
     db: Session = Depends(get_db),
 ):
     inv = db.query(Invoice).filter(
-        Invoice.id == invoice_id, Invoice.user_id == current_user.id
+        Invoice.id == invoice_id, Invoice.user_id.in_(member_ids(current_user, db))
     ).first()
     if not inv:
         raise HTTPException(status_code=404, detail="Facture introuvable")
@@ -132,7 +141,7 @@ def convert_devis_to_facture(
     """Convertir un devis accepté en facture."""
     devis = db.query(Invoice).filter(
         Invoice.id == invoice_id,
-        Invoice.user_id == current_user.id,
+        Invoice.user_id.in_(member_ids(current_user, db)),
         Invoice.type == "devis",
     ).first()
     if not devis:
@@ -140,7 +149,7 @@ def convert_devis_to_facture(
     if getattr(devis, "converted_invoice_id", None):
         raise HTTPException(status_code=409, detail="Ce devis a déjà été converti en facture.")
 
-    ref = generate_reference(db, current_user.id, "facture")
+    ref = generate_reference(db, member_ids(current_user, db), "facture")
     facture = Invoice(
         user_id=current_user.id,
         reference=ref,

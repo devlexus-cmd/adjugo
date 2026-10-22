@@ -320,15 +320,20 @@ class InvoiceCreate(BaseModel):
     @field_validator("items")
     @classmethod
     def _items_non_negative(cls, v):
-        # Quantité/prix négatifs → total HT/TTC négatif imprimé sur un document comptable.
-        for it in (v or []):
-            try:
-                if float(it.get("qty") or 0) < 0 or float(it.get("unit_price") or 0) < 0:
-                    raise ValueError("Quantité et prix unitaire doivent être positifs.")
-            except (TypeError, ValueError) as e:
-                raise ValueError("Ligne de facture invalide : " + str(e))
-        return v
+        return _lignes_positives(v)
     notes: Optional[str] = None
+
+
+def _lignes_positives(v):
+    """Quantité/prix négatifs → total HT/TTC négatif imprimé sur un document comptable. Même règle à la création et à
+    la modification d'un devis ou d'une facture (contrôle des bugs, octobre 2026 : la modification ne la vérifiait pas)."""
+    for it in (v or []):
+        try:
+            if float(it.get("qty") or 0) < 0 or float(it.get("unit_price") or 0) < 0:
+                raise ValueError("Quantité et prix unitaire doivent être positifs.")
+        except (TypeError, ValueError) as e:
+            raise ValueError("Ligne de facture invalide : " + str(e))
+    return v
 
 
 class InvoiceUpdate(BaseModel):
@@ -338,6 +343,32 @@ class InvoiceUpdate(BaseModel):
     due_date: Optional[date] = None
     paid_date: Optional[date] = None
     notes: Optional[str] = None
+
+    # Contrôle des bugs (octobre 2026) : un statut hors de la liste, ou un statut, des lignes ou un taux envoyés vides
+    # (null), étaient recopiés tels quels ; l'écriture ou la relecture échouait (réponse 500), et la liste des devis
+    # et factures de l'organisation ne se lisait plus. Ces validateurs ne voient que les champs envoyés.
+    @field_validator("status")
+    @classmethod
+    def _statut_connu(cls, v):
+        from app.models import InvoiceStatus
+        valeurs = [s.value for s in InvoiceStatus]
+        if v is None or str(v).strip() not in valeurs:
+            raise ValueError("Statut inconnu : choisissez parmi " + ", ".join(valeurs) + ".")
+        return str(v).strip()
+
+    @field_validator("items")
+    @classmethod
+    def _items_non_negative(cls, v):
+        if v is None:
+            raise ValueError("Ajoutez au moins une ligne avant d'enregistrer.")
+        return _lignes_positives(v)
+
+    @field_validator("tva_rate")
+    @classmethod
+    def _taux_renseigne(cls, v):
+        if v is None:
+            raise ValueError("Indiquez le taux de TVA (0 % si vous êtes en franchise de TVA).")
+        return v
 
 
 class InvoiceOut(BaseModel):

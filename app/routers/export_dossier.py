@@ -4,6 +4,7 @@ Genere un ZIP avec tous les CERFA + documents du coffre-fort pour un projet.
 """
 import io
 import os
+import re
 import zipfile
 import datetime
 from fastapi import APIRouter, Depends, HTTPException
@@ -12,7 +13,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.core.org import data_owner_id, member_ids
-from app.core.http import content_disposition
+from app.core.http import NOM_INTERDIT, content_disposition
 from app.services.storage import get_storage
 from app.models import User, Project, Company, Document
 from app.services.cerfa import GENERATORS, reference_consultation
@@ -23,6 +24,30 @@ UPLOADS_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
     "uploads"
 )
+
+
+def _nom_de_fichier(nom) -> str:
+    """Un nom tel qu'il entre dans un chemin du ZIP : espaces en « _ », séparateurs de chemin et caractères interdits
+    en « _ » (contrôle des bugs, octobre 2026 : « Travaux de voirie 2026/2027 » rangeait chaque formulaire dans un
+    sous-dossier « DC1_Travaux_de_voirie_2026/ », et le sommaire nommait ces chemins)."""
+    return re.sub(NOM_INTERDIT, "_", str(nom or "")).replace(" ", "_")
+
+
+def _chemin_unique(chemin: str, vus: set) -> str:
+    """Un chemin jamais pris deux fois dans le ZIP, à la casse près (un extracteur sous Windows ou macOS confond
+    « Kbis.pdf » et « KBIS.pdf ») : deux pièces de même nom (une attestation déposée deux fois dans Mes documents)
+    écrivaient deux entrées du même chemin, et l'une écrasait l'autre à l'extraction. La suivante devient
+    « …_2.pdf », « …_3.pdf » (contrôle des bugs, octobre 2026)."""
+    dossier, sep, nom = chemin.rpartition("/")
+    racine, point, ext = nom.rpartition(".")
+    if not point:
+        racine, ext = nom, ""
+    candidat, i = chemin, 2
+    while candidat.lower() in vus:
+        candidat = f"{dossier}{sep}{racine}_{i}{point}{ext}"
+        i += 1
+    vus.add(candidat.lower())
+    return candidat
 
 
 @router.post("/{project_id}")
@@ -120,7 +145,7 @@ def export_dossier(
     # Creer le ZIP
     zip_buf = io.BytesIO()
     date_str = datetime.date.today().strftime("%Y-%m-%d")
-    project_slug = project.name.replace(" ", "_")[:30]
+    project_slug = _nom_de_fichier(project.name)[:30]
 
     # DC4 (déclaration de sous-traitance) UNIQUEMENT si un sous-traitant est déclaré —
     # sinon on joignait un DC4 vide/sans objet à chaque dossier de groupement.
@@ -162,6 +187,7 @@ def export_dossier(
         ).all()
 
         storage = get_storage()
+        chemins_vus = set()
         for doc in documents:
             category = str(getattr(doc.category, "value", doc.category) or "autre")
             content = None
@@ -173,15 +199,15 @@ def export_dossier(
             if content:
                 ext = (os.path.splitext(doc.file_key)[1]
                        or os.path.splitext(doc.name)[1] or ".pdf")
-                safe_name = doc.name.replace("/", "_").replace(" ", "_")
+                safe_name = _nom_de_fichier(doc.name)
                 if safe_name.lower().endswith(ext.lower()):     # « Kbis.pdf » → « Kbis.pdf », jamais « Kbis.pdf.pdf »
                     ext = ""
                 filename = "02_Documents/{}/{}{}".format(category.capitalize(), safe_name, ext)
-                zf.writestr(filename, content)
+                zf.writestr(_chemin_unique(filename, chemins_vus), content)
             else:
                 # Document en base mais fichier introuvable dans le stockage
                 zf.writestr(
-                    "02_Documents/{}.txt".format(doc.name.replace(" ", "_")),
+                    _chemin_unique("02_Documents/{}.txt".format(_nom_de_fichier(doc.name)), chemins_vus),
                     "Document reference: {}\nCategorie: {}\nFichier non disponible sur le serveur.".format(
                         doc.name, category
                     )

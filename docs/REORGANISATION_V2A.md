@@ -1248,3 +1248,77 @@ chef de file. La production n'avait ni `popstate` ni ces adresses : précédent 
 - **Le précédent ne ferme pas l'écran d'accueil du SIRET** (« Bienvenue sur Adjugo ») : un premier pas, pas une
   fenêtre (déjà exclu par la garde de la relecture).
 
+
+## N. Contrôle des bugs (22/10/2026), groupe « marché »
+
+Six défauts de la page du marché, de « Pièces à fournir », de « Avant de déposer », des formulaires officiels, de
+l'export du dossier et des devis et factures. Chacun a été **reproduit** sur `cfe04e1` avant d'être corrigé ; aucun
+n'est rejeté. Tests : `tests/test_controle_bugs_marche.py` (9 tests, tous en échec sur `cfe04e1`, chacun sur son
+défaut). Aucun prix, quota ni offre ne change ; les pages juridiques ne sont pas touchées.
+
+### N.1 Devis et factures : ceux de l'organisation, numérotés par entreprise
+
+**Reproduit** : un devis créé par un collègue depuis la page du marché (« il sera rattaché à ce marché ») était
+invisible au propriétaire (« Aucun devis ni facture lié », rien dans Mes marchés › Devis et factures, « Facturer »
+répondait 404), et deux collègues obtenaient chacun « DEV-2026-001 » puis « FAC-2026-001 ». **Corrigé**
+(`app/routers/invoices.py`) : la liste, la modification et « Facturer » lisent les devis et factures de
+l'organisation (`member_ids`), comme Mes marchés et Mes documents ; le numéro suivant est compté sur toute
+l'organisation. L'unicité en base reste (compte, numéro) : un collègue retiré laisse ses devis au propriétaire
+(`org._reassign_member_data`) sans heurter un numéro. Une autre organisation ne voit rien (404) et garde sa propre
+numérotation. Pour Eliot : les numéros déjà émis en double par deux collègues d'une même entreprise restent en base
+(le code ne les renumérote pas) ; deux collègues qui enregistrent un devis à la même seconde peuvent encore obtenir
+le même numéro (la base ne porte pas l'organisation sur la facture, il faudrait une migration).
+
+### N.2 Export du dossier (ZIP) : une entrée par pièce, des noms et jamais des chemins
+
+**Reproduit** : deux pièces de même nom dans Mes documents (une attestation déposée deux fois) écrivaient deux
+entrées du même chemin, et l'une écrasait l'autre à l'extraction ; un intitulé « Travaux de voirie 2026/2027 »
+rangeait chaque formulaire dans un sous-dossier (« DC1_Travaux_de_voirie_2026/2027_….pdf », chemin repris par le
+sommaire), et le nom du formulaire téléchargé portait le « / ». **Corrigé** (`app/routers/export_dossier.py`,
+`app/core/http.py`) : la seconde pièce devient « …_2.pdf » (à la casse près, comme la comparent Windows et macOS) ;
+séparateurs de chemin et caractères interdits deviennent « _ » dans les noms du ZIP, du sommaire et du nom UTF-8 de
+tout fichier téléchargé, comme le nom ASCII de repli le faisait déjà. L'intitulé du marché reste tel quel dans le
+sommaire.
+
+### N.3 « Pièces à fournir » : ni une catégorie partagée, ni un bout de mot
+
+**Reproduit** (entreprise seule) : « Attestation de vigilance URSSAF.pdf » rangée dans « Fiscal et social » cochait
+« Attestation de régularité fiscale » (la catégorie, clé `fiscal`, était lue comme le mot-clé) ; « Avis d'attribution
+2025.pdf » cochait le RIB (« rib » dans « attribution ») ; la carte disait « Disponible » et « Avant de déposer » ne
+réclamait ni l'une ni l'autre. **Corrigé** (`app/routers/checklist.py`) :
+
+- la catégorie « Fiscal et social » ne vaut l'attestation fiscale que si le nom du document ne dit pas l'attestation
+  sociale (urssaf, vigilance, cotisation, social), la règle des attestations du chef de file
+  (`invites.vault_doc_type`) ; un nom sans indice dans cette catégorie vaut toujours l'attestation fiscale ;
+- les mots-clés de trois lettres que l'on trouve dans des mots courants, « rib » (attribution, contribution) et
+  « rge » (charges, décharge), ne comptent que comme un mot entier, côté document comme côté pièce demandée ; un
+  changement de casse sépare deux mots (« MonRIB.pdf », « RibEntreprise.pdf » restent reconnus).
+
+Ce n'est pas le point laissé en M.4 (les repères) : les autres mots-clés se lisent comme avant. Démonstration :
+listes des pièces et « Prêt à déposer » de tous les marchés de la démo identiques avant et après (script de la
+contre-relecture, `scratchpad/cr2a/demo_pieces.py`).
+
+### N.4 « Préparer mes documents » par deux collègues : un seul jeu de formulaires
+
+**Reproduit** : le propriétaire, puis un collègue, puis le propriétaire lancent « Préparer mes documents » sur le
+même marché : le dossier « Formulaires officiels » gardait deux DC1.pdf, DC2.pdf, ATTRI1.pdf, HONNEUR.pdf (l'ancien
+jeu, périmé, à côté du nouveau), et le ZIP les portait deux fois. **Corrigé** (`app/services/dossier.py`) : une pièce
+rangée remplace celle du même nom dans le même dossier du marché, quel que soit le collègue de l'organisation qui
+l'avait rangée ; jamais celle d'une autre organisation. Même règle pour le dossier de présentation exporté par
+l'atelier et pour le dossier de l'acheteur ré-importé.
+
+### N.5 Modifier un devis (`PUT /api/invoices/{id}`) : mêmes refus qu'à la création
+
+**Reproduit** (l'écran n'appelle pas cette route ; appel direct) : une ligne à quantité négative était enregistrée
+(total TTC négatif), un statut inconnu faisait échouer l'écriture ou la relecture (réponse 500, puis la liste des
+devis et factures ne se lisait plus), de même qu'un statut, des lignes ou un taux de TVA envoyés vides. **Corrigé**
+(`app/schemas/__init__.py`) : refus lisible (422) dans chacun de ces cas, avec le message de la création pour les
+lignes ; un statut connu est enregistré. Laissé : une liste de lignes vide reste acceptée à la modification (total
+à 0, pas d'erreur) ; la création, elle, la refuse.
+
+### N.6 Laissé, avec sa raison
+
+- **Le même bout de mot dans les pièces d'un partenaire** : `invites._classify_piece_type` (type d'une pièce déposée
+  par un partenaire sans type choisi : sa liste de pièces, le coffre-fort croisé, le suivi du groupement du chef de
+  file) range encore « Avis d'attribution 2025.pdf » et « Contribution.pdf » en RIB, « Cahier des charges.pdf » en
+  qualification (constaté par appel direct). C'est la co-traitance, hors de ce groupe : signalé, non corrigé ici.

@@ -335,7 +335,8 @@ class Invoice(Base):
     __tablename__ = "invoices"
     # Numérotation FAC/DEV SÉQUENTIELLE PAR UTILISATEUR → l'unicité doit être (user_id,
     # reference) et non globale (sinon le 2e user à créer « FAC-2026-001 » heurte la
-    # contrainte globale → 500). Cf. migration g1h2i3j4k5l6.
+    # contrainte globale → 500). Cf. migration g1h2i3j4k5l6. Depuis le contrôle des bugs d'octobre 2026, le numéro
+    # suit l'ORGANISATION (invoices.generate_reference) ; l'unicité (user_id, reference) reste vraie.
     __table_args__ = (UniqueConstraint("user_id", "reference", name="uq_invoice_user_reference"),)
 
     id = Column(Integer, primary_key=True, index=True)

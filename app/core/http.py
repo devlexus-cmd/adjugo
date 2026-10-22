@@ -4,6 +4,11 @@ import unicodedata
 from urllib.parse import quote
 
 
+# Caractères qu'un nom de fichier ne peut pas porter, séparateurs de chemin compris (le même jeu partout : en-tête
+# de téléchargement, noms des fichiers du dossier ZIP).
+NOM_INTERDIT = r'[\\/:*?"<>|\r\n\t]+'
+
+
 def content_disposition(filename: str, disposition: str = "attachment") -> str:
     """En-tête Content-Disposition robuste.
 
@@ -13,8 +18,12 @@ def content_disposition(filename: str, disposition: str = "attachment") -> str:
     `filename*` encodé en UTF-8 (RFC 5987), lu par tous les navigateurs modernes.
     """
     name = (filename or "document").strip() or "document"
+    # Les séparateurs de chemin et caractères interdits quittent AUSSI le nom UTF-8 (filename*), comme le nom ASCII de
+    # repli : un marché « Travaux de voirie 2026/2027 » donnait « DC1_Travaux_de_voirie_2026/2027.pdf », un chemin et
+    # non un nom de fichier (contrôle des bugs, octobre 2026).
+    name = re.sub(NOM_INTERDIT, "_", name).strip() or "document"
     ascii_name = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode("ascii")
-    ascii_name = re.sub(r'[\\/:*?"<>|\r\n\t]+', "_", ascii_name).strip() or "document"
+    ascii_name = re.sub(NOM_INTERDIT, "_", ascii_name).strip() or "document"
     return f"{disposition}; filename=\"{ascii_name}\"; filename*=UTF-8''{quote(name)}"
 
 
