@@ -43,9 +43,15 @@ données, `c5priseenmain` (section 4).
   par-dessus la fenêtre.
 - **La zone tirée du code postal suit la règle du serveur** (revue de la réunion) : outre-mer sur 3 chiffres
   (« 97400 » donne « 974 » ; avant, « 97 », qui couvre tout l'outre-mer), Corse « 2A, 2B » (avant, « 20 », qui ne
-  trouve aucun avis du BOAMP). Même règle pour « Voir les marchés pour mon entreprise ». « Chercher » des
-  partenaires prend aussi « 974 » ; la Corse y reste « 20 », comme avant. Une entreprise déjà inscrite garde la
-  zone enregistrée : rien n'est réécrit (décision 1).
+  trouve aucun avis du BOAMP). La fenêtre du SIRET l'enregistre dans Ce que je cherche. « Chercher » des
+  partenaires prend aussi « 974 » ; la Corse y reste « 20 », comme avant.
+- **Le champ « Départements » de Trouver des marchés suit la même règle pour toutes les entreprises, inscrites
+  avant ou après la mise en ligne** (contre-relecture de la réunion). Il est pré-rempli depuis le code postal de
+  Mon entreprise quand on ouvre Trouver ou qu'on clique « Voir les marchés pour mon entreprise », et c'est lui que
+  les onglets Publiés et À venir envoient. Une entreprise de La Réunion y lit donc « 974 », une entreprise corse
+  « 2A, 2B », dès la mise en ligne. Seule la zone déjà enregistrée dans Ce que je cherche n'est pas réécrite : une
+  entreprise inscrite avant y garde « 97 » ou « 20 ». Cette zone sert à la note d'adéquation, jamais au champ de
+  Trouver (décision 1).
 
 ### Accueil
 
@@ -74,17 +80,21 @@ données, `c5priseenmain` (section 4).
 - **Avis annulés ou déclarés sans suite** : ils disparaissent.
 - **Faux « métier correspondant »** : le vocabulaire interne du BOAMP n'est plus lu comme un code métier. La note
   d'adéquation de certaines cartes BOAMP baisse. Une recherche par codes CPV ne ramène plus d'avis sans rapport.
-- **Outre-mer** : « 974 » ne montre plus les avis de la Guadeloupe ou de la Martinique, et la zone de la note est
-  juste pour une entreprise d'outre-mer dont la zone est sur 3 chiffres. C'est le cas d'une entreprise inscrite par la
-  fenêtre du SIRET depuis la revue de la réunion. Une zone « 97 » couvre toujours tout l'outre-mer.
+- **Outre-mer** : « 974 » ne montre plus les avis de la Guadeloupe ou de la Martinique. C'est ce que cherche
+  désormais toute entreprise dont le code postal est à La Réunion, car le champ « Départements » est pré-rempli
+  « 974 » (plus haut). La zone de la note est juste pour une entreprise d'outre-mer dont la zone enregistrée dans
+  Ce que je cherche est sur 3 chiffres. C'est le cas d'une entreprise inscrite par la fenêtre du SIRET depuis la
+  revue de la réunion. « 97 », saisi dans le champ ou enregistré, couvre toujours tout l'outre-mer.
 - **Corse** : « 2A » et « 2B » trouvent enfin les avis du BOAMP, qui écrit « 20A » et « 20B ». Le 21/10, 19 avis
   ouverts étaient concernés ; avant, aucun n'était trouvé. Une zone « 20 » ne trouve toujours rien au BOAMP.
 - Une recherche fait une ou deux requêtes de plus au BOAMP, soit 0,4 à 0,6 seconde chacune.
 
 ### Trouver des marchés › À venir (fins de contrat)
 
-- **Outre-mer** : seules les fins de contrat du département demandé, affiché sur 3 chiffres (« 974 »). Une zone
-  « 97 » garde celles de tout l'outre-mer.
+- **Outre-mer** : seules les fins de contrat du département demandé, affiché sur 3 chiffres (« 974 »). L'onglet
+  n'envoie que son champ « Départements », pré-rempli ainsi depuis le code postal de Mon entreprise pour toute
+  entreprise, déjà inscrite ou non. La zone enregistrée dans Ce que je cherche n'y entre pas : elle ne sert qu'à
+  la note des fins de contrat. « 97 » saisi dans le champ garde celles de tout l'outre-mer.
 - **Corse et outre-mer, repli payant** : quand la base des marchés attribués (DECP) ne donne rien, le repli par le
   BOAMP et l'IA peut désormais trouver des fins de contrat dans ces deux zones. L'analyse est alors **débitée**.
   Avant, il ne trouvait jamais rien, et l'analyse était toujours remboursée. **C'est la décision 1 de la
@@ -229,9 +239,12 @@ contrats).
     bas). (V2B § B3.1)
 14. **Tests** : 20 échecs et 24 erreurs sur PostgreSQL, et un test qui échouait certains jours selon la date. Ils
     venaient tous des tests, pas du logiciel. (TESTS_POSTGRES ; V2B § S.14)
-15. **Fenêtre du SIRET et « Voir les marchés pour mon entreprise »** : le département était coupé à 2 chiffres. Une
+15. **Fenêtre du SIRET et champ « Départements » de Trouver** (pré-rempli à l'ouverture de Trouver et par « Voir les
+    marchés pour mon entreprise ») : le département du code postal était coupé à 2 chiffres. Une
     entreprise de La Réunion recevait « 97 », donc les avis et les fins de contrat de tout l'outre-mer « dans votre
-    zone ». Une entreprise corse recevait « 20 », qui ne trouve aucun avis du BOAMP. (Revue de la réunion, section 5)
+    zone ». Une entreprise corse recevait « 20 », qui ne trouve aucun avis du BOAMP. Le champ de Trouver est
+    corrigé pour toutes les entreprises, la zone enregistrée dans Ce que je cherche seulement pour les nouvelles
+    inscriptions. (Revue et contre-relecture de la réunion, section 5)
 16. **« Offre commune figée le … »** prenait le jour UTC sur la page du marché et dans l'espace du partenaire avec
     compte. La page du partenaire sans compte prenait le jour local. (Revue de la réunion, section 5)
 
@@ -253,10 +266,17 @@ contrats).
    fin de contrat déclenche le repli payant, là où la DECP montrait avant (à tort) celles d'un autre DOM.
    (Moteur, points 12 et 12 bis, § R.1 et V.5)
 
-   Qui est concerné : les entreprises dont la zone est « 971 » à « 976 », « 2A » ou « 2B ». C'est le cas d'une
-   entreprise qui les a saisis, ou qui s'inscrit par la fenêtre du SIRET après cette mise en ligne (section 1). Une
-   entreprise déjà inscrite par cette fenêtre a « 97 » ou « 20 ». Rien n'est réécrit, donc elle garde l'ancien
-   comportement (repli remboursé faute de trouver) tant qu'elle ne corrige pas sa zone dans Ce que je cherche.
+   Qui est concerné (contre-relecture de la réunion) :
+   - **toute entreprise dont le code postal (Mon entreprise) est en outre-mer ou en Corse, inscrite avant ou après
+     cette mise en ligne**. Le champ « Départements » de « À venir » est pré-rempli « 974 » (par exemple) ou
+     « 2A, 2B » depuis ce code postal (`srcPrefillFromProfile`), et non depuis Ce que je cherche ;
+   - toute entreprise qui saisit ces codes dans le champ.
+
+   La zone enregistrée dans Ce que je cherche n'y change rien. L'onglet ne l'envoie pas, et le serveur ne la lit
+   que pour la note des fins de contrat, jamais pour choisir les départements ni pour décider du repli. Une
+   entreprise déjà inscrite par la fenêtre du SIRET y a « 97 » ou « 20 », mais elle passe sous cette règle dès la
+   mise en ligne, comme les nouvelles. La portée est fixée par `tests/test_mise_en_ligne_22_10.py` (`test_cr1_a_venir_part_du_code_postal_pour_toute_entreprise_sous_node`,
+   `test_cr1_la_route_a_venir_ne_lit_que_le_champ_de_l_onglet`).
 2. **Adresses non confirmées : une règle qui ne couvre pas encore tous les courriels.** Ce qui est en place :
    - aucune alerte de marchés ne part vers une adresse non confirmée (moteur). Rien n'est marqué « déjà vu », donc
      les marchés partent au premier passage après la confirmation (Moteur § V.7) ;
@@ -382,8 +402,11 @@ La façon recommandée n'a ni coupure ni perte :
 4. **à savoir** : l'ancien code ne lit pas la nouvelle mémoire des alertes. À sa première tournée, il renverra
    **une fois tous les marchés que la nouvelle version a revus et qui passent son seuil, même ceux envoyés avant
    la mise en ligne**. Dans la vérification, 3 marchés ont été renvoyés à l'alerte du chef de file, dont 2 envoyés
-   avant la mise en ligne. En production, chaque alerte peut ainsi renvoyer jusqu'à 25 marchés, dont 10 sont
-   affichés dans le courriel. Ensuite, plus rien n'est renvoyé. Toutes les autres données écrites par la nouvelle
+   avant la mise en ligne. Ce renvoi n'est pas plafonné à 25 marchés par alerte (contre-relecture de la réunion).
+   L'ancien code demande 25 avis à chaque source qui suit cette limite (BOAMP et TED, soit 50 au plus). Pour une
+   alerte sur la Bretagne, il y ajoute tous ceux de Mégalis, qui ne la suit pas (jusqu'à 3 pages de résultats), et
+   il ne coupe jamais la liste réunie. Le courriel en affiche 10 par alerte, avec leur nombre, et son objet donne
+   le total. Ensuite, plus rien n'est renvoyé. Toutes les autres données écrites par la nouvelle
    version restent lisibles par l'ancienne (vérifié) ;
 5. pour remettre la nouvelle version ensuite, redéployez-la : `alembic upgrade head` rejoue `c5priseenmain` sans
    effet (les colonnes sont là), et tout est retrouvé. Elle relit la mémoire mêlée des alertes sans rien renvoyer
@@ -434,12 +457,13 @@ appels, chacun à sa place. Aucun test n'a été affaibli ni retiré, et une seu
 
 | Moteur | Tests | Réussis | Échecs | Erreurs | Ignorés |
 |---|---|---|---|---|---|
-| SQLite | 2 391 | 2 391 | 0 | 0 | 0 |
-| PostgreSQL 16.2 jetable (`scripts/tests_postgres.py`) | 2 391 | 2 391 | 0 | 0 | 0 |
+| SQLite | 2 394 | 2 394 | 0 | 0 | 0 |
+| PostgreSQL 16.2 jetable (`scripts/tests_postgres.py`) | 2 394 | 2 394 | 0 | 0 | 0 |
 
-Le total vaut 2 205 (production) + 126 (vague 2b) + 50 (moteur) + 10 (revue de la réunion, plus bas). La première
-suite réunie, avant l'alignement du test cité plus haut, donnait 2 380 sur 2 381. Avant la revue : 2 381 sur 2 381
-sur les deux moteurs.
+Le total vaut 2 205 (production) + 126 (vague 2b) + 50 (moteur) + 10 (revue de la réunion, plus bas) + 3
+(contre-relecture de la réunion, plus bas). La première suite réunie, avant l'alignement du test cité plus haut,
+donnait 2 380 sur 2 381. Avant la revue : 2 381 sur 2 381 sur les deux moteurs. Avant la contre-relecture : 2 391
+sur 2 391 sur les deux moteurs.
 
 **Migration depuis l'état exact de la production, PostgreSQL 16.2 : 38 contrôles sur 38.** Le code `0afc1ed` a
 été extrait par `git archive`. La base a été montée par ce code (tête `c4montantseul`) et remplie par lui :
@@ -552,3 +576,26 @@ Vérifications des corrections :
 
 Vu en passant, non corrigé : le rapport PDF du groupement (`app/services/consortium_report.py`) date lui aussi l'offre
 figée par le jour UTC (« Offre commune figée le 21/10 »). C'est un document à part, inchangé depuis la production.
+
+### Contre-relecture de la réunion (22/10/2026)
+
+Une contre-relecture de la revue (`002e2bb`) a fait 2 remarques : 1 majeure et 1 mineure. Les deux ont été
+reproduites, et aucune n'est rejetée. Elles portaient sur ce document : le code ne change pas. Trois tests s'ajoutent
+à `tests/test_mise_en_ligne_22_10.py`. Les tests CR1 (onglet) et CR2 échouaient sur `002e2bb`, sur les phrases du
+document ; le test de la route, qui fixe un comportement inchangé, y passait déjà. Les tests R3 et R7, qui citaient
+les deux phrases fausses, citent les phrases corrigées et vérifient que les anciennes ont disparu.
+
+| | Remarque | Reproduction | Correction |
+|---|---|---|---|
+| CR1 | Décision 1, « Qui est concerné » : une entreprise déjà inscrite ne garde pas l'ancien comportement de « À venir ». | Sous Node, avec les vraies méthodes `srcPrefillFromProfile`, `srcDeps` et `srcRenewals` : une entreprise déjà inscrite, zone enregistrée « 97 » (code postal 97400) ou « 20 » (20000), envoie `["97"]` et `["20"]` sur `85e5809`, `["974"]` et `["2A", "2B"]` sur `002e2bb`. La route `POST /api/sourcing/renewals` ne prend ses départements que dans la requête, pour la DECP comme pour le repli ; la zone enregistrée ne sert qu'à la note. | Décision 1 récrite : toute entreprise dont le code postal est en outre-mer ou en Corse, inscrite avant ou après, et toute entreprise qui saisit ces codes. Section 1 : le pré-remplissage du champ de Trouver (Publiés et À venir) vaut pour tous les comptes, seule la zone enregistrée n'est pas réécrite. Section 2, point 15, précisé. Deux tests fixent cette portée (l'onglet sous Node, la route). |
+| CR2 | Retour arrière, étape 4 : le plafond de « 25 marchés » par alerte n'existe pas dans le code de production. | Code `0afc1ed` extrait par `git archive`, `run_one_saved_search` réel, sources simulées sans réseau : BOAMP et TED en rendent 25 chacun, Mégalis 30 (il ne lit pas la limite), et la liste réunie n'est jamais coupée. Une alerte bretonne renvoie 80 marchés. | Étape 4 : 25 par source qui suit la limite (BOAMP et TED), plus tous ceux de Mégalis, liste jamais coupée ; 10 affichés par alerte avec leur nombre, et le total dans l'objet. Un test rejoue ce renvoi sur le code de production. |
+
+Vérifications : suites complètes SQLite et PostgreSQL 16.2 à 2 394 sur 2 394 chacune (tableau plus haut). Aucun
+fichier servi ne change : `scripts/sri_update.py --check`, `node --check` (8 fichiers et 9 scripts intégrés) et
+`scripts/i18n_ajouter.py --check` (789 clés) restent verts.
+
+Vu en passant, non corrigé : une première suite SQLite, lancée en même temps que celle de PostgreSQL, a vu échouer
+une fois `tests/test_lecture_integrale.py::test_scan_sans_ocr_signale_et_rembourse_si_rien_n_est_lisible`. C'est
+une course entre le test et la tâche de fond : `lecture_taches.lancer` écrit l'état « erreur » avant de rembourser
+l'analyse, et le test relit le compteur dès qu'il voit « erreur ». Le remboursement a bien lieu. Ce fichier relancé
+seul trois fois, puis la suite complète relancée seule, sont verts. Ce code n'a pas changé depuis la production.

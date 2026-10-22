@@ -18,6 +18,16 @@ sur 85e5809 (code, ou document qui disait autre chose que le code) :
 
 La migration (R3, R4, R5) est aussi rejouée sur PostgreSQL 16.2 depuis l'état exact de la production (section 5 du
 document). Aucun appel réseau réel (courriels coupés) ; les fonctions de app.js et d'invite.html sous Node.
+
+CONTRE-RELECTURE de la revue (002e2bb) : 2 remarques, reproduites, corrigées dans le document (le code ne change pas) ;
+les tests CR1 et CR2 échouaient sur 002e2bb (le document disait autre chose que le code) :
+
+  CR1 décision 1, « Qui est concerné » : le champ « Départements » de « À venir » (et de Publiés) est pré-rempli depuis
+      le code postal de Mon entreprise pour TOUTE entreprise, déjà inscrite ou non ; la zone enregistrée dans Ce que
+      je cherche n'y entre pas (onglet et route) ;
+  CR2 retour arrière, étape 4 : l'ancien code ne plafonne pas le renvoi à 25 marchés par alerte (25 par source qui
+      suit la limite, plus Mégalis, qui ne la suit pas ; la liste réunie n'est jamais coupée) — rejoué sur le code de
+      production extrait par `git archive`.
 """
 import json
 import os
@@ -175,8 +185,10 @@ def test_r3_l_ancien_code_renvoie_tous_les_marches_revus_meme_envoyes_avant():
     assert "les marchés déjà envoyés depuis la mise en ligne" not in r
     for x in ("une fois tous les marchés que la nouvelle version a revus et qui passent son seuil, même ceux envoyés "
               "avant la mise en ligne", "3 marchés ont été renvoyés à l'alerte du chef de file, dont 2 envoyés avant "
-              "la mise en ligne", "jusqu'à 25 marchés, dont 10 sont affichés"):
+              "la mise en ligne", "Le courriel en affiche 10 par alerte"):
         assert x in r, x
+    # Le plafond de 25 par alerte n'existe pas (contre-relecture, CR2 : test_cr2_…, rejoué sur le code de production).
+    assert "jusqu'à 25 marchés, dont 10 sont affichés" not in r
 
 
 # ═══ R4 et R5. Retour arrière : `stamp` sans coupure ; ce qu'affiche `alembic current` ════════════════════════════
@@ -287,7 +299,9 @@ def test_r7_ce_que_le_serveur_fait_de_ces_zones():
     assert formes_boamp("20") == ["20"]                                       # « 20 » : aucun avis au BOAMP
     assert _departements_voulus("2A, 2B") == ["2A", "2B"]
     assert "La zone tirée du code postal suit la règle du serveur" in _plat(DOC)
-    assert "Une entreprise déjà inscrite par cette fenêtre a « 97 » ou « 20 »" in _plat(DOC)
+    # Une entreprise déjà inscrite garde « 97 » ou « 20 » dans Ce que je cherche (rien n'est réécrit), mais pas dans le
+    # champ de Trouver (contre-relecture, CR1 : test_cr1_…).
+    assert "Une entreprise déjà inscrite par la fenêtre du SIRET y a « 97 » ou « 20 »" in _plat(DOC)
 
 
 # ═══ R8. « Offre commune figée le … » : le même jour sur tous les écrans ═══════════════════════════════════════════
@@ -318,3 +332,170 @@ console.log(JSON.stringify(out));
     assert r["2026-10-21T23:41:46.949140+00:00"]["convJour"] == "22/10/2026"   # 01:41 à Paris (avant : 21/10/2026)
     assert r["2026-10-21T10:00:00+00:00"]["convJour"] == "21/10/2026"
     assert "« Offre commune figée le … »** donne le même jour partout" in _plat(DOC)
+
+
+# ═══ Contre-relecture de la revue (002e2bb) ════════════════════════════════════════════════════════════════════════
+
+# ─── CR1. « À venir » part du code postal, pour toute entreprise ──────────────────────────────────────────────────
+
+def test_cr1_a_venir_part_du_code_postal_pour_toute_entreprise_sous_node():
+    """Une entreprise DÉJÀ inscrite, zone enregistrée « 97 » ou « 20 » dans Ce que je cherche (rien n'est réécrit),
+    code postal 97400 ou 20000 : à l'ouverture de Trouver, le champ « Départements » est pré-rempli depuis le code
+    postal (srcPrefillFromProfile), et « À venir » n'envoie que lui (srcRenewals → srcDeps). Sur 85e5809 : ["97"] et
+    ["20"] ; depuis la revue (002e2bb) : ["974"] et ["2A", "2B"], quelle que soit la zone enregistrée. Le document
+    disait le contraire (« elle garde l'ancien comportement … tant qu'elle ne corrige pas sa zone »)."""
+    borne = JS[JS.index("const MONTANT_SEUL_MAX = "):JS.index("// Confirmation d'email vivante (décision 12 (a))")]
+    script = borne + "const o = {\n" + "\n".join(_methode(m) for m in (
+        "srcPrefillFromProfile", "srcDeps", "srcRenewals")) + "\n};\n" + r"""
+async function cas(cp, zone) {
+  const envois = [];
+  Object.assign(o, { company: { postal_code: cp, specialites: "Voirie" }, criteria: { departements: zone },
+    src: { query: "", dept: "", prefilled: false, searched: false, renewals: { loading: false, done: false, list: [] } },
+    notify() {}, go() {},
+    api: async (m, p, b) => { envois.push([m, p, JSON.parse(JSON.stringify(b || {}))]); return { renewals: [], count: 0 }; } });
+  o.srcPrefillFromProfile();           // go("sourcing") : ouverture de Trouver
+  await o.srcRenewals();               // onglet « À venir »
+  return { champ: o.src.dept, envois, zone: o.criteria.departements };
+}
+(async () => {
+  const out = {};
+  for (const [cp, zone] of JSON.parse(process.argv[1])) out[cp + "|" + zone] = await cas(cp, zone);
+  console.log(JSON.stringify(out));
+})();
+"""
+    cas = [["97400", "97"], ["97400", "974"], ["97400", ""], ["20000", "20"], ["20000", "2A, 2B"], ["29200", "974"]]
+    r = _node_tz(script, "UTC", json.dumps(cas))
+    attendu = {"97400": ["974"], "20000": ["2A", "2B"], "29200": ["29"]}
+    for cp, zone in cas:
+        v = r[cp + "|" + zone]
+        assert v["envois"] == [["POST", "/api/sourcing/renewals", {"query": "Voirie", "departements": attendu[cp]}]], (cp, zone, v)
+        assert v["zone"] == zone                                    # Ce que je cherche : jamais réécrit
+    assert r["97400|97"]["champ"] == "974" and r["20000|20"]["champ"] == "2A, 2B"
+    # Le pré-remplissage a lieu à chaque ouverture de Trouver, pour tout compte ; Publiés envoie le même champ.
+    assert re.search(r'if \(v === "sourcing"\) \{[^\n}]*this\.srcPrefillFromProfile\(\);', JS)
+    assert re.search(r'"/api/sourcing/search",\s*\{ query: this\.src\.query, departements: this\.srcDeps\(\)', JS)
+    assert JS.count("this.src.dept = ") == 3                   # fenêtre du SIRET, pré-remplissage, « Élargir »
+    # Le document le dit (décision 1 et section 1), sans plus promettre l'ancien comportement aux comptes existants.
+    d1 = _section("1. **Repli payant de l'onglet « À venir »", "2. **Adresses non confirmées")
+    for x in ("toute entreprise dont le code postal (Mon entreprise) est en outre-mer ou en Corse, inscrite avant ou "
+              "après cette mise en ligne", "`srcPrefillFromProfile`", "et non depuis Ce que je cherche",
+              "toute entreprise qui saisit ces codes dans le champ", "elle passe sous cette règle dès la mise en ligne",
+              "test_cr1_a_venir_part_du_code_postal_pour_toute_entreprise_sous_node",
+              "test_cr1_la_route_a_venir_ne_lit_que_le_champ_de_l_onglet"):
+        assert x in d1, x
+    assert "tant qu'elle ne corrige pas sa zone" not in d1 and "garde l'ancien comportement" not in d1
+    s1 = _section("## 1. Ce qui change pour les clients", "## 2. Les défauts de production corrigés")
+    assert "Une entreprise déjà inscrite garde la zone enregistrée : rien n'est réécrit" not in s1
+    for x in ("**Le champ « Départements » de Trouver des marchés suit la même règle pour toutes les entreprises, "
+              "inscrites avant ou après la mise en ligne**", "Seule la zone déjà enregistrée dans Ce que je cherche "
+              "n'est pas réécrite", "L'onglet n'envoie que son champ « Départements »"):
+        assert x in s1, x
+
+
+def test_cr1_la_route_a_venir_ne_lit_que_le_champ_de_l_onglet(client, auth, monkeypatch):
+    """Côté serveur : POST /api/sourcing/renewals choisit ses départements dans la requête (le champ de l'onglet), pour
+    la DECP comme pour le repli payant ; la zone enregistrée (« 97 ») ne sert qu'à la note des fins de contrat."""
+    from app.services import decp, renewal
+    h = _h(auth)
+    assert client.put("/api/company/", headers=h, json={"name": "Voirie CR1", "postal_code": "97400"}).status_code == 200
+    assert client.put("/api/criteria/", headers=h, json={"departements": "97"}).status_code == 200
+    vus = []
+
+    def _decp(query, departements, criteria, domaines=None):
+        vus.append(("DECP", list(departements), (criteria or {}).get("departements")))
+        return {"count": 0, "renewals": [], "errors": []}
+
+    def _repli(query, departements, criteria, domaines=None, lang_name=None):
+        vus.append(("repli", list(departements), (criteria or {}).get("departements")))
+        return {"count": 0, "renewals": [], "errors": []}       # rien trouvé : analyse remboursée
+
+    monkeypatch.setattr(decp, "detect_renewals_decp", _decp)
+    monkeypatch.setattr(renewal, "detect_renewals", _repli)
+    for champ, deps in ((["974"], ["974"]), (["2A", "2B"], ["2A", "2B"]), (["97"], ["97"]), ([], [])):
+        vus.clear()
+        r = client.post("/api/sourcing/renewals", headers=h, json={"query": "voirie", "departements": champ})
+        assert r.status_code == 200, r.text
+        assert vus == [("DECP", deps, "97"), ("repli", deps, "97")], (champ, vus)
+
+
+# ─── CR2. Retour arrière : l'ancien code ne plafonne pas le renvoi à 25 ──────────────────────────────────────────
+
+_ALERTE_DE_PRODUCTION = r'''
+import json, sys, types
+sys.path.insert(0, sys.argv[1])
+import app.services.alerts as al
+import app.services.profile as pr
+import app.routers.sourcing as rs
+import app.sourcing.sources.atexo as atexo
+from app.sourcing.schemas import NormalizedTender, Provenance
+
+def avis(src, i):
+    t = NormalizedTender(objet=f"Voirie {src} {i}", acheteur=f"Acheteur {src} {i}", date_limite="2099-12-15",
+                         departements=["29"], provenance=Provenance(source=src, official_ref=f"{src}-{i}",
+                                                                    source_url=f"https://exemple.invalid/{src}/{i}"))
+    t.dedup_key = f"{src}|{i}"
+    return t
+
+class SuitLaLimite:       # BOAMP et TED de 0afc1ed : min(criteria.limit, 50) lignes demandées
+    def __init__(self, name): self.name = name
+    def search(self, c): return [avis(self.name, i) for i in range(min(c.limit, 50))]
+
+atexo._cached_fetch = lambda url, name, base: [avis("MEGALIS", i) for i in range(30)]   # 3 pages lues, sans réseau
+atexo._refusee = lambda name: False
+rs._tender_sources = lambda countries: [SuitLaLimite("BOAMP"), atexo.MEGALIS, SuitLaLimite("TED")]
+pr.criteria_dict = lambda uid, db: {"go_threshold": 0}
+pr.company_dict = lambda c: {}
+
+class Q:
+    def filter(self, *a): return self
+    def first(self): return None
+
+s = types.SimpleNamespace(user_id=1, query="voirie", cpv=[], departements=["29"], countries=[], montant_min=None,
+                          montant_max=None, type_marche="", last_seen_refs=["BOAMP|BOAMP-0 + BOAMP-0"], min_score=None,
+                          last_run=None)
+fresh = al.run_one_saved_search(s, types.SimpleNamespace(query=lambda *a: Q()), mark=False)
+print(json.dumps({"total": len(fresh), "par_source": {k: sum(1 for f in fresh if f["source"] == k)
+                                                      for k in ("BOAMP", "MEGALIS", "TED")}}))
+'''
+
+
+def test_cr2_l_ancien_code_ne_plafonne_pas_le_renvoi_a_25_par_alerte(tmp_path):
+    """Rejoué sur le code de PRODUCTION (0afc1ed, extrait par `git archive`) : run_one_saved_search passe limit=25 à
+    chaque source ; BOAMP et TED en demandent 25, Mégalis (alerte bretonne) ne lit pas la limite, et
+    TenderSearchService.search ne coupe jamais la liste réunie. Avec 25 + 30 + 25 avis encore inconnus de la mémoire
+    (celle de la nouvelle version : « BOAMP|BOAMP-0 + BOAMP-0 » n'est pas reconnue, R3), l'alerte en renvoie 80. Le
+    courriel en affiche 10 par alerte, avec leur nombre, et son objet donne le total. Le document disait « jusqu'à 25
+    marchés »."""
+    import io
+    import sys
+    import tarfile
+    git = shutil.which("git")
+    if not git or subprocess.run([git, "-C", str(ROOT), "cat-file", "-e", "0afc1ed^{commit}"],
+                                 capture_output=True).returncode:
+        pytest.skip("code de production (0afc1ed) absent de ce dépôt")
+    arch = subprocess.run([git, "-C", str(ROOT), "archive", "--format=tar", "0afc1ed", "app"], capture_output=True,
+                          check=True).stdout
+    code = tmp_path / "code_0afc1ed"
+    with tarfile.open(fileobj=io.BytesIO(arch)) as t:
+        t.extractall(code, filter="data")
+    env = dict(os.environ, DATABASE_URL=f"sqlite:///{tmp_path / 'prod.db'}", SMTP_HOST="", SMTP_USER="",
+               BREVO_API_KEY="", ANTHROPIC_API_KEY="", MISTRAL_API_KEY="", MISTRAL_API_KEY_ADJUGO="", TZ="UTC")
+    r = subprocess.run([sys.executable, "-I", "-c", _ALERTE_DE_PRODUCTION, str(code)], capture_output=True, text=True,
+                       timeout=120, env=env, cwd=str(tmp_path))
+    assert r.returncode == 0, r.stderr[-2000:]
+    res = json.loads(r.stdout.strip().splitlines()[-1])
+    assert res == {"total": 80, "par_source": {"BOAMP": 25, "MEGALIS": 30, "TED": 25}}
+    prod = lambda chemin: (code / chemin).read_text(encoding="utf-8")
+    assert "limit=25," in prod("app/services/alerts.py")
+    assert '"limit": min(criteria.limit, 50)' in prod("app/sourcing/sources/boamp.py")
+    assert "lim = min(criteria.limit, 50)" in prod("app/sourcing/sources/ted.py")
+    assert "for t in tenders[:10]:" in prod("app/services/alerts.py")                     # 10 affichés par alerte
+    assert 'f"\\n● {name} ({len(tenders)} nouveau(x)) :"' in prod("app/services/alerts.py")   # avec leur nombre
+    assert "{sum(len(t) for _, t in blocks)} nouvel(s) appel(s) d'offres" in prod("app/services/alerts.py")
+    r4 = _section("### Revenir en arrière", "## 5. Les vérifications faites")
+    assert "jusqu'à 25 marchés" not in r4
+    for x in ("Ce renvoi n'est pas plafonné à 25 marchés par alerte", "25 avis à chaque source qui suit cette limite "
+              "(BOAMP et TED, soit 50 au plus)", "tous ceux de Mégalis, qui ne la suit pas",
+              "il ne coupe jamais la liste réunie", "Le courriel en affiche 10 par alerte, avec leur nombre, et son "
+              "objet donne le total"):
+        assert x in r4, x
