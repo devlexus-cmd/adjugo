@@ -61,8 +61,12 @@ def _urls(h: str) -> set:
 def _assert_courriel_propre(c: dict, url: str, interdits=(), saisies=()):
     """Les règles communes : HTML et texte, un seul lien (celui de l'invitation), aucune image ni pixel, aucune
     adresse email, aucun mot banni, aucun émoji, jamais « à le / de le chef de file ». `saisies` : données saisies
-    par un client (nom d'un marché de test…), retirées avant la recherche des mots bannis (ce ne sont pas nos mots)."""
+    par un client (nom d'un marché de test…), retirées avant la recherche des mots bannis (ce ne sont pas nos mots).
+    Contre-relecture de la partie écran du lot 1 : le jeton du lien (`secrets.token_urlsafe(32)`, tiré au hasard) est
+    retiré aussi, l'adresse écrite par Adjugo reste lue. Avant, un jeton comme « …r8AO7HS… » se lisait « AO » (ou
+    « GO », « DPGF ») et le test échouait au hasard, environ une fois sur 1 200 liens."""
     t, h = c["texte"], c["html"]
+    lien_sans_jeton = url.rsplit("/", 1)[0] + "/"
     assert t and h and h.lstrip().startswith("<!DOCTYPE html>") and '<html lang="fr">' in h
     assert "\n" not in c["objet"] and "\r" not in c["objet"]
     assert "<img" not in h.lower() and "background-image" not in h.lower() and "url(" not in h.lower()
@@ -70,6 +74,7 @@ def _assert_courriel_propre(c: dict, url: str, interdits=(), saisies=()):
     assert url in t and f'href="{_html.escape(url, quote=True)}"' in h
     assert not re.search(r"[\w.+-]+@[\w-]+\.[\w.]+", t + _visible(h)), "aucune adresse email dans le courriel"
     for x in (c["objet"], t, _visible(h)):
+        x = x.replace(url, lien_sans_jeton)
         for d in saisies:
             x = x.replace(d, " ").replace(d[:50], " ")
         assert not mots_bannis(x), (mots_bannis(x), x[:200])

@@ -12,7 +12,7 @@ réunion, au-dessus de la production actuelle (`feat/produit-acheteur-collectivi
 | Réorganisation de l'interface, vague 2b : prise en main, marché d'exemple, espace du partenaire, courriel d'invitation | `52e0d59` | `docs/REORGANISATION_V2B.md` |
 | Moteur de recherche, lot 1 « Dire juste », partie serveur | `723c9cc` | `docs/MOTEUR_LOT1.md` |
 | Suite de tests verte sur PostgreSQL (rien ne change pour les clients) | `8b66841` | `docs/TESTS_POSTGRES.md` |
-| Moteur de recherche, lot 1 « Dire juste », partie écran (ajoutée le 22/10, au-dessus de `0f8eb32`) | `ba07980`, puis sa revue (le commit qui suit `ba07980`) | `docs/MOTEUR_LOT1.md`, section « Écran » (et « Revue ») |
+| Moteur de recherche, lot 1 « Dire juste », partie écran (ajoutée le 22/10, au-dessus de `0f8eb32`) | `ba07980`, puis sa revue (`4701fa9`) et la contre-relecture de celle-ci (le commit qui suit `4701fa9`) | `docs/MOTEUR_LOT1.md`, section « Écran » (et « Revue », « Contre-relecture ») |
 
 **Ce qui ne part pas.** Les pages annexes du site public (`/plateforme`, `/profils/…`, `/secteurs/…`, `/faq`)
 restent hors de cette mise en ligne tant que vous n'avez pas relu leurs textes. Une branche à part,
@@ -928,5 +928,32 @@ Vérifications :
   arrière vers Trouver) et avec le champ « Départements » vidé (recherche sur toute la France, comme le dit le
   sous-titre) ; la démo (Publiés, À venir sans ligne de crédit ni de paiement à l'usage, sa page d'exemple d'une
   délibération). Aucun défilement horizontal à 375 px, aucune erreur de script.
+
+Aucune migration nouvelle, aucune variable Railway, rien n'a été mis en ligne ni poussé.
+
+### Contre-relecture de la partie écran du lot 1 (22/10/2026)
+
+Deux remarques mineures sur la revue (`4701fa9`), toutes deux reproduites et réelles ; la première avec un détail
+inexact (le nom erroné n'était écrit qu'une fois). Le détail : `docs/MOTEUR_LOT1.md`, section « Écran »,
+« Contre-relecture ». **Rien ne change pour les clients** : ni écran, ni courriel, ni texte traduit, ni fichier servi.
+
+- le contrat nommait mal, dans la ligne R5 de sa revue, une tâche des premiers pas : il dit maintenant son vrai
+  titre, « Dire ce que vous faites et où » ;
+- un test du courriel d'invitation échouait au hasard, environ une suite sur 300 : le jeton tiré au hasard du lien
+  d'invitation peut contenir « AO », « GO » ou « DPGF », que la garde des mots bannis lisait comme un mot du courriel.
+  Le test retire ce jeton avant la garde, qui lit toujours tout ce qu'écrit Adjugo. La remarque classait ce correctif
+  hors du périmètre ; il est fait ici quand même, parce que la suite doit être verte à chaque lancement et qu'il ne
+  touche aucune ligne de l'application.
+
+Quatre tests nouveaux (`tests/test_moteur_lot1_ecran_contre_relecture.py`) : sur une extraction `git archive` de
+`4701fa9` (tests copiés), les 4 échouent, chacun sur le défaut qu'il couvre. Ni prix, ni quota, ni règle de débit, ni
+IA, ni migration.
+
+Vérifications :
+
+- suites complètes, `TZ=UTC`, Python 3.12 installé depuis `requirements.lock`, sans réseau : SQLite, 2 428 sur
+  2 428 ; PostgreSQL 16.2 jetable (`scripts/tests_postgres.py`), 2 428 sur 2 428 (2 424 + 4) ;
+- aucun fichier servi ne change : `scripts/sri_update.py --check`, `node --check` (`app.js` et `i18n.js`) et
+  `scripts/i18n_ajouter.py --check` (823 clés) restent verts.
 
 Aucune migration nouvelle, aucune variable Railway, rien n'a été mis en ligne ni poussé.
