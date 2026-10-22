@@ -142,9 +142,13 @@ def run_cotraitance_reminders(db: Session) -> dict:
     scanned, reminded = 0, 0
     demo_ids = _demo_user_ids(db)
     non_confirmes = _comptes_non_confirmes(db)
+    from app.routers.invites import _is_expired
     for inv in invites:
         # Jamais pour la démonstration ; jamais pour un chef de file dont l'adresse n'est pas confirmée.
         if not _is_email(inv.recipient) or inv.owner_id in demo_ids or inv.owner_id in non_confirmes:
+            continue
+        # Lien expiré : il ne s'ouvre plus (410), le rappel mènerait à un lien mort (comme relancer_parts).
+        if _is_expired(inv.expires_at):
             continue
         project = db.query(Project).filter(Project.id == inv.project_id,
                                            Project.deleted_at.is_(None)).first()
@@ -224,7 +228,7 @@ def _piece_alerts_due(db: Session, today) -> list:
     from app.models import AuditLog, Project, Company, User
     from app.services.groupement_members import active_invites
     try:
-        from app.routers.invites import coffre_croise, _PIECE_LABELS, tenant_owner_id
+        from app.routers.invites import coffre_croise, _PIECE_LABELS, _is_expired, tenant_owner_id
     except Exception:
         return []
 
@@ -245,7 +249,9 @@ def _piece_alerts_due(db: Session, today) -> list:
     for project in projects:
         if project.user_id in demo_ids or _status_value(project) in _CLOSED:
             continue
-        invites = active_invites(db, project.id)
+        # Lien expiré : le partenaire ne peut plus rien déposer par ce lien (410) ; aucune alerte ne lui part, et le
+        # récapitulatif du chef de file ne le dit pas « prévenu ».
+        invites = [i for i in active_invites(db, project.id) if not _is_expired(i.expires_at)]
         if not invites:
             continue
         deadline = project.deadline

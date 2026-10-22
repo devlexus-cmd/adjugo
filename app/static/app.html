@@ -1193,7 +1193,7 @@
                     </div>
                     <template v-else>
                       <div class="muted small" style="margin-top:4px">Les partenaires ne verront le total qu'une fois l'offre figée.</div>
-                      <div v-if="ao.share.consortium.offre.total_ht_estime!=null" class="small" style="margin-top:6px">Total prévisionnel : <b>{{ eur(freezeTotal()) }} HT</b><span v-if="ao.share.consortium.offre.lead_total_ht!=null" class="muted"> (dont votre part {{ eur(ao.share.consortium.offre.lead_total_ht) }} HT, d'après votre estimation de prix)</span></div>
+                      <div v-if="ao.share.consortium.offre.total_ht_estime!=null" class="small" style="margin-top:6px">Total prévisionnel : <b>{{ eur(freezeTotal()) }} HT</b><span v-if="ao.share.consortium.offre.lead_total_ht!=null" class="muted"> (dont votre part {{ eur(ao.share.consortium.offre.lead_total_ht) }} HT, {{ ao.share.consortium.offre.lead_source === 'convention' ? 'indiquée dans « Convention et accords »' : "d'après votre estimation de prix" }})</span></div>
                       <!-- Un seul « Figer l'offre » (vague 2a, A2) : celui de « Convention et accords », qui génère la convention. -->
                       <div class="row wrap small" style="gap:8px;margin-top:8px;align-items:center"><span class="muted" style="flex:1;min-width:180px">L'offre se fige en générant la convention, dans « Convention et accords ».</span><button type="button" class="btn sm" @click="aoConvScroll('convFoot')"><i data-lucide="scroll-text"></i>Aller à « Convention et accords »</button></div>
                     </template>
@@ -4665,6 +4665,6 @@
 <script src="/static/redaction-partenaire.js" integrity="sha384-0jgm5b/r+FlC5YZVhiyqvLZyxecxtCABbOw03QuJfDDsfua5T9wxISR2Hfis2Dh+" defer></script>
 <script src="/static/sources-publiques.js" integrity="sha384-/0soYF6qmMI5KHOb/uzkHBoYNeOr5+R784XFb0c0+HjUkhtEyVBgunl6Xo08Dok+" defer></script>
 <script src="/static/carnet-notes.js" integrity="sha384-/jbwJaEiImCDEsYHkGeIht+znVCg4i9vSGuAfG6SRpjAST+OI5nP9fPwr8Py0NPV" defer></script>
-<script src="/static/app.js" integrity="sha384-ejwnfWDWalmnYfwduQTz/ppGf6IAIFQ+2YbIfDrj260L/NGx70gCPSglJp5Z+AvN" defer></script>
+<script src="/static/app.js" integrity="sha384-ZqaieaZA86vB5x0FCwNsA52cHN1FswPcBSCNM6WlMemQy2FYUqaYzM+5gHe8lIaY" defer></script>
 </body>
 </html>

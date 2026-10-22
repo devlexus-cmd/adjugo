@@ -467,9 +467,9 @@ d'Eliot »). Restent les décisions 4 à 7.
 
 - **Démo de pitch** : l'analyse de Kerhel garde « La bonne stratégie est claire : répondre en GROUPEMENT… », une
   injonction. À revoir avec le pitch. (V2B § B2.8, R.5)
-- **Un lien en lecture seule « partenaire du groupement » bloque la génération de la convention** (« … n'a pas
-  encore soumis sa part »). C'est un défaut de production laissé tel quel, car il relève d'une règle de la
-  convention. En attendant, le chef de file révoque ce lien ou le remplace. (V2B § S.4)
+- **Un lien en lecture seule « partenaire du groupement » bloquait la génération de la convention** (« … n'a pas
+  encore soumis sa part ») : corrigé au contrôle des bugs du 22/10 (il n'est plus compté comme un membre qui doit
+  une part, nulle part). Rien à faire. (V2B § S.4)
 - **Rectificatifs** : trois écritures réelles ne sont pas lues (« initialement prévue le X … reportée au Y »,
   rectificatif européen sans date structurée, « Lire X au lieu de Y »). Chacune demande une règle à mesurer.
   Il faut aussi décider d'une règle de fusion Mégalis + BOAMP par le nom de l'acheteur : aujourd'hui, les deux

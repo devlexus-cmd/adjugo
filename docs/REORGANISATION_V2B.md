@@ -1130,9 +1130,15 @@ accord » (Accepter · Déposé par le chef de file) ; l'aperçu ne lui annonce 
 (`_pieces_attendues_de` : aucune pour un lien en lecture seule ni pendant l'aperçu limité) ni d'accord (la ligne
 « Votre accord » n'apparaît que si sa barre a l'étape) et dit « Ce lien est en lecture seule : aucune part à renseigner
 ni convention à valider. » ; son écran (`invite.html`) et l'aperçu n'affichent plus « Il vous reste N jours pour
-soumettre votre part ». **Laissé** : un lien en lecture seule « partenaire du groupement » bloque toujours la génération
-de la convention (« … n'a pas encore soumis sa part ») — défaut de la production, hors de cette relecture (règle de
-la convention) : le chef de file le révoque ou le remplace par une invitation qui peut contribuer.
+soumettre votre part ». **Laissé** à cette relecture, **corrigé depuis** (contrôle des bugs du 22/10/2026) : un lien
+en lecture seule « partenaire du groupement » bloquait la génération de la convention (« … n'a pas encore soumis sa
+part »). Il n'est plus traité comme un membre qui doit une part (`apporte_une_part`,
+`app/services/groupement_members.py`) : ni manque de la convention, ni signataire, ni ligne de « Prêt à déposer »,
+ni attestation réclamée dans le coffre-fort croisé (vu du chef de file comme des autres membres), ni compte
+« parts reçues X sur Y » (étape du groupement, suivi, « À plusieurs », courriel « Partenaires prêts »). Le créer ou le
+retirer après la génération ne rend plus la convention caduque (`concerns_convention`, comme un sous-traitant), et il
+ne porte plus le rattachement d'un partenaire hors ligne, qui reste candidat de la convention. Seul, il ne fait pas un
+groupement (« Prêt à déposer » de l'entreprise seule). Tests : `tests/test_controle_bugs_cotraitance.py`.
 
 ### S.5 Aucune tâche planifiée n'écrit pour un compte non confirmé
 
@@ -1271,7 +1277,8 @@ recalculées.
 ### S.18 Laissé, avec sa raison
 
 - **Un lien en lecture seule « partenaire du groupement » bloque la génération de la convention** (§ S.4) : règle de
-  la convention, défaut de la production, hors de cette relecture.
+  la convention, défaut de la production, hors de cette relecture. Corrigé depuis, au contrôle des bugs du
+  22/10/2026 (§ S.4).
 - **Le compte « N sur M » ailleurs dans l'application** (`{{ a }} sur {{ b }}` en un seul nœud) reste en français en
   néerlandais et en espagnol : la remarque portait sur « Vos premiers pas » ; la clé « sur » existe maintenant pour qui
   reprendra les autres comptes.

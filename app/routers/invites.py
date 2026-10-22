@@ -33,7 +33,7 @@ from app.models import (AuditLog, Company, ContributionPiece, Document, Organiza
                         ProjectContribution, ProjectInvite, User, utcnow)
 from app.schemas import safe_link_url
 from app.services import audit
-from app.services.groupement_members import (active_invite_filter, active_invites,
+from app.services.groupement_members import (active_invite_filter, active_invites, avec_part,
                                              groupement_state, submitted_contributions,
                                              total_offre_ht, visible_contributions)
 from app.services.storage import get_storage
@@ -225,8 +225,9 @@ def _notify_part_submitted(inv, contribution, db: Session) -> None:
         project = db.query(Project).filter(Project.id == inv.project_id).first()
         pname = (project.name if project else "votre marché")
         who = contribution.company_name or inv.company_name or "Un partenaire"
-        # X/Y partenaires prêts (parts soumises / invitations actives du projet).
-        total = len(active_invites(db, inv.project_id))
+        # X/Y partenaires prêts (parts soumises / invitations actives du projet qui apportent une part : un lien en
+        # lecture seule n'en a aucune à soumettre).
+        total = len(avec_part(active_invites(db, inv.project_id)))
         done = len(submitted_contributions(db, inv.project_id))
         base = (_settings.APP_BASE_URL or "").rstrip("/")
         subj = f"{who} a soumis sa part — {pname[:60]}"
@@ -454,10 +455,16 @@ def _for_member(inv: ProjectInvite, project: Project, db: Session) -> dict:
         "gaps_combles": [_label_of(g) for g in (plan.get("gaps_combles") or []) if _label_of(g)],
         "seuils": {"ca_cumule_ok": _plan_breakdown_ok(breakdown, "capacite"),
                    "qualifs_ok": _plan_breakdown_ok(breakdown, "qualifs")},
-        # À 2 membres (mandataire + 1 partenaire), le total révèle la part de l'autre.
-        "warning_two_members": (n_members + 1) == 2,
+        # À 2 membres (mandataire + 1 partenaire), le total révèle la part de l'autre : compté sur les membres du
+        # groupement (comme la convention), jamais sur les liens (sous-traitant, lecture seule).
+        "warning_two_members": _deux_membres(db, project),
         "my_capacites": (c.capacites if c and isinstance(c.capacites, dict) else None),
     }
+
+
+def _deux_membres(db: Session, project: Project) -> bool:
+    from app.services.groupement_convention import deux_membres
+    return deux_membres(db, project)
 
 
 def _invite_public(inv: ProjectInvite, project: Project, owner_company: Optional[Company],
@@ -607,6 +614,10 @@ def _serialize_invite(inv: ProjectInvite, contribution: "ProjectContribution" = 
     if network and contribution is None and db is not None:
         contribution = db.query(ProjectContribution).filter(ProjectContribution.invite_id == inv.id).first()
     masked = network and not _network_responded(inv, contribution)
+    # Part d'une invitation du réseau sans réponse (ou déclinée) : invisible du chef de file, ici comme dans le
+    # cockpit et la liste des parts (_owner_hides_part) — ni son état « brouillon », ni « prix renseigné ».
+    if contribution is not None and _owner_hides_part(inv, contribution):
+        contribution = None
     return {
         "id": inv.id,
         "token": None if network else inv.token,
@@ -748,7 +759,9 @@ def create_invite(project_id: int, body: InviteCreate, request: Request,
     # l'invitation et entrera dans les formulaires officiels quand elle sera acceptée. Désigné par
     # `link_id` (carte du marché), sinon retrouvé par le nom d'entreprise (composition retenue, liste
     # des candidats) ; après un refus ou un retrait, la nouvelle invitation remplace l'ancienne.
-    if (inv.role or "") != "sous_traitant":
+    # Un lien en lecture seule ne porte pas le rattachement : il n'est pas membre du groupement, le partenaire
+    # rattaché reste un candidat hors ligne de la convention (sinon il en disparaissait sans un mot).
+    if (inv.role or "") != "sous_traitant" and inv.can_contribute:
         from app.services.groupement_members import lien_a_inviter
         lk = lien_a_inviter(db, project.id, inv.company_name, link_id=body.link_id)
         if lk is not None:
@@ -837,6 +850,10 @@ def resend_invite(project_id: int, invite_id: int, request: Request,
         raise HTTPException(400, "Ce partenaire a décliné l'invitation — créez une nouvelle invitation.")
     if not _is_email(inv.recipient):
         raise HTTPException(400, "Aucune adresse email sur ce lien — copiez-le et transmettez-le à la main.")
+    if _is_expired(inv.expires_at):
+        # Le lien ne s'ouvre plus (410 côté partenaire) et aucune route ne le prolonge : le renvoyer
+        # enverrait un lien mort et dirait « Invitation renvoyée » au chef de file.
+        raise HTTPException(400, "Ce lien a expiré — créez une nouvelle invitation.")
     last = inv.emailed_at
     if last is not None:
         last = last if last.tzinfo else last.replace(tzinfo=timezone.utc)
@@ -892,9 +909,11 @@ def revoke_invite(project_id: int, invite_id: int, request: Request,
         c.status = "draft"
         c.submitted_at = None
     db.commit()
+    # invite_id : retirer un sous-traitant ou un lien en lecture seule (ni membres ni signataires) ne défige rien et
+    # ne rend pas la convention caduque (concerns_convention), comme quand il décline lui-même.
     _unfreeze_offer_if_needed(db, inv.project_id, f"{inv.company_name or 'un partenaire'} retiré",
                               actor=f"user:{current_user.id}", actor_kind="owner",
-                              ip=audit.client_ip(request))
+                              ip=audit.client_ip(request), invite_id=inv.id)
     audit.record(db, action="invite.revoked", owner_id=inv.owner_id, project_id=project_id,
                  actor=f"user:{current_user.id}", actor_kind="owner",
                  target_type="invite", target_id=inv.id, invite_id=inv.id,
@@ -2630,6 +2649,9 @@ def coffre_croise(db: Session, project, invites: list, viewer_invite_id: Optiona
     deadline = project.deadline
     if isinstance(deadline, datetime):
         deadline = deadline.date()
+    # Un lien en lecture seule ne dépose aucune pièce (403) : aucune attestation ne lui est réclamée, ni devant le chef
+    # de file ni devant les autres membres (contrôle des bugs, 22/10/2026).
+    invites = avec_part(invites)
     expected = _pieces_attendues(project)          # la même liste que l'aperçu du chef de file (vague 2b)
     expected_keys = [e["key"] for e in expected]
 
@@ -2727,8 +2749,9 @@ def my_consortiums(current_user: User = Depends(get_current_user), db: Session =
     # Périmètre ORGANISATION : agrège les consortiums de toute l'équipe (comme la liste
     # des marchés et le tableau de bord), pas seulement ceux portés par le compte courant.
     ids = member_ids(current_user, db)
-    invites = db.query(ProjectInvite).filter(
-        ProjectInvite.owner_id.in_(ids), active_invite_filter()).all()
+    # Un lien en lecture seule n'apporte aucune part : il ne compte pas dans « parts reçues X sur Y ».
+    invites = avec_part(db.query(ProjectInvite).filter(
+        ProjectInvite.owner_id.in_(ids), active_invite_filter()).all())
     if not invites:
         return {"consortiums": [], "active": 0, "partners_total": 0, "submitted_total": 0}
     pids = {i.project_id for i in invites}
@@ -2755,6 +2778,8 @@ def my_consortiums(current_user: User = Depends(get_current_user), db: Session =
         total_score = submitted = pieces = 0
         for inv in invs:
             c = contribs.get(inv.id)
+            if c is not None and _owner_hides_part(inv, c):
+                c = None        # réseau sans réponse : son brouillon ne compte pas (ni part, ni pièces)
             flags = _partner_flags(c)
             total_score += _partner_score(flags)
             if flags["submitted"]:
@@ -2784,7 +2809,9 @@ def consortium_cockpit(project_id: int, current_user: User = Depends(get_current
     Doctrine : le mandataire voit le PRIX DE LOT de chaque membre (prix_lot_ht), jamais la
     décomposition. Inclut l'état dérivé du groupement (`state`) et le coffre croisé (`coffre`)."""
     project = _owned_project(project_id, current_user, db)
-    invites = active_invites(db, project_id)       # membres = invitations actives (ni révoquées ni déclinées)
+    # membres = invitations actives (ni révoquées ni déclinées) qui apportent une part (un lien en lecture seule n'a
+    # ni part, ni pièce à fournir : aucun manque ne le vise)
+    invites = avec_part(active_invites(db, project_id))
     contribs = {c.invite_id: c for c in db.query(ProjectContribution).filter(
         ProjectContribution.project_id == project_id).all()}
     for inv in invites:          # réseau sans réponse : part non montrée (_owner_hides_part)
@@ -2877,6 +2904,7 @@ def consortium_cockpit(project_id: int, current_user: User = Depends(get_current
     n = len(invites)
     pct = round(100 * total_score / n) if n else 0
     state = groupement_state(project, db)
+    total_prev, lead_part, lead_source = _total_previsionnel(db, project)
     return {
         "partners": partners,
         "lots": [{"lot": k, "partners": v} for k, v in lots.items()],
@@ -2897,13 +2925,33 @@ def consortium_cockpit(project_id: int, current_user: User = Depends(get_current
             "frozen": bool(state.get("offer_frozen")),
             "total_ht": state.get("total_offre_ht"),
             "frozen_at": state.get("frozen_at"),
-            "total_ht_estime": total_offre_ht(project, db),   # None si un membre n'a pas de prix
-            "lead_total_ht": (float(project.estimate.get("total_ht"))
-                              if isinstance(project.estimate, dict) and project.estimate.get("total_ht") is not None
-                              else None),
-            "warning_two_members": (n + 1) == 2,
+            # Total prévisionnel = celui de la convention (« Convention et accords ») : part du chef de file, partenaires
+            # et partenaires hors ligne, sans sous-traitant ; None tant qu'il manque un élément (comme la convention).
+            "total_ht_estime": total_prev,
+            "lead_total_ht": lead_part,
+            "lead_source": lead_source,          # « convention » (part saisie) | « estimation » (estimation de prix)
+            "warning_two_members": _deux_membres(db, project),
         },
     }
+
+
+def _total_previsionnel(db: Session, project: Project) -> tuple:
+    """(total, part du chef de file, d'où vient cette part) : les chiffres de « Convention et accords »
+    (total_estime_ht de la convention, même calcul), pour que la page du marché ne montre jamais un autre total.
+    Part du chef de file : celle saisie dans la convention (« convention »), à défaut l'estimation de prix
+    (« estimation »)."""
+    from app.services import groupement_convention as _gc
+    try:
+        conv = _gc.get_convention(db, project.id)
+        source = "convention" if (conv is not None and isinstance(conv.params, dict)
+                                  and conv.params.get("part_mandataire_ht") is not None) else "estimation"
+        if conv is not None and conv.status in _gc.ACTIVE:
+            return conv.total_offre_ht, _gc.merged_params(conv, project).get("part_mandataire_ht"), source
+        built = _gc.build_context(db, project, conv, _gc._company_for(db, project), brouillon=True)
+        lead = next((m for m in built["ctx"]["members"] if m.get("kind") == "mandataire"), {})
+        return built["ctx"].get("total_ht"), lead.get("prix_lot_ht"), source
+    except Exception:
+        return None, None, "estimation"
 
 
 # ── Figer l'offre commune (minimal, vague 1) ─────────────────────────────────
@@ -2933,9 +2981,13 @@ def freeze_offer(project_id: int, request: Request, body: FreezeBody = None,
         raise HTTPException(409, {"code": "convention_a_generer",
                                   "message": "Avec une convention de groupement, l'offre se fige en générant la "
                                              "convention (« Convention et accords »)."})
-    invites = active_invites(db, project_id)
+    # Un lien en lecture seule n'apporte aucune part (ni manque, ni total, ni courriel) ; un sous-traitant n'est pas
+    # membre du groupement : son prix n'entre pas dans le total et le total ne lui est jamais communiqué.
+    invites = avec_part(active_invites(db, project_id))
     if not invites:
         raise HTTPException(422, "Aucun partenaire actif : invitez au moins un partenaire avant de figer l'offre.")
+    from app.services.groupement_members import _est_sous_traitant
+    membres = [i for i in invites if not _est_sous_traitant(i.role)]
     contribs = visible_contributions(db, project_id, invites)      # réseau sans réponse : part absente
     manques = []
     for inv in invites:
@@ -2966,7 +3018,7 @@ def freeze_offer(project_id: int, request: Request, body: FreezeBody = None,
     frozen_at = utcnow().isoformat()
     parts = [{"invite_id": inv.id,
               "company": (contribs[inv.id].company_name or inv.company_name or "Partenaire"),
-              "prix_lot_ht": float(contribs[inv.id].prix_lot_ht)} for inv in invites]
+              "prix_lot_ht": float(contribs[inv.id].prix_lot_ht)} for inv in membres]
     plan = dict(project.groupement_plan) if isinstance(project.groupement_plan, dict) else {}
     plan["offre"] = {"total_ht": total, "frozen_at": frozen_at, "parts": parts, "lead_total_ht": lead_total}
     project.groupement_plan = plan          # NOUVEAU dict : SQLAlchemy détecte le changement
@@ -2983,14 +3035,14 @@ def freeze_offer(project_id: int, request: Request, body: FreezeBody = None,
                   f"Bonjour,\n\nLe chef de file a figé l'offre commune du groupement sur le marché "
                   f"« {project.name} » : total {total_txt} € HT.\n\n"
                   f"Votre part dans ce marché : {base}/invite/{inv.token}\n\n— Adjugo")
-                 for inv in invites if _is_email(inv.recipient)]
+                 for inv in membres if _is_email(inv.recipient)]
         from app.services.demo_search import is_demo
         if not is_demo(current_user):          # la démo n'envoie jamais d'email
             _send_mails_async(mails)
     except Exception:
         pass
     return {"ok": True, "total_ht": total, "frozen_at": frozen_at, "n_members": len(invites),
-            "warning_two_members": (len(invites) + 1) == 2}
+            "warning_two_members": _deux_membres(db, project)}
 
 
 @router.delete("/api/projects/{project_id}/offre/figer")

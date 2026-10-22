@@ -515,7 +515,7 @@ def collect_members(db, project, conv, company, include_incomplete: bool = False
     `include_incomplete` (aperçu de brouillon seulement) : un membre dont la part n'est pas
     encore soumise apparaît quand même, sans prix (il reste listé dans les manques).
     Renvoie {members:[…], manques:[…], sous_traitants:[…]}. Ne lève jamais."""
-    from app.services.groupement_members import active_invites, visible_contributions
+    from app.services.groupement_members import active_invites, avec_part, visible_contributions
     params = merged_params(conv, project)
     manques, members, sous_traitants = [], [], []
 
@@ -541,7 +541,9 @@ def collect_members(db, project, conv, company, include_incomplete: bool = False
         "prix_lot_ht": (round(float(part), 2) if part is not None else None),
     })
 
-    invites = active_invites(db, project.id)
+    # Un lien en lecture seule n'apporte aucune part et ne sera jamais signataire (docs/REORGANISATION_V2B.md, § S.4) :
+    # il n'est pas membre du groupement, aucun manque ne le vise (contrôle des bugs, 22/10/2026).
+    invites = avec_part(active_invites(db, project.id))
     # Part d'une invitation du réseau sans réponse : absente (nom de l'invitation, aucun SIRET,
     # adresse ni représentant saisis dans le brouillon) — le chef de file ne la voit pas.
     contribs = visible_contributions(db, project.id, invites)
@@ -966,24 +968,44 @@ def is_stale(db, project, conv) -> bool:
 
 
 def concerns_convention(db, project, invite_id=None) -> bool:
-    """Faux seulement si une convention est GÉNÉRÉE et que l'événement vise un SOUS-TRAITANT
-    qui n'en est pas signataire : il n'est pas membre du groupement, son prix n'est pas dans
-    l'offre commune figée par la convention → rien à défiger, rien de caduc."""
+    """Faux seulement si une convention est GÉNÉRÉE et que l'événement vise un SOUS-TRAITANT ou un
+    lien en LECTURE SEULE qui n'en est pas signataire : il n'est pas membre du groupement, son prix
+    n'est pas dans l'offre commune figée par la convention → rien à défiger, rien de caduc."""
     if not invite_id:
         return True
     try:
         from app.models import GroupementSignature, ProjectInvite
+        from app.services.groupement_members import apporte_une_part
         conv = get_convention(db, project.id)
         if conv is None or conv.status not in ACTIVE:
             return True
         inv = db.query(ProjectInvite).filter(ProjectInvite.id == invite_id).first()
-        if inv is None or not _is_sous_traitant(inv.role):
+        if inv is None or not (_is_sous_traitant(inv.role) or not apporte_une_part(inv)):
             return True
         signer = db.query(GroupementSignature.id).filter(GroupementSignature.convention_id == conv.id,
                                                           GroupementSignature.invite_id == invite_id).first()
         return signer is not None
     except Exception:
         return True
+
+
+def deux_membres(db, project) -> bool:
+    """« À deux membres, le total de l'offre révèle à chacun la part de l'autre » : compté sur les MEMBRES du
+    groupement, jamais sur les liens. Convention générée (à jour ou non) : ses signataires, chef de file et
+    partenaires hors ligne compris ; sinon les membres qu'elle compterait aujourd'hui (chef de file, partenaires
+    qui apportent une part, partenaires hors ligne choisis), sans sous-traitant ni lien en lecture seule. Même
+    règle que la convention (warnings_for, vue du partenaire) ; contrôle des bugs, 22/10/2026. Ne lève jamais."""
+    try:
+        conv = get_convention(db, project.id)
+        if conv is not None and conv.status in ACTIVE + ("perimee",):
+            sigs = signatures_of(db, conv)
+            if sigs:
+                return len(sigs) == 2
+        col = collect_members(db, project, conv, _company_for(db, project), include_incomplete=True)
+        return len(col["members"]) == 2
+    except Exception as e:
+        logger.warning("compte des membres du groupement impossible (projet %s) : %s", getattr(project, "id", "?"), e)
+        return False
 
 
 def perimer(db, project, reason: str, *, actor: str = "system", actor_kind: str = "system",

@@ -241,6 +241,47 @@ Contrat d'API à jour : `docs/COTRAITANCE_V2_VAGUE3_API.md` (§ 3.5 à 3.7, 4, 5
   visible) ; rien n'est supprimé.** Les profils concernés sont à valider depuis l'administration
   juste après la mise en production.
 
+## Contrôle des bugs (22/10/2026)
+
+Défauts reproduits sur `cfe04e1` et corrigés, sans changement de prix, de quota ni d'offre, ni de page
+juridique, ni de la démonstration (tests : `tests/test_controle_bugs_cotraitance.py`, tous en échec sur
+`cfe04e1`).
+
+- **Retour en brouillon.** Modifier une convention générée (« La modifier annule les accords… ») défige
+  aussi l'offre commune, tracé `offer.unfrozen` : un brouillon ne fige pas l'offre (vague 2, § 2). Avant,
+  le partenaire, l'aperçu et la page du marché montraient l'ancien total sous une convention en
+  brouillon, faux dès que la part du chef de file changeait. La génération suivante la fige de nouveau.
+- **Qui est membre du groupement.** Ni un sous-traitant, ni un lien en lecture seule (« peut contribuer »
+  décoché). Retirer l'un ou l'autre, ou créer un lien en lecture seule, après la génération ne rend plus
+  la convention caduque : aucun accord perdu, l'offre reste figée (avant, retirer un sous-traitant
+  annulait les accords de tous). Un lien en lecture seule ne doit aucune part (`apporte_une_part`,
+  `app/services/groupement_members.py`) : ni manque de la convention, ni ligne de « Prêt à déposer », ni
+  attestation réclamée dans le coffre-fort croisé, ni compte « parts reçues X sur Y » ; seul, il ne fait
+  pas un groupement ; il ne porte plus le rattachement d'un partenaire hors ligne (V2B § S.4).
+- **« À deux membres, le total révèle la part de l'autre ».** Compté sur les membres, plus sur les liens
+  (`deux_membres`) : signataires de la convention générée, sinon chef de file, partenaires qui apportent
+  une part et partenaires hors ligne. Avant, un sous-traitant invité faisait disparaître la phrase chez
+  le partenaire alors que le total révélait bien la part de l'autre.
+- **Total prévisionnel** (page du marché, « Offre commune ») : celui de « Convention et accords », même
+  calcul. La part du chef de file est celle saisie dans la convention, à défaut son estimation de prix,
+  et l'écran dit laquelle ; le prix d'un sous-traitant n'y entre pas ; rien n'est affiché tant qu'un prix
+  manque. Avant : prix du sous-traitant compris, part du chef de file lue seulement dans l'estimation.
+  « Figer l'offre » (route de la vague 1, sans bouton) : même total, et le courriel « L'offre commune est
+  figée … total » ne part plus au sous-traitant ni au lien en lecture seule.
+- **Invitation du réseau sans réponse** (ou déclinée) : la liste des invitations du chef de file ne dit
+  plus « brouillon » ni « prix renseigné », « À plusieurs » ne compte plus son brouillon.
+- **Lien expiré.** « Renvoyer l'invitation » est refusé (400 « Ce lien a expiré — créez une nouvelle
+  invitation. ») et le bouton n'est plus proposé ; ni le rappel de part ni l'alerte d'attestations ne
+  partent vers lui, et le récapitulatif du chef de file ne le dit pas prévenu. Prévenir plutôt le chef de
+  file pour qu'il réinvite reste un choix d'Eliot.
+- **Courriel du réseau à un sous-traitant** : « vous propose d'intervenir » (au lieu de « de intervenir »).
+- **Signalement rejeté** : un sous-traitant ou un lien en lecture seule lit la convention en brouillon
+  (membres et parties, aperçu du texte, jamais les prix des autres ni le total). C'est l'écran voulu au
+  commit `3686b2a` (bulle écrite pour le sous-traitant en brouillon) ; la règle « ni le texte, ni
+  l'annexe, ni le total » vise la convention générée. À trancher par Eliot s'il veut cacher aussi le
+  brouillon ; la bulle « Les prix de vente n'apparaissent pas tant que la convention n'est pas générée »
+  laisse croire au sous-traitant qu'il les verra ensuite.
+
 ## Vision en une phrase
 
 Adjugo devient le seul outil où une PME voit en un coup d'œil « seul 54 % → avec Le Gall Électricité 81 % », monte le groupement en cinq minutes (convention générée, signée par chacun depuis son espace) et répond à plusieurs sans que personne — ni le mandataire, ni le serveur Adjugo, ni l'IA — ne voie jamais autre chose que le prix de vente de chaque lot et le total de l'offre commune.

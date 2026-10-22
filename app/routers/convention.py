@@ -214,13 +214,19 @@ def _get_or_create_draft(db: Session, project: Project, user: User) -> Groupemen
 
 def _remettre_en_brouillon(db: Session, project: Project, conv, reason: str, user: User, request: Request):
     """Modifier une convention générée = nouveau brouillon : les accords donnés sur l'ancien
-    texte deviennent caducs (tracé)."""
+    texte deviennent caducs (tracé), et l'offre commune qu'elle figeait ne l'est plus (tracé
+    offer.unfrozen) : un brouillon ne fige pas l'offre (docs/COTRAITANCE_V2_VAGUE2_API.md § 2),
+    et l'ancien total, faux dès que la part du chef de file change, n'est plus montré aux membres
+    (contrôle des bugs, 22/10/2026)."""
     if conv.status in gc.ACTIVE:
         gc.perimer(db, project, reason, actor=f"user:{user.id}", actor_kind="owner",
                    ip=audit.client_ip(request))
         db.refresh(conv)
     if conv.status == "perimee":
         conv.status = "draft"
+        db.commit()
+        _inv()._unfreeze_offer_if_needed(db, project.id, reason, actor=f"user:{user.id}", actor_kind="owner",
+                                         ip=audit.client_ip(request))
 
 
 # ── Assistant (mandataire) ───────────────────────────────────────────────────────────

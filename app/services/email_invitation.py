@@ -129,7 +129,9 @@ def invitation(*, chef: str, marche: str, url: str, date_limite=None, role: str 
     if reseau and relance:
         intro = f"{qui}, qui a trouvé votre profil sur le réseau Adjugo, vous renvoie sa proposition : {projet}."
     elif reseau:
-        intro = f"{qui} a trouvé votre profil sur le réseau Adjugo et vous propose de {projet}."
+        # « vous propose d'intervenir » (élision devant une voyelle), « vous propose de rejoindre ».
+        de = "d'" if projet[:1].lower() in "aeiouyéèê" else "de "
+        intro = f"{qui} a trouvé votre profil sur le réseau Adjugo et vous propose {de}{projet}."
     elif relance:
         intro = f"{qui} vous renvoie son invitation à {projet}."
     else:

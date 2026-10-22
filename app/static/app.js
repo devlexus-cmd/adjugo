@@ -3744,8 +3744,9 @@ const __adjApp = createApp({
       return this.aoPendingInvites().filter(i => this.inviteRelancable(i));
     },
     // Relançable par email : adresse saisie, ou invitation du réseau Adjugo (adresse masquée au chef
-    // de file mais connue d'Adjugo, qui renvoie le même texte réseau). Jamais une invitation SIRENE.
-    inviteRelancable(inv) { return !!inv && (inv.source === "reseau_adjugo" || (inv.recipient || "").includes("@")); },
+    // de file mais connue d'Adjugo, qui renvoie le même texte réseau). Jamais une invitation SIRENE, jamais un lien
+    // expiré (il ne s'ouvre plus : le serveur refuse le renvoi, la pastille dit « Expiré »).
+    inviteRelancable(inv) { return !!inv && !(inv.expires_at && new Date(inv.expires_at) < new Date()) && (inv.source === "reseau_adjugo" || (inv.recipient || "").includes("@")); },
     inviteIsNetwork(inv) { return !!inv && inv.source === "reseau_adjugo"; },
     inviteSourceLabel(inv) { return ({ reseau_adjugo: "Réseau Adjugo", sirene: "Registre officiel" })[inv && inv.source] || ""; },
     async aoRelanceRetardataires() {

@@ -50,6 +50,20 @@ def active_invite_ids(db: Session, project_id: int) -> list:
     return [i.id for i in active_invites(db, project_id)]
 
 
+def apporte_une_part(inv) -> bool:
+    """Le lien peut-il apporter une part ? Un lien en lecture seule (« peut contribuer » décoché à l'invitation, jamais
+    modifiable ensuite) ne peut rien déposer (403) et ne sera jamais signataire (contrat docs/REORGANISATION_V2B.md,
+    § S.4) : il n'est pas membre du groupement. Aucune part, aucune pièce, aucun accord ne lui est demandé, il n'entre
+    ni dans la convention, ni dans « Prêt à déposer », ni dans les comptes « X sur Y » (contrôle des bugs, 22/10/2026).
+    Même lecture de la colonne que les routes de la part (`getattr(inv, "can_contribute", True)`)."""
+    return bool(getattr(inv, "can_contribute", True))
+
+
+def avec_part(invites: list) -> list:
+    """Les invitations qui apportent une part (voir apporte_une_part), dans le même ordre."""
+    return [i for i in (invites or []) if apporte_une_part(i)]
+
+
 # ── Qui entre dans les formulaires officiels (DC1, DC2, DC4, convention) ─────────────────
 # Étude organisation, décision 4 : AUCUNE entreprise tierce n'entre dans un DC1/DC2 sans avoir accepté
 # une invitation. Un rattachement au marché (ProjectCotraitant) ne suffit plus :
@@ -315,7 +329,9 @@ def groupement_state(project: Project, db: Session) -> dict:
       renvoie seulement un booléen `has_price` pour rester sûr par défaut.
     """
     plan = _plan(project)
-    invites = active_invites(db, project.id)
+    # Un lien en lecture seule n'apporte aucune part : il ne compte ni dans « parts reçues X sur Y », ni pour l'étape
+    # « Toutes les parts reçues » (apporte_une_part).
+    invites = avec_part(active_invites(db, project.id))
     contribs = visible_contributions(db, project.id, invites)   # réseau sans réponse : part absente
 
     members, n_submitted, n_with_price = [], 0, 0
@@ -538,6 +554,8 @@ def depot_readiness(project, db: Session, conv=None, invites: Optional[list] = N
     from datetime import date, datetime
     if invites is None:
         invites = active_invites(db, project.id)
+    # Un lien en lecture seule n'a ni part ni attestation à fournir, et seul il ne fait pas un groupement.
+    invites = avec_part(invites)
     if conv is None:
         try:
             from app.models import GroupementConvention
@@ -851,9 +869,14 @@ def _pret_a_deposer(project, db: Session, conv, invites: list) -> dict:
 
 def total_offre_ht(project: Project, db: Session, lead_total: Optional[float] = None) -> Optional[float]:
     """Total de l'offre commune = prix de lot de chaque membre (part soumise) + part du
-    mandataire (estimate.total_ht ou valeur fournie). None si un membre n'a pas de prix."""
+    mandataire (estimate.total_ht ou valeur fournie). None si un membre n'a pas de prix.
+    Un sous-traitant n'est pas membre du groupement : son prix n'entre pas dans le total, comme dans la
+    convention (« son prix n'est pas ajouté au total », contrôle des bugs, 22/10/2026)."""
+    roles = {i.id: i.role for i in active_invites(db, project.id)}
     parts = []
     for c in submitted_contributions(db, project.id):
+        if _est_sous_traitant(roles.get(c.invite_id)):
+            continue
         if c.prix_lot_ht is None:
             return None
         parts.append(float(c.prix_lot_ht))
