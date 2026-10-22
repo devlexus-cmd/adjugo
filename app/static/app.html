@@ -23,7 +23,7 @@
 <script src="/static/vendor/lucide-1.20.0.min.js" integrity="sha384-vEpkK5oidsrH6UhRc6tAPlgJZ/qXFwumFY+Kx8vBSeZ7NBag809YZCSmxFYGe/pt"></script>
 <!-- Chiffrement par membre du détail de chiffrage (co-traitance v2) : window.AdjugoCrypto, chargé AVANT app.js -->
 <script src="/static/cotraitance-crypto.js" integrity="sha384-q8DL80RVudBWgsaCfc4AJZ3iCrB4O6OoIs5lA81bOty2NmjC5qh+tkxKPVJDzShC"></script>
-<script src="/static/i18n.js" integrity="sha384-ni+kUhQL0yUUhSZRaB+iycxIg0sNP8p8L0GhO5UdGeLZ43rSvpoSFRy8a5GbY8l0" defer></script>
+<script src="/static/i18n.js" integrity="sha384-N7LVzFlt6yI9Utihv9vbgpkLxUOxbBoLzdC+oCS6tWoINP3IX74QgMtFnb3SIDG9" defer></script>
 </head>
 <body>
 <div id="app">
@@ -2397,7 +2397,7 @@
                     <span v-if="atlRepMaValidation() !== 'valide' && !atlRepChefPeutValider()" class="muted small" style="flex-basis:100%">Validez d'abord vos parties dans l'onglet « Rédaction ».</span>
                     <template v-if="atlRepHarm() && !atlMobile"><button type="button" class="btn sm" @click="atlRepHarmoniser()" :disabled="!!atl.rep.busy || !!atl.busy || atlRepHarmEnCours()"><span v-if="atlRepHarmEnCours()" class="spin"></span><i v-else data-lucide="link-2"></i>Harmoniser le ton</button><button type="button" class="tip tip-l"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">{{ atlRepHarm().message }} Compte comme une nouvelle rédaction du dossier ; rien n'est décompté si aucune phrase n'est retenue ou si le service d'IA ne répond pas.</span></button></template>
                   </div>
-                  <div v-if="!atlRepEnvoyerA().length" class="muted small atl-mt4">Aucune partie à demander : chaque partenaire a envoyé ses parties, ou aucune ne lui est confiée.</div>
+                  <div v-if="!atlRepEnvoyerA().length" class="muted small atl-mt4"><template v-if="atlRepEnAttente()">Aucune partie à demander pour l'instant.</template><template v-else>Aucune partie à demander : chaque partenaire a envoyé ses parties, ou aucune ne lui est confiée.</template></div>
                   <div v-if="atl.rep.demande" class="atl-info" role="status"><i data-lucide="send"></i><span style="flex:1;min-width:0"><template v-for="(t,i) in atlRepDemandeLignes()" :key="'rd'+i">{{ (i ? ' ' : '') + t }}</template></span></div>
                   <div v-if="atlRepIndispo().length" class="muted small atl-mt8"><template v-for="(m,i) in atlRepIndispo()" :key="'ri'+m.invite_id">{{ (i ? ' ; ' : '') + m.nom + ' : ' + m.raison }}</template>.</div>
                   <div v-if="atlMobile" class="muted small atl-mt8">Sur téléphone, vous pouvez lire et répartir les parties. Modifier le texte d'un partenaire se fait depuis un ordinateur.</div>
@@ -2455,8 +2455,9 @@
                       <div v-if="atlRepEtat(l)" class="small atl-mt8">{{ atlRepEtat(l) }}</div>
                       <div v-if="atlRepCompteurs(l.texte_commun)" class="small atl-mt4 atl-rep-cpt"><span>{{ atlRepCompteurs(l.texte_commun) }}</span><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">Ce que vous recevez avec le texte : le nombre de faits que le partenaire a appuyés sur une source, par type, et ce qu'il reste à relire. Ses sources, ses extraits et ses documents restent chez lui. Les faits à relire et les « [À compléter] » bloquent l'export tant qu'ils restent.</span></button></div>
                       <div class="row wrap atl-g6 atl-mt8">
-                        <button type="button" class="btn sm" @click="atlRepOuvrir(l)" :aria-expanded="atl.rep.open===l.section_id ? 'true' : 'false'"><i :data-lucide="atl.rep.open===l.section_id ? 'chevron-up' : (l.texte_commun ? 'file-text' : 'pen-line')"></i>{{ atl.rep.open===l.section_id ? 'Replier' : (l.texte_commun ? 'Lire le texte' : 'Rédiger à sa place') }}</button>
-                        <span v-if="!l.texte_commun && atl.rep.open!==l.section_id" class="muted small">Partenaire absent ? Vous pouvez écrire sa partie : il la validera.</span>
+                        <!-- Sur téléphone (lire et répartir), une part sans texte n'a rien à lire : pas de bouton. -->
+                        <button v-if="l.texte_commun || !atlMobile || atl.rep.open===l.section_id" type="button" class="btn sm" @click="atlRepOuvrir(l)" :aria-expanded="atl.rep.open===l.section_id ? 'true' : 'false'"><i :data-lucide="atl.rep.open===l.section_id ? 'chevron-up' : (l.texte_commun ? 'file-text' : 'pen-line')"></i>{{ atl.rep.open===l.section_id ? 'Replier' : (l.texte_commun ? 'Lire le texte' : 'Rédiger à sa place') }}</button>
+                        <span v-if="!l.texte_commun && atl.rep.open!==l.section_id" class="muted small"><template v-if="atlMobile">Partenaire absent ? Depuis un ordinateur, vous pouvez écrire sa partie : il la validera.</template><template v-else>Partenaire absent ? Vous pouvez écrire sa partie : il la validera.</template></span>
                       </div>
                       <div v-if="atl.rep.open===l.section_id" class="atl-rep-det">
                         <div v-if="atl.rep.detLoading && !atl.rep.det" class="muted small" role="status"><span class="spin"></span> Chargement…</div>
@@ -2464,7 +2465,7 @@
                           <div v-if="atlRepBlocs().length" class="atl-rep-cmp" :class="{deux: atlRepBlocs().length > 1}">
                             <div v-for="b in atlRepBlocs()" :key="'rb'+b.k" class="atl-rep-bloc"><div v-if="b.titre" class="atl-rep-bt small">{{ b.titre }}</div><div class="atl-texte atl-rep-texte" v-html="atlRepHtml(b.v)"></div></div>
                           </div>
-                          <div v-else-if="!atl.rep.edit" class="muted small">{{ l.redacteur.nom }} n'a rien envoyé. Vous pouvez rédiger sa partie : elle sera marquée « Rédigé par le chef de file, à valider par {{ l.redacteur.nom }} ».</div>
+                          <div v-else-if="!atl.rep.edit" class="muted small">{{ l.redacteur.nom }} n'a rien envoyé. {{ atlMobile ? 'Depuis un ordinateur, vous' : 'Vous' }} pouvez rédiger sa partie : elle sera marquée « Rédigé par le chef de file, à valider par {{ l.redacteur.nom }} ».</div>
                           <div v-if="atlRepRenvois()" class="muted small atl-mt4">Les renvois (F1, S2…) désignent des sources de {{ l.redacteur.nom }} : elles restent chez lui et disparaissent à l'export.</div>
                           <!-- Écrire sur la part d'un partenaire : un nouveau texte commun, à revalider par lui (aucune IA) -->
                           <div v-if="atl.rep.edit && atl.rep.edit.sid===l.section_id && !atlMobile" class="atl-rep-ed">
@@ -2558,7 +2559,7 @@
                     <div v-if="atlDerniereFois(atlSec())" class="cn-derniere atl-mt8"><div class="small"><b>La dernière fois, l'acheteur a écrit :</b><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">En savoir plus</span><span class="tip-b" role="tooltip">{{ atlDerniereFois(atlSec()).bulle }}</span></button></div><blockquote class="atl-q">{{ atlDerniereFois(atlSec()).commentaire }}</blockquote><div class="muted small">{{ atlDerniereFois(atlSec()).critere }}<template v-if="atlDerniereFois(atlSec()).note"> · {{ atlDerniereFois(atlSec()).note }}</template> · {{ atlDerniereFois(atlSec()).marche }}<template v-if="atlDerniereFois(atlSec()).lot"> ({{ partieLot(atlDerniereFois(atlSec()).lot, true) }})</template><template v-if="atlDerniereFois(atlSec()).meme_acheteur"> · même acheteur</template><template v-else-if="atlDerniereFois(atlSec()).acheteur"> · {{ atlDerniereFois(atlSec()).acheteur }}</template></div></div>
                     <div v-if="atlSec().validation" class="muted small atl-mt4">Validée le {{ atlWhen(atlSec().validation.le) }}<template v-if="atlSec().statut==='a_revalider'"> : le texte a changé depuis, validez de nouveau.</template></div>
                     <div v-if="!atlSec().peut_ecrire && atlSec().genere" class="row wrap atl-g6 atl-mt8"><span class="muted small" style="flex:1;min-width:0">{{ atlSec().auteur.libelle }}, sans IA. Elle se met à jour toute seule.</span><button type="button" class="tip"><i data-lucide="info"></i><span class="sr-only">D'où vient cette partie</span><span class="tip-b" role="tooltip">Adjugo l'écrit à partir de la convention et des parts des membres. Pour la changer, modifiez la convention ou la part du membre concerné.<template v-if="atlSec().genere === 'grp_qfq'"> Chaque membre du groupement la valide. Elle dit ce que chacun apporte, jamais ce qui manque.</template><template v-else> Vous la validez une fois la convention validée par tous les membres.</template></span></button><button v-if="atlSec().part ? atlSec().part.a_valider_par_vous : (atlSec().version_courante && atlSec().statut !== 'valide' && !atlSec().a_completer)" type="button" class="btn sm" @click="atlValider()" :disabled="!!atl.busy"><i data-lucide="check"></i>Valider</button><span v-else-if="atlSec().part && atlSec().part.mention" class="muted small" style="flex-basis:100%">{{ atlSec().part.mention }}.</span></div>
-                    <div v-else-if="!atlSec().peut_ecrire" class="muted small atl-mt4">Partie rédigée par : {{ atlSec().auteur.libelle }}. {{ atlSec().part && atlSec().part.mention ? atlSec().part.mention + '.' : (atlSec().version_courante ? "Vous lisez le texte qu'il a envoyé." : "Rien d'envoyé pour l'instant.") }}<template v-if="atlGrp()"> <button type="button" class="atl-lien" @click="atlRepVoir(atlSec().id)">Le modifier ou l'écrire à sa place</button></template></div>
+                    <div v-else-if="!atlSec().peut_ecrire" class="muted small atl-mt4">Partie rédigée par : {{ atlSec().auteur.libelle }}. {{ atlSec().part && atlSec().part.mention ? atlSec().part.mention + '.' : (atlSec().version_courante ? "Vous lisez le texte qu'il a envoyé." : "Rien d'envoyé pour l'instant.") }}<template v-if="atlGrp()"> <button type="button" class="atl-lien" @click="atlRepVoir(atlSec().id)">{{ atlMobile ? "Voir dans « Qui écrit quoi »" : "Le modifier ou l'écrire à sa place" }}</button></template></div>
                   </div>
 
                   <!-- Actions de la partie -->
@@ -4665,7 +4666,7 @@
 </div>
 <script src="/static/redaction-partenaire.js" integrity="sha384-0jgm5b/r+FlC5YZVhiyqvLZyxecxtCABbOw03QuJfDDsfua5T9wxISR2Hfis2Dh+" defer></script>
 <script src="/static/sources-publiques.js" integrity="sha384-/0soYF6qmMI5KHOb/uzkHBoYNeOr5+R784XFb0c0+HjUkhtEyVBgunl6Xo08Dok+" defer></script>
-<script src="/static/carnet-notes.js" integrity="sha384-/jbwJaEiImCDEsYHkGeIht+znVCg4i9vSGuAfG6SRpjAST+OI5nP9fPwr8Py0NPV" defer></script>
-<script src="/static/app.js" integrity="sha384-6KOtQpF+YqMevPUXu4FCk2CpknpBazVlrramYEA4vlPTckMuqGI42n/2QN5OdbZW" defer></script>
+<script src="/static/carnet-notes.js" integrity="sha384-BlD0ZOe8GvU2A/UrOZPvlBWhqfWmplvFwf6Tr3MsW7XgMQW5bveM9WFMCBRKUH1Q" defer></script>
+<script src="/static/app.js" integrity="sha384-8UPh2Xnme9doVdg9BEltJ95o6rCl1dLUyo9feNLhpXtbR65tyhvQX038ltNVIch3" defer></script>
 </body>
 </html>

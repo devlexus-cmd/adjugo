@@ -979,7 +979,9 @@ l'organisation répond à plusieurs lots (`atelier_lots.actif`) :
   la partie du courrier de CE lot, sinon écartés. Courrier sans lot lisible : aucun appel, rien de décompté.
 - **Validation** : « lue dans le courrier » n'est gardé que si la ligne citée est dans la partie de SON lot ; les
   lignes sont rangées lot par lot ; chaque ligne garde `lot` et `lot_libelle`.
-- **Notes affichées** : titres par lot, « Note d'ensemble, lot 2 — … » pour chaque lot (`notes.totaux`, seulement
+- **Notes affichées** : titres par lot, « Note d'ensemble, partie (lot 2) — … » pour chaque lot (décision 10 du 20/10,
+  appliquée à ce message le 22/10/2026 par le contrôle des bugs : serveur `carnet_notes._partie_lot`, même règle que
+  `partieLot` des écrans, et écran du chef de file) (`notes.totaux`, seulement
   quand chaque critère de CE lot a sa note, F.6), jamais une somme de deux lots (`notes.total` vaut null) ; le constat dit le lot (« … « Méthodologie d'exécution » (lot 2 — …)
   … »).
 - **« Où vous perdez des points »** : le marché alloti compte UNE fois (ses lots réunis, par famille) ; la règle des 3

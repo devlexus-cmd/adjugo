@@ -2121,7 +2121,9 @@ def demander_parts(db, project: Project, dossier: DossierPresentation, user: Use
     partenaire (un email PARTI seulement), même plafond quotidien que les invitations et leurs renvois
     (`invites._daily_invite_count`, une entrée de journal par partenaire sollicité), jamais d'email pour la
     démonstration ni sans adresse. Chaque demande partie est inscrite au journal chaîné (journal du membre :
-    « partie demandée »)."""
+    « partie demandée »). Un partenaire qui ne peut plus rédiger (`peut_rediger` : lien expiré, invitation du réseau
+    sans réponse…) n'est pas sollicité : il est rendu dans `indisponibles`, avec sa raison (jamais une adresse).
+    Dossier « sans IA » (vague 5, C2.8) : l'email ne propose pas l'aide d'Adjugo, refusée au partenaire."""
     from app.core.config import get_settings
     from app.routers.invites import DAILY_INVITE_CAP, _daily_invite_count, _invite_is_demo, _is_email
     from app.services import email as _email
@@ -2138,13 +2140,17 @@ def demander_parts(db, project: Project, dossier: DossierPresentation, user: Use
             continue
         if statut_de(db, s, r) in (A_REDIGER, EN_COURS, A_REVALIDER):
             par_invite.setdefault(r.invite_id, []).append((s, r))
-    demandees, sans_adresse, recentes, plafond = [], [], [], []
+    demandees, sans_adresse, recentes, plafond, indisponibles = [], [], [], [], []
     chef = db.query(Company).filter(Company.user_id == dossier.owner_id).first()
     de = f"{chef.name}" if chef and chef.name else "Le chef de file"
+    ecrire = ("Écrivez-la vous-même, depuis votre lien (le chef de file a choisi de rédiger ce dossier sans IA) :"
+              if at.mode_sans_ia(dossier) else "Écrivez-la vous-même ou avec l'aide d'Adjugo, depuis votre lien :")
     for iid, lignes in par_invite.items():
         inv = db.get(ProjectInvite, iid)
         nom = nom_partenaire(inv, _contribution(db, iid))
-        if inv is None or not peut_rediger(db, inv)[0]:
+        ok, raison = peut_rediger(db, inv)
+        if not ok:
+            indisponibles.append({"invite_id": iid, "nom": nom, "raison": raison})
             continue
         if not _is_email(inv.recipient) or _invite_is_demo(inv, db):
             sans_adresse.append({"invite_id": iid, "nom": nom})
@@ -2164,8 +2170,8 @@ def demander_parts(db, project: Project, dossier: DossierPresentation, user: Use
                           for s, r in lignes)
         sent = _email.send_email(inv.recipient, f"Votre partie du dossier de présentation — {project.name[:60]}",
                                  f"Bonjour,\n\n{de} attend votre partie du dossier de présentation du "
-                                 f"marché « {project.name} » :\n{liste}\n\nÉcrivez-la vous-même ou avec l'aide d'Adjugo, "
-                                 f"depuis votre lien :\n{base}/invite/{inv.token}\n\nVos documents et vos brouillons "
+                                 f"marché « {project.name} » :\n{liste}\n\n{ecrire}"
+                                 f"\n{base}/invite/{inv.token}\n\nVos documents et vos brouillons "
                                  f"restent privés : seul le texte que vous envoyez est lu par le groupement.\n\n— Adjugo")
         if sent:
             # L'anti-rafale ne compte qu'un email PARTI : un envoi échoué se retente aussitôt (comme le
@@ -2183,7 +2189,7 @@ def demander_parts(db, project: Project, dossier: DossierPresentation, user: Use
                      detail=f"Parties demandées : {len(lignes)}", meta={"email": True, "parties": len(lignes)})
         demandees.append({"invite_id": iid, "nom": nom, "parties": len(lignes), "email_parti": bool(sent)})
     return {"demandees": demandees, "sans_adresse": sans_adresse, "deja_demandees": recentes,
-            "plafond_atteint": plafond}
+            "plafond_atteint": plafond, "indisponibles": indisponibles}
 
 
 def _palier(date_limite: Optional[date], today: date) -> int:

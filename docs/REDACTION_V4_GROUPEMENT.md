@@ -261,7 +261,12 @@ de 15 minutes par partenaire, même plafond quotidien que les invitations et leu
 (`invites._daily_invite_count` : `invite.resent` et `redaction.parts_demandees` comptent ensemble). Seul un
 email PARTI horodate la demande (`demandee_le`) et s'inscrit au journal : un envoi raté se retente aussitôt.
 → `{"demandees": [{invite_id, nom, parties, email_parti}], "sans_adresse": [...], "deja_demandees": [...],
-"plafond_atteint": [...]}` (noms seulement, jamais une adresse).
+"plafond_atteint": [...], "indisponibles": [{invite_id, nom, raison}]}` (noms seulement, jamais une adresse).
+Un partenaire qui ne peut plus rédiger (`peut_rediger` : lien expiré, invitation du réseau sans réponse,
+co-construction fermée, plus membre) n'est pas sollicité : il est rendu dans `indisponibles` avec sa raison (contrôle
+des bugs du 22/10/2026 ; avant, il était sauté sans trace). Dossier « sans IA » (vague 5, C2.8) : l'email dit
+« Écrivez-la vous-même, depuis votre lien (le chef de file a choisi de rédiger ce dossier sans IA) : », jamais l'aide
+d'Adjugo, refusée au partenaire.
 
 ### `POST /api/atelier/{pid}/repartition/valider-dossier` `{"empreinte"?}`
 Le chef de file valide le dossier assemblé, après avoir validé chacune de SES parties.
@@ -649,7 +654,10 @@ tests : `tests/test_redaction_v4_chef_de_file.py`.
   (i)), son critère et son poids, « Mots conseillés », « Date limite interne » (verrou optimiste
   `lock_version` ; une partie écrite ne change de mains qu'après confirmation, `changement_a_confirmer`).
 - **Demander les parts** : confirmation (qui reçoit, combien de parties), puis le résultat en phrases
-  (envoyée à, sans adresse, déjà demandée, limite du jour atteinte).
+  (envoyée à, sans adresse, déjà demandée, limite du jour atteinte, « Aucune demande à X : son lien a expiré. »).
+  La confirmation et le bouton ne comptent que les partenaires qui peuvent rédiger (`membres[].peut_rediger`) ;
+  quand la seule part en attente est chez un partenaire qui ne le peut plus : « Aucune partie à demander pour
+  l'instant. », sa raison dessous (jamais « chaque partenaire a envoyé ses parties »).
 - **Recevoir** : statut de chaque part, « Envoyée le … », et les COMPTEURS : « 5 faits avec une source : 3
   déclarés, 2 trouvés dans ses documents · 1 fait à relire · 1 passage « [À compléter] » ». Jamais une
   source, un extrait ni un nom de document (l'écran ne lit aucun de ces champs).
@@ -657,7 +665,9 @@ tests : `tests/test_redaction_v4_chef_de_file.py`.
   (`atlMdToHtml(texte, [], {refsPartenaire: true})` : renvois montrés « source du partenaire », sans lien) ;
   « Modifier ce texte » → `PUT …/texte` → « à revalider par X », avant et après côte à côte ; « Rédiger à sa
   place » (rien d'envoyé) → « Rédigé par le chef de file, à valider par X ». Sur téléphone : lire et répartir ;
-  écrire depuis un ordinateur.
+  écrire depuis un ordinateur : une part sans texte n'a pas de bouton « Rédiger à sa place », la phrase et le volet
+  disent « Depuis un ordinateur, vous pouvez … », le lien de l'onglet « Rédaction » dit « Voir dans « Qui écrit
+  quoi » » au lieu de « Le modifier ou l'écrire à sa place ».
 - **Aucune IA pour la part d'un partenaire** : aucun bouton dans cet écran ; le serveur refuse (403
   `partie_d_un_partenaire`, 404 par « Partagé avec moi », 403 `cle_espace_requise` par le lien sans clé).
 - **Dans l'atelier** (onglet « Rédaction »), une partie de partenaire porte `part: {statut, statut_libelle,
@@ -1482,3 +1492,43 @@ introduite par la reprise, qui ne l'avait fermée que pour l'aide de l'IA et le 
   seconde montée et rejeu sans effet, dépôt par le lien sur la base montée, code de production redémarré : 200 partout,
   schéma identique à une base neuve, retour arrière puis remontée) ; 39 fichiers de tests rejoués sur la base montée :
   1 050 verts (1 043 + 7) et exactement les mêmes 37 échecs qu'au § 21.14 (fichiers propres à SQLite, déjà connus).
+
+## 22. Contrôle des bugs (22/10/2026), groupe « redaction »
+
+Quatre signalements vérifiés réels (n° 15, 16, 17 et 18 de la liste « à vérifier »), reproduits sur `cfe04e1` et
+corrigés ; aucun rejeté. Tests : `tests/test_controle_bugs_redaction.py`, 5 tests, tous en échec sur `cfe04e1`,
+chacun sur son défaut.
+
+- **(15, mineur) Téléphone, « Qui écrit quoi »** : le contrat (§ 16) dit « lire et répartir ; écrire depuis un
+  ordinateur », mais l'écran montrait « Rédiger à sa place » et « Partenaire absent ? Vous pouvez écrire sa partie »
+  pour une part sans texte, puis un volet sans aucun moyen d'écrire. Désormais, sur téléphone : pas de bouton pour
+  une part sans texte (il reste « Replier » si le volet a été ouvert depuis l'onglet « Rédaction ») ; la phrase et le
+  volet disent « Depuis un ordinateur, vous pouvez … » ; le lien de l'onglet « Rédaction » dit « Voir dans « Qui
+  écrit quoi » ». Sur ordinateur, rien ne change. Trois libellés traduits en néerlandais et en espagnol
+  (décision 16 ; 826 → 829 clés).
+- **(16, mineur) « Demander les parts » et un partenaire qui ne peut plus rédiger** (lien expiré, invitation du
+  réseau sans réponse, co-construction fermée, plus membre) : `demander_parts` le sautait sans trace ; la
+  confirmation l'annonçait comme destinataire et le résultat disait « chaque partenaire a envoyé ses parties ». La
+  réponse porte maintenant `indisponibles: [{invite_id, nom, raison}]` (jamais une adresse) ; l'écran ne compte que
+  les partenaires qui peuvent rédiger (`atlRepADemander` lit `membres[].peut_rediger`), dit « Aucune demande à X :
+  son lien a expiré. », et, quand la seule part en attente est chez un tel partenaire, « Aucune partie à demander
+  pour l'instant. » (sa raison s'affiche dessous, comme avant). Un partenaire disponible est demandé comme avant.
+- **(17, mineur) Carnet de notes, marché à plusieurs lots** : « Note d'ensemble, lot 2 — … » (message du serveur
+  quand un critère du lot n'a pas sa note, et ligne de la note d'ensemble de chaque lot chez le chef de file)
+  devient « Note d'ensemble, partie (lot 2) — … » (décision 10). Serveur : `carnet_notes._partie_lot`, même règle
+  que `partieLot(x, true)` des écrans (vérifié sous Node sur les mêmes cas) ; écran : `partieLot`, comme la ligne du
+  partenaire. La donnée `lot_libelle` garde « Lot 2 — … ». Un intitulé libre qui ne commence pas par « Lot » s'écrit
+  désormais tel quel (avant : sa première lettre passait en minuscule), comme chez le partenaire.
+- **(18, mineur) Dossier « sans IA »** : l'email de « Demander les parts » ne dit plus « ou avec l'aide d'Adjugo »
+  (aide refusée au partenaire, C2.8) mais « Écrivez-la vous-même, depuis votre lien (le chef de file a choisi de
+  rédiger ce dossier sans IA) : ». Sans ce mode, le texte est inchangé. La relance planifiée ne parle pas de l'aide.
+
+Ni prix, ni quota, ni offre, ni page juridique, ni démo touchés ; aucune IA, aucune migration.
+
+**Signalé, non corrigé (hors de la liste du groupe)** : la confirmation de « Demander les parts » finit par
+« Chacun reçoit par email la liste de ses parties… » même quand un des partenaires n'a pas d'adresse sur son lien
+(il est alors dit, au résultat, « Aucune adresse email sur le lien de X »).
+
+**Vérifications** : voir le message du commit (suites SQLite et PostgreSQL, SRI, `node --check`, i18n). Le rendu
+dans un navigateur à 375 px n'a pas été rejoué : le gabarit est vérifié par sa compilation dans la suite
+(`test_gabarit_compile_par_le_vue_du_depot`) et par les tests statiques et sous Node du fichier ci-dessus.

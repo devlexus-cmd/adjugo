@@ -1511,6 +1511,21 @@ def _somme(lignes: list, criteres: Optional[list] = None) -> dict:
     return {"note": ecrit(round(n, 3)), "note_max": ecrit(round(m, 3)), "pct": pct(n, m)}
 
 
+# « Lot 2 — Couverture » → « partie (lot 2) — Couverture » : la MÊME règle que partieLot(x, true) des écrans (app.js,
+# carnet-notes.js ; décision 10, docs/REORGANISATION_V2A.md § A3.5 : un « lot » lu à l'écran est entre parenthèses).
+# Un texte libre reste tel quel ; la donnée lot_libelle garde « Lot 2 — … » (fichiers, courrier à l'acheteur).
+_LOT_ECRAN = re.compile(r"^(?:lot\s*(?:n\s*[°o.]?\s*)?)?0*([0-9]{1,3})(?:\s*[—–:-]\s*(.*))?$", re.I)
+
+
+def _partie_lot(lib) -> str:
+    s = str(lib if lib is not None else "").strip()
+    m = _LOT_ECRAN.match(s)
+    if not m or (not re.match(r"lot", s, re.I) and not re.fullmatch(r"[0-9]+", s)):
+        return s
+    reste = (m.group(2) or "").strip()
+    return f"partie (lot {m.group(1)})" + (f" — {reste}" if reste else "")
+
+
 def _message_partiel(t: dict, du_lot: str = "") -> str:
     k, n = t["criteres"] - t["manque"], t["criteres"]
     return (f"Note d'ensemble{du_lot} : {k} critère{'s' if k > 1 else ''} noté{'s' if k > 1 else ''} sur {n}. Elle "
@@ -1551,7 +1566,7 @@ def _messages_total(lignes: list, criteres: Optional[list] = None) -> list:
         out = []
         for _n, lib, t in _sommes_des_lots(lignes, criteres):
             if "note" not in t and t["criteres"]:
-                out.append(_message_partiel(t, f", {lib[:1].lower()}{lib[1:]}"))
+                out.append(_message_partiel(t, f", {_partie_lot(lib)}"))
         return out
     t = _somme(lignes, [c for c in criteres or [] if not c.get("lot")])
     return [_message_partiel(t)] if "note" not in t and t["criteres"] else []

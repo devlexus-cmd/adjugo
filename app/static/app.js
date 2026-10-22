@@ -1052,12 +1052,16 @@ function atlRepCompteurs(tc) {
 }
 // Le texte contient-il des renvois (F1, S2…) ? Ils désignent alors des sources du partenaire.
 function atlRepARenvois(md) { return /\[\s*[FSPECGR]\s*\d{1,4}(?:\s*[,;]\s*[FSPECGR]?\s*\d{1,4})*\s*\]/.test(String(md || "")); }
-// Partenaires qui recevront « Demander les parts » : une partie à rédiger, en cours ou à revalider.
-function atlRepADemander(d) {
-  const par = {};
+// Partenaires qui recevront « Demander les parts » : une partie à rédiger, en cours ou à revalider, et un
+// partenaire qui peut encore rédiger (la liste des membres le dit : le serveur ne sollicite pas les autres, il les
+// rend dans « indisponibles »). `memeIndisponibles` : toutes les parts en attente, qu'il puisse rédiger ou non.
+function atlRepADemander(d, memeIndisponibles) {
+  const par = {}, ms = d && Array.isArray(d.membres) ? d.membres : null;
+  const peut = (iid) => !ms || ms.some(m => m.invite_id === iid && m.peut_rediger);
   ((d && d.sections) || []).forEach(l => {
     const r = l.redacteur || {};
     if (r.type !== "partenaire" || !r.invite_id || ["envoyee", "validee"].indexOf(l.statut) >= 0) return;
+    if (!memeIndisponibles && !peut(r.invite_id)) return;
     (par[r.invite_id] = par[r.invite_id] || { invite_id: r.invite_id, nom: r.nom, parties: 0 }).parties++;
   });
   return Object.keys(par).map(k => par[k]);
@@ -1097,6 +1101,7 @@ function atlRepDemandeTexte(r) {
   if (sa.length) out.push("Aucune adresse email sur le lien de " + noms(sa) + (sa.length > 1 ? " : transmettez-leur leur lien" : " : transmettez-lui son lien") + " vous-même, depuis la page du marché.");
   if ((r.deja_demandees || []).length) out.push("Déjà demandée il y a moins de 15 minutes à " + noms(r.deja_demandees) + ".");
   if ((r.plafond_atteint || []).length) out.push("Limite d'envois du jour atteinte : " + noms(r.plafond_atteint) + " recevra la demande si vous réessayez demain.");
+  (r.indisponibles || []).forEach(x => out.push("Aucune demande à " + x.nom + " : " + x.raison + "."));
   if (!out.length) out.push("Aucune partie à demander : chaque partenaire a envoyé ses parties.");
   return out;
 }
@@ -7408,6 +7413,8 @@ const __adjApp = createApp({
     atlRepStatutCls(st) { return atlRepStatutCls(st); },
     atlRepCompteurs(tc) { return atlRepCompteurs(tc); },
     atlRepEnvoyerA() { return atlRepADemander(this.atl.rep.d); },
+    // Une part attend chez un partenaire qui ne peut plus rédiger : « Aucune partie à demander pour l'instant. »
+    atlRepEnAttente() { return atlRepADemander(this.atl.rep.d, true).length > 0; },
     atlRepDemandeLignes() { return atlRepDemandeTexte(this.atl.rep.demande); },
     atlRepValidations() { const d = this.atl.rep.d; return atlRepValidationsTexte(d && d.dossier && d.dossier.pret); },
     atlRepRedacteur(l, val) {

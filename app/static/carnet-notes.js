@@ -308,7 +308,7 @@
       h += "</ul>";
       if (n.total) h += '<div class="small cn-mt4">Note d\'ensemble : <b class="num">' + cnEsc(n.total.note) + " / " + cnEsc(n.total.note_max) + "</b> (" + Number(n.total.pct) + " %)</div>";
       (n.totaux || []).forEach(t => {
-        h += '<div class="small cn-mt4">Note d\'ensemble, ' + cnEsc(String(t.lot_libelle || "").charAt(0).toLowerCase() + String(t.lot_libelle || "").slice(1)) + ' : <b class="num">' + cnEsc(t.note) + " / " + cnEsc(t.note_max) + "</b> (" + Number(t.pct) + " %)</div>";
+        h += '<div class="small cn-mt4">Note d\'ensemble, ' + cnEsc(partieLot(t.lot_libelle || "", true)) + ' : <b class="num">' + cnEsc(t.note) + " / " + cnEsc(t.note_max) + "</b> (" + Number(t.pct) + " %)</div>";
       });
       (n.messages_total || []).forEach(m => { h += '<div class="muted small cn-mt4">' + cnEsc(m) + "</div>"; });
       if (n.constat) {
