@@ -163,9 +163,15 @@ def register(request: Request, data: UserCreate, db: Session = Depends(get_db)):
     # (alerts.run_document_expiry_alerts), ni celui des attestations de ses partenaires (alerts._piece_alerts_due), ni la
     # veille amont, masquée (alerts.run_amont_alerts) ; une seule fonction, alerts._comptes_non_confirmes. Rien n'y est
     # marqué envoyé ni « déjà vu » : ils partent au premier passage après la confirmation, « Demandez vos notes »
-    # seulement dans ses 14 jours (carnet_notes.COURRIEL_FIN_JOURS). La règle porte sur les tâches planifiées : les
-    # courriels que le compte demande lui-même, comme la confirmation de l'adresse ou le mot de passe oublié, partent
-    # comme avant. Ne vérifient PAS
+    # seulement dans ses 14 jours (carnet_notes.COURRIEL_FIN_JOURS), sauf deux exceptions (relecture des décisions du
+    # 22/10, docstring d'alerts._comptes_non_confirmes) : le récapitulatif des attestations d'un marché créé par un
+    # collègue non confirmé, quand le propriétaire du compte l'est (l'alerte du partenaire, partie quand même, est notée
+    # pour tout le palier : le collègue confirmé n'a que le récapitulatif du palier suivant) ; la veille amont, qui
+    # n'enregistre aucun projet pour une adresse non confirmée et ne reprend ensuite que ceux des délibérations qu'elle
+    # lit alors. Un collègue invité (org.invite_member) est créé non confirmé et ne reçoit aucun lien de confirmation, ni
+    # à l'invitation ni à la connexion : l'écran plein le bloque jusqu'à « Renvoyer l'email de vérification ». La règle
+    # porte sur les tâches planifiées : les courriels que le compte demande lui-même, comme la confirmation de l'adresse
+    # ou le mot de passe oublié, partent comme avant. Ne vérifient PAS
     # l'adresse : les appels qui passent seulement par exiger_ia (questions sur un marché déjà analysé, estimation du
     # prix, veille) ; ils restent bornés par le garde-fou de l'essai (docs/REORGANISATION_V2B.md, B1, laissé). Le jeton
     # est rendu quand même : il sert à renvoyer l'email, à revérifier la confirmation et à se déconnecter.

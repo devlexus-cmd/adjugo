@@ -44,8 +44,17 @@ def _comptes_non_confirmes(db: Session) -> set:
     « pièces à renouveler » (run_document_expiry_alerts), ni récapitulatif des attestations des partenaires
     (_piece_alerts_due), ni veille amont (run_amont_alerts, masquée aujourd'hui). Rien n'y est marqué envoyé ni « déjà
     vu » : ils partent au premier passage après la confirmation (« Demandez vos notes » seulement dans ses 14 jours,
-    carnet_notes.COURRIEL_FIN_JOURS ; la veille amont, avec les délibérations qu'elle lit à ce passage). Les comptes
-    d'avant la vérification d'email ont été confirmés par sa migration (j4k5l6m7n8o9)."""
+    carnet_notes.COURRIEL_FIN_JOURS), sauf deux exceptions (relecture des décisions du 22/10) :
+      - le récapitulatif des attestations d'un marché créé par un collègue non confirmé, quand le propriétaire du
+        compte l'est : le partenaire est prévenu quand même et son alerte est notée pour tout le palier
+        (`piece.expiring`, _piece_alerts_due) ; le collègue, une fois confirmé, n'a que le récapitulatif du palier
+        suivant (J-3), aucun si c'était déjà J-3. Propriétaire non confirmé : rien n'est noté, tout part après ;
+      - la veille amont : aucun projet n'est enregistré pour une adresse non confirmée ; après la confirmation, elle ne
+        reprend que les projets des délibérations qu'elle lit à ce passage (un projet lu entre-temps et sorti des
+        délibérations récentes n'est jamais ajouté).
+    Un collègue invité (org.invite_member) est créé non confirmé, sans lien de confirmation : l'écran plein de
+    l'application le bloque jusqu'à « Renvoyer l'email de vérification ». Les comptes d'avant la vérification d'email
+    ont été confirmés par sa migration (j4k5l6m7n8o9)."""
     try:
         from sqlalchemy import or_
         return {uid for (uid,) in db.query(User.id).filter(
@@ -250,6 +259,10 @@ def _piece_alerts_due(db: Session, today) -> list:
             continue
         owner_user = db.query(User).filter(User.id == project.user_id).first()
         # Une adresse non confirmée ne reçoit rien (elle peut être celle d'un tiers, posée sur un compte jetable).
+        # Exception à « tout part après la confirmation » (relecture des décisions du 22/10) : si ce créateur est un
+        # collègue non confirmé et le propriétaire du compte confirmé, le partenaire est prévenu quand même et son
+        # alerte, notée (`piece.expiring`), vaut pour tout le palier : le récapitulatif de ce palier ne part pas après
+        # la confirmation, seulement celui du palier suivant. Code inchangé tant qu'Eliot n'a pas décidé.
         owner_email = (owner_user.email if owner_user and _is_email(owner_user.email)
                        and owner_user.id not in non_confirmes else None)
         # Propriétaire CANONIQUE du tenant (porteur du profil entreprise et de la chaîne
@@ -628,6 +641,8 @@ def run_amont_alerts(db: Session) -> dict:
     # est terminé sans forfait n'est pas servi : les fonctions d'IA sont en pause (quota.exiger_ia).
     # Réunion du 22/10, décision 2 : une adresse non confirmée n'est pas servie (aucun courriel, aucun projet enregistré
     # pour elle) ; elle l'est au premier passage après la confirmation, avec les délibérations que la veille lit alors.
+    # Un projet lu entre-temps (pour les autres abonnés) et sorti des délibérations récentes n'est donc jamais ajouté
+    # pour elle (relecture des décisions du 22/10 ; à trancher par Eliot au rallumage de la veille).
     from app.core.quota import _billing_user, essai_termine
     demo_ids = _demo_user_ids(db)
     non_confirmes = _comptes_non_confirmes(db)

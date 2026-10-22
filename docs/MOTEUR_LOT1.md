@@ -940,7 +940,10 @@ de Mégalis inchangé.
 ## Décisions d'Eliot (22/10/2026)
 
 Prises sur le bilan de la mise en ligne (`docs/MISE_EN_LIGNE_22_10.md`, section 3, décisions 1 à 3), appliquées sur
-`130fc9e`. Chaque test cité échouait sur `130fc9e` et passe désormais (`tests/test_mise_en_ligne_22_10.py`).
+`130fc9e`. Chaque test cité passe désormais (`tests/test_mise_en_ligne_22_10.py`).
+`test_d3_ce_que_dit_la_bulle_est_vrai` passait déjà sur `130fc9e` : il fixe ce que la bulle affirme. Les autres tests
+cités échouaient sur `130fc9e` (vérifié sur une extraction `git archive` de `130fc9e` avec ces tests, relecture des
+décisions).
 
 **Points 12 et 12 bis, V.5 : (b), le repli payant remboursé en outre-mer et en Corse.** `app/routers/sourcing.py`,
 `_repli_rembourse_par_zone` : dès qu'un des départements demandés commence par « 97 » ou « 98 », ou vaut « 2A », « 2B »
@@ -955,7 +958,10 @@ débitait si elle trouvait en métropole. Preuve : `test_d1_repli_a_venir_rembou
 `alerts._comptes_non_confirmes` sert aussi à `carnet_notes.envoyer_rappels` (« Demandez vos notes »),
 `alerts.run_document_expiry_alerts` (« pièces à renouveler ») et `alerts.run_amont_alerts` (veille amont, masquée ;
 ajoutée pour que la règle soit la seule). Rien n'est marqué : ils partent au premier passage après la confirmation,
-« Demandez vos notes » seulement dans ses 14 jours. Preuve : `test_r1_adresse_non_confirmee_aucun_courriel_planifie_vers_le_compte`,
+« Demandez vos notes » seulement dans ses 14 jours ; la veille amont, rallumée, n'enregistre aucun projet pour une
+adresse non confirmée et ne reprend ensuite que ceux des délibérations qu'elle lit alors (relecture des décisions,
+`docs/MISE_EN_LIGNE_22_10.md`, section 3, décision 2, avec l'exception du récapitulatif des attestations d'un marché
+créé par un collègue non confirmé). Preuve : `test_r1_adresse_non_confirmee_aucun_courriel_planifie_vers_le_compte`,
 `test_r1_la_veille_amont_suit_la_meme_regle` ; constaté aussi sur `0afc1ed` : l'adresse non confirmée y recevait
 l'alerte de marchés, « Demandez vos notes » et « pièces à renouveler ».
 

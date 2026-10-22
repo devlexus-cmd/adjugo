@@ -40,10 +40,24 @@ non confirmée ; la bulle (i) de « Mes alertes » est corrigée.
 - **Tant que l'adresse n'est pas confirmée, Adjugo ne lui envoie aucun courriel planifié** (décision 2, prise le
   22/10) : ni alerte de marchés, ni « Demandez vos notes », ni récapitulatif « pièces à renouveler ». Rien n'est marqué
   envoyé : ils partent au premier passage après la confirmation, « Demandez vos notes » seulement dans les 14 jours qui
-  suivent le passage du marché à « Perdu ». En production, ces trois courriels partaient vers une adresse non confirmée
-  (section 2, point 3) ; avant cette décision, le code réuni ne retenait que l'alerte de marchés. Le cas réel : un
-  compte qui change d'adresse redevient non confirmé ; il ne reçoit plus rien jusqu'à ce qu'il confirme la nouvelle.
-  Les courriels que le compte demande lui-même (confirmation, mot de passe oublié) partent comme avant.
+  suivent le passage du marché à « Perdu ». Une exception, rare : le récapitulatif des attestations des partenaires
+  d'un marché créé par un collègue non confirmé n'arrive qu'au palier suivant (section 3, décision 2). En production,
+  ces trois courriels partaient vers une adresse non confirmée (section 2, point 3) ; avant cette décision, le code
+  réuni ne retenait que l'alerte de marchés. Les courriels que le compte demande lui-même (confirmation, mot de passe
+  oublié) partent comme avant. Qui n'a pas d'adresse confirmée :
+  - **un compte qui change d'adresse** redevient non confirmé ; il ne reçoit plus rien jusqu'à ce qu'il confirme la
+    nouvelle. C'est le seul cas où la décision retire des courriels à un client ;
+  - **un compte qui vient de s'inscrire**, jusqu'au clic sur le lien reçu ;
+  - **un collègue invité depuis Réglages › Collègues** (« Inviter un collègue »). Son compte est créé non confirmé, et
+    aucun lien de confirmation ne lui est envoyé, ni à l'invitation (le courriel d'invitation ne porte que son mot de
+    passe provisoire), ni à la connexion. À sa première connexion, l'écran « Confirmez votre adresse email » le bloque
+    jusqu'à ce qu'il clique « Renvoyer l'email de vérification », puis le lien. C'est ainsi en production, inchangé.
+
+  Comme tout compte non confirmé, un compte qui vient de s'inscrire ou un collègue invité ne peut rien créer depuis
+  l'application avant d'avoir confirmé (ni alerte, ni marché, ni pièce) : l'écran couvre tout depuis le 24/06. La
+  décision ne lui retire donc aucun courriel, en production il n'en recevait pas non plus. L'écran dit pourtant au
+  collègue invité « Un lien de confirmation vous a été envoyé par email », ce qui est faux pour lui (section 3,
+  « Plus tard »).
 
 ### Fenêtre du SIRET et « Ce que je cherche »
 
@@ -325,17 +339,41 @@ d'Eliot »). Restent les décisions 4 à 7.
      lui-même, et sans lui la règle n'aurait pas été la seule.
 
    Vers un tiers, rien ne change : aucune tâche planifiée n'écrit pour un compte non confirmé (vague 2b, section 2,
-   point 2). Rien n'est marqué comme envoyé ni « déjà vu » : tout part au premier passage après la confirmation,
-   « Demandez vos notes » seulement dans ses 14 jours (`COURRIEL_FIN_JOURS`), le récapitulatif des pièces avec les
-   pièces dues ce jour-là, la veille amont avec les délibérations qu'elle lit à ce passage. Les courriels que le compte
-   demande lui-même (confirmation de l'adresse, mot de passe oublié) partent comme avant. Le cas réel : un compte
-   confirmé qui change d'adresse redevient non confirmé, et la nouvelle adresse peut être une faute de frappe. Les
-   comptes créés avant la vérification des adresses ont été confirmés par la migration de juin. Le commentaire
-   d'`app/routers/auth.py` et la fonction `_comptes_non_confirmes` disent cette règle.
+   point 2). Rien n'est marqué comme envoyé ni « déjà vu » : l'alerte de marchés, « Demandez vos notes » (seulement
+   dans ses 14 jours, `COURRIEL_FIN_JOURS`) et le récapitulatif « pièces à renouveler » (avec les pièces dues ce
+   jour-là) partent au premier passage après la confirmation. Deux exceptions (relecture des décisions, section 5) :
+   - **le récapitulatif des attestations des partenaires d'un marché créé par un collègue** (un membre de l'équipe)
+     dont l'adresse n'est pas confirmée, quand le propriétaire du compte l'est. Le partenaire est prévenu quand même,
+     et son alerte est notée pour tout le palier, J-7 ou J-3 (`_piece_alerts_due`). Une fois confirmé, le collègue ne
+     reçoit pas le récapitulatif de ce palier, seulement celui du palier suivant (J-3), s'il reste des pièces à
+     surveiller ; au palier J-3, il n'en reçoit aucun. Quand c'est le propriétaire du compte qui n'est pas confirmé,
+     rien n'est noté : tout part après la confirmation, dans le palier en cours. Cas rare, qui suppose un collègue qui
+     change d'adresse pendant un palier. C'est ainsi depuis la vague 2b ; le code ne change pas sans votre décision
+     (« Plus tard ») ;
+   - **la veille amont, si elle est rallumée** : pour une adresse non confirmée, elle n'enregistre pas non plus les
+     projets de « Projets à venir ». Après la confirmation, elle ne reprend que les projets encore présents dans les
+     délibérations qu'elle lit à ce passage : un projet lu entre-temps et sorti des délibérations récentes n'est
+     jamais ajouté pour ce compte, ni envoyé. À trancher au rallumage (« Plus tard »). Aucun effet à cette mise en
+     ligne : avec `PROJETS_A_VENIR=0`, la veille s'arrête avant.
+
+   Les courriels que le compte demande lui-même (confirmation de l'adresse, mot de passe oublié) partent comme avant.
+   Le cas réel : un compte confirmé qui change d'adresse redevient non confirmé, et la nouvelle adresse peut être une
+   faute de frappe. C'est le seul compte à qui la décision retire des courriels. Un compte qui vient de s'inscrire et
+   un collègue invité depuis Réglages › Collègues sont aussi non confirmés. Le collègue invité ne reçoit aucun lien de
+   confirmation, ni à l'invitation ni à la connexion : l'écran « Confirmez votre adresse email » le bloque jusqu'à ce
+   qu'il clique « Renvoyer l'email de vérification ». Mais ni l'un ni l'autre ne peut rien créer depuis l'application
+   avant d'avoir confirmé : aucun de ces courriels ne leur était dû en production non plus (section 1). Les comptes
+   créés avant la vérification des adresses ont été confirmés par la migration de juin. Le commentaire
+   d'`app/routers/auth.py` et la fonction `_comptes_non_confirmes` disent cette règle et ses deux exceptions.
 
    Prouvé par `tests/test_mise_en_ligne_22_10.py` (`test_r1_adresse_non_confirmee_aucun_courriel_planifie_vers_le_compte`,
    `test_r1_la_veille_amont_suit_la_meme_regle`), qui échouaient sur `130fc9e`. Le test de la revue
-   (`test_r1_adresse_non_confirmee_ce_qui_part_et_ce_qui_ne_part_pas`) fixait l'ancienne règle : il est remplacé.
+   (`test_r1_adresse_non_confirmee_ce_qui_part_et_ce_qui_ne_part_pas`) fixait l'ancienne règle : il est remplacé. Les
+   exceptions et les collègues invités sont fixés par
+   `test_d2_le_recapitulatif_des_attestations_d_un_marche_de_collegue_attend_le_palier_suivant`,
+   `test_d2_la_veille_amont_ne_reprend_pas_un_projet_lu_avant_la_confirmation` et
+   `test_d2_un_collegue_invite_est_cree_non_confirme_sans_lien_de_confirmation` ; ce texte, par
+   `test_d2_le_document_dit_la_decision`.
 3. **La bulle (i) de « Mes alertes »** disait encore « au-dessus de votre seuil de compatibilité ». **Décidé le 22/10 :
    (b)**, corrigée maintenant, avec ses traductions. Elle dit :
 
@@ -384,6 +422,20 @@ d'Eliot »). Restent les décisions 4 à 7.
 - **Ancienne route de recherche du partenaire** (`POST /api/invite/{jeton}/search`) : gardée pour les pages
   ouvertes avant la mise en ligne, à retirer ensuite. (V2B § B3.10)
 - **Pages annexes du site** : à relire, puis à mettre en ligne à part (section 5).
+- **Récapitulatif des attestations d'un marché créé par un collègue non confirmé** (décision 2, première exception) :
+  le collègue, une fois confirmé, ne reçoit le récapitulatif qu'au palier suivant, et aucun si c'était déjà J-3. Pour
+  qu'il parte au premier passage après la confirmation, comme les autres courriels de la décision 2, il faut noter
+  le récapitulatif à part de l'alerte du partenaire (une entrée de journal propre), avec un test. À vous de dire si
+  ce cas rare le mérite. (Relecture des décisions, section 5)
+- **Veille amont, au moment de la rallumer** (décision 2, deuxième exception) : pour une adresse non confirmée, elle
+  n'enregistre aucun projet, et un projet lu entre-temps puis sorti des délibérations récentes n'est jamais ajouté.
+  Autre choix : enregistrer les projets et garder le courriel pour après la confirmation, ce qui demande un repère
+  « non envoyé ». (Relecture des décisions, section 5)
+- **Collègue invité : aucun lien de confirmation** (production, inchangé) : ni l'invitation ni la connexion n'en
+  envoient, et l'écran « Confirmez votre adresse email » lui dit pourtant « Un lien de confirmation vous a été envoyé
+  par email ». Il doit cliquer « Renvoyer l'email de vérification ». Deux remèdes possibles : envoyer le lien avec le
+  courriel d'invitation, ou dire à l'écran, quand aucun lien n'est parti, de cliquer ce bouton. (Relecture des
+  décisions, section 5)
 
 ---
 
@@ -511,14 +563,15 @@ appels, chacun à sa place. Aucun test n'a été affaibli ni retiré, et une seu
 
 | Moteur | Tests | Réussis | Échecs | Erreurs | Ignorés |
 |---|---|---|---|---|---|
-| SQLite | 2 399 | 2 399 | 0 | 0 | 0 |
-| PostgreSQL 16.2 jetable (`scripts/tests_postgres.py`) | 2 399 | 2 399 | 0 | 0 | 0 |
+| SQLite | 2 404 | 2 404 | 0 | 0 | 0 |
+| PostgreSQL 16.2 jetable (`scripts/tests_postgres.py`) | 2 404 | 2 404 | 0 | 0 | 0 |
 
 Le total vaut 2 205 (production) + 126 (vague 2b) + 50 (moteur) + 10 (revue de la réunion, plus bas) + 3
 (contre-relecture de la réunion, plus bas) + 5 (décisions d'Eliot, plus bas : le test R1 de la revue remplacé par
-deux, et quatre nouveaux). La première suite réunie, avant l'alignement du test cité plus haut, donnait 2 380 sur
+deux, et quatre nouveaux) + 5 (relecture des décisions, plus bas). La première suite réunie, avant l'alignement du test cité plus haut, donnait 2 380 sur
 2 381. Avant la revue : 2 381 sur 2 381 sur les deux moteurs. Avant la contre-relecture : 2 391 sur 2 391 sur les
-deux moteurs. Avant les décisions d'Eliot : 2 394 sur 2 394 sur les deux moteurs.
+deux moteurs. Avant les décisions d'Eliot : 2 394 sur 2 394 sur les deux moteurs. Avant leur relecture : 2 399 sur
+2 399 sur les deux moteurs.
 
 **Migration depuis l'état exact de la production, PostgreSQL 16.2 : 38 contrôles sur 38.** Le code `0afc1ed` a
 été extrait par `git archive`. La base a été montée par ce code (tête `c4montantseul`) et remplie par lui :
@@ -659,7 +712,9 @@ seul trois fois, puis la suite complète relancée seule, sont verts. Ce code n'
 
 Les décisions 1 à 3 de la section 3 ont été prises par Eliot le 22/10, toutes trois sur le choix (b). Elles sont
 appliquées sur `130fc9e`. Chaque changement a un test qui échouait sur `130fc9e` (code exporté par `git archive`, tests
-nouveaux copiés) et passe désormais. Aucun test n'est affaibli ni retiré sans remplaçant.
+nouveaux copiés) et passe désormais. Un seul manque, vu par la relecture des décisions (plus bas) : les vérifications
+du document sur la décision 2 étaient parties avec l'ancien test R1, sans remplaçant ;
+`test_d2_le_document_dit_la_decision` les rétablit.
 
 | | Décision | Ce qui change dans le code | Preuve (`tests/test_mise_en_ligne_22_10.py`) |
 |---|---|---|---|
@@ -670,8 +725,9 @@ nouveaux copiés) et passe désormais. Aucun test n'est affaibli ni retiré sans
 Tests adaptés, et pourquoi :
 
 - `test_r1_adresse_non_confirmee_ce_qui_part_et_ce_qui_ne_part_pas` (revue) fixait l'ancienne règle, celle que la
-  décision 2 change : il est remplacé par les deux tests R1 ci-dessus, qui vérifient davantage (rien de marqué, envoi
-  après la confirmation, la limite des 14 jours, la veille amont).
+  décision 2 change : il est remplacé par les deux tests R1 ci-dessus, qui vérifient davantage le code (rien de marqué,
+  envoi après la confirmation, la limite des 14 jours, la veille amont). Ils ne lisaient plus le document : ses
+  vérifications de la décision 2 sont rétablies par `test_d2_le_document_dit_la_decision` (relecture des décisions).
 - `tests/test_reorganisation_v2b_relecture.py::test_s5_le_commentaire_d_auth_py_reste_vrai` comptait 3 appels à
   `_comptes_non_confirmes` dans `alerts.py`. Il en compte 5, chacun à sa tâche planifiée, plus celui de
   `carnet_notes.envoyer_rappels`, et vérifie la phrase nouvelle du commentaire d'`auth.py`.
@@ -686,10 +742,37 @@ au BOAMP et à TED, 3 pages au plus de Mégalis). La bulle le dit dans une deuxi
 Vérifications, sur le code des décisions :
 
 - suites complètes, `TZ=UTC`, Python 3.12 installé depuis `requirements.lock`, sans réseau : SQLite, 2 399 sur
-  2 399 ; PostgreSQL 16.2 jetable (`scripts/tests_postgres.py`), 2 399 sur 2 399 (tableau plus haut) ;
+  2 399 ; PostgreSQL 16.2 jetable (`scripts/tests_postgres.py`), 2 399 sur 2 399 (2 404 depuis la relecture des
+  décisions, tableau plus haut) ;
 - `scripts/sri_update.py`, puis `--check` : empreintes à jour (`app.html`, `sri-manifest.json`) ;
 - `node --check` : 8 fichiers JS servis et 9 scripts intégrés aux pages, 0 erreur ;
 - `scripts/i18n_ajouter.py --check` : 790 clés, néerlandais et espagnol (789 avant, une phrase nouvelle) ;
 - gabarit de l'application compilé par le Vue du dépôt : ses 3 tests sont dans la suite.
+
+Aucune migration nouvelle, aucune variable Railway, rien n'a été mis en ligne ni poussé.
+
+### Relecture des décisions d'Eliot (22/10/2026)
+
+Une relecture des décisions (`baf68de`) a fait 7 remarques, dont deux en double : 5 remarques distinctes, 1 majeure
+et 4 mineures. Toutes ont été reproduites. Une est en partie rejetée (RD4, plus bas). Le code des courriels ne change
+pas : les corrections portent sur ce document, sur `docs/MOTEUR_LOT1.md` et sur les commentaires d'`auth.py` et
+d'`alerts.py`, qui disaient autre chose que le code. Cinq tests s'ajoutent à `tests/test_mise_en_ligne_22_10.py` ;
+chacun échouait sur `baf68de`, par le document ou par un commentaire. Les comportements qu'ils fixent y étaient déjà.
+
+| | Remarque | Reproduction | Correction |
+|---|---|---|---|
+| RD1 (remarques 1 et 6) | Plus aucun test ne lisait la décision 2 de ce document : les vérifications de l'ancien test R1 étaient parties avec lui. | Sur une copie de `baf68de`, la décision 2 réécrite en « (a), garder tel quel », et la phrase de la section 1 changée en « Adjugo lui envoie encore « Demandez vos notes » » : les tests de ce document et de la relecture de la vague 2b restent verts (37 réussis, 1 ignoré hors dépôt). | `test_d2_le_document_dit_la_decision` rétablit ces vérifications (décision prise, fonction unique, les quatre courriels, les 14 jours, les noms des tests) et vérifie que l'affirmation sans exception a disparu. Section 5, « Décisions d'Eliot » : le manque est dit. |
+| RD2 (remarques 2 et 5) | « Rien n'est marqué : tout part au premier passage après la confirmation » est faux pour le récapitulatif des attestations d'un marché créé par un collègue non confirmé. | Propriétaire confirmé, marché d'un collègue qui a changé d'adresse : au palier J-7, le partenaire est prévenu et son alerte notée, rien au collègue ; confirmé, le même jour, toujours rien ; au palier J-3, le récapitulatif lui part. Témoin : propriétaire non confirmé, rien n'est noté ; confirmé, tout part dans le palier en cours. Ainsi depuis la vague 2b. | L'exception est dite ici (sections 1 et 3), dans le commentaire d'`auth.py`, la docstring de `_comptes_non_confirmes` et `_piece_alerts_due`. Le code ne change pas : choix laissé à Eliot (section 3, « Plus tard »). `test_d2_le_recapitulatif_des_attestations_d_un_marche_de_collegue_attend_le_palier_suivant`. |
+| RD3 (remarque 3) | La veille amont, rallumée, n'enregistre aucun projet pour une adresse non confirmée, et un projet lu entre-temps n'est jamais repris. | Deux abonnés, l'un non confirmé : le projet A, lu pendant ce temps, est enregistré et envoyé pour l'autre seul ; après la confirmation, seul le projet B est lu, et ce compte n'a que B. | Section 3, décision 2 (deuxième exception) et « Plus tard » ; commentaires d'`auth.py` et de `run_amont_alerts`, docstring ; `docs/MOTEUR_LOT1.md`, point 16 bis. Sans effet à cette mise en ligne (`PROJETS_A_VENIR=0`). `test_d2_la_veille_amont_ne_reprend_pas_un_projet_lu_avant_la_confirmation`. |
+| RD4 (remarque 4) | Le bilan ne disait pas qu'un collègue invité est créé non confirmé, sans lien de confirmation. | Reproduit : `POST /api/org/invite` crée le compte non confirmé ; seul le courriel d'invitation part (mot de passe provisoire, sans lien) ; la connexion n'envoie rien ; « Renvoyer l'email de vérification » envoie le lien. **En partie rejetée** : la remarque dit qu'il « ne recevra plus » des courriels « qu'il recevait en production ». Depuis le 24/06 (`36418a4`), l'écran plein « Confirmez votre adresse email » bloque tout compte non confirmé dès sa connexion, sans condition de rôle : depuis l'application, il ne peut créer ni alerte, ni marché, ni pièce avant de confirmer. La sonde de la remarque crée la pièce directement dans la base. La décision ne lui retire donc rien ; le seul compte qui perd des courriels reste celui qui change d'adresse. | Sections 1 et 3 : qui est non confirmé, et pourquoi la décision ne retire rien au collègue invité. « Plus tard » : le lien absent et la phrase de l'écran « Un lien de confirmation vous a été envoyé par email », fausse pour lui (production, inchangée). `test_d2_un_collegue_invite_est_cree_non_confirme_sans_lien_de_confirmation`. |
+| RD5 (remarque 7) | `docs/MOTEUR_LOT1.md` : « Chaque test cité échouait sur `130fc9e` ». | Les tests cités, lancés sur une extraction `git archive` de `130fc9e` avec les tests de `baf68de` : 4 échouent, `test_d3_ce_que_dit_la_bulle_est_vrai` passe. | Phrase corrigée : ce test passait déjà, il fixe ce que la bulle affirme. `test_d3_le_contrat_du_moteur_dit_quel_test_passait_deja`. |
+
+Vérifications, sur le code de la relecture :
+
+- suites complètes, `TZ=UTC`, Python 3.12 installé depuis `requirements.lock`, sans réseau : SQLite, 2 404 sur 2 404 ;
+  PostgreSQL 16.2 jetable (`scripts/tests_postgres.py`), 2 404 sur 2 404 (tableau plus haut) ;
+- les cinq tests nouveaux, lancés sur une extraction `git archive` de `baf68de` : 5 échecs ;
+- aucun fichier servi ne change : `scripts/sri_update.py --check`, `node --check` (8 fichiers et 9 scripts intégrés)
+  et `scripts/i18n_ajouter.py --check` (790 clés) restent verts ; gabarit compilé dans la suite.
 
 Aucune migration nouvelle, aucune variable Railway, rien n'a été mis en ligne ni poussé.

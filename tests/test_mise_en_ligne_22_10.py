@@ -38,6 +38,17 @@ DÉCISIONS D'ELIOT (22/10), appliquées sur 130fc9e ; chaque test échouait sur 
       (alertes de marchés, « Demandez vos notes », « pièces à renouveler », veille amont), rien de marqué, envoi après
       la confirmation (tests R1) ;
   D3  (b) la bulle (i) de « Mes alertes » corrigée, traduite, et ce qu'elle dit vérifié dans le code.
+
+RELECTURE des décisions (baf68de) : 7 remarques, dont deux en double ; le code des courriels ne change pas, chaque test
+échouait sur baf68de (le document ou un commentaire disait autre chose que le code) :
+
+  RD1 (remarques 1 et 6) le document de la décision 2 n'était plus vérifié par aucun test ;
+  RD2 (remarques 2 et 5) le récapitulatif des attestations d'un marché créé par un collègue non confirmé n'attend pas
+      la confirmation : il n'arrive qu'au palier suivant (exception dite, code inchangé, choix laissé à Eliot) ;
+  RD3 (remarque 3) la veille amont rallumée ne reprend pas un projet lu avant la confirmation ;
+  RD4 (remarque 4) un collègue invité est créé non confirmé, sans lien de confirmation (dit ; l'impact annoncé,
+      rejeté : l'écran plein l'empêche de rien créer depuis l'application avant de confirmer) ;
+  RD5 (remarque 7) docs/MOTEUR_LOT1.md disait que chaque test cité échouait sur 130fc9e.
 """
 import json
 import os
@@ -772,3 +783,297 @@ def test_d3_ce_que_dit_la_bulle_est_vrai(client, auth, monkeypatch):
     monkeypatch.setattr(sourcing_http, "get_with_retry", _get)
     BoampSource().search(TenderCriteria(query="voirie", departements=["29"], limit=25))
     assert demandes and demandes[0]["limit"] == 25 and demandes[0]["order_by"] == "-dateparution"
+
+
+# ═══ Relecture des décisions d'Eliot (baf68de) ══════════════════════════════════════════════════════════════════════
+# 7 remarques, dont deux en double (RD1 = remarques 1 et 6, RD2 = remarques 2 et 5). Chaque test ci-dessous échouait
+# sur baf68de, par le document ou par un commentaire qui disait autre chose que le code ; le code des courriels ne
+# change pas (les comportements fixés ici étaient déjà ceux de baf68de).
+
+def _commentaire_auth():
+    src = (ROOT / "app" / "routers" / "auth.py").read_text(encoding="utf-8")
+    i = src.index("    # Email de confirmation. Choix du 24/06, gardé")
+    return re.sub(r"\s*\n\s*#\s*", " ", src[i:src.index("    _send_verification(user)", i)])
+
+
+def _docstring_non_confirmes():
+    import app.services.alerts as al
+    return _plat(al._comptes_non_confirmes.__doc__ or "")
+
+
+D2_DEBUT, D2_FIN = "2. **Adresses non confirmées", "3. **La bulle (i)"
+S1_DEBUT, S1_FIN = "### Inscription et confirmation de l'adresse", "### Fenêtre du SIRET et « Ce que je cherche »"
+
+
+# ─── RD1 (remarques 1 et 6) : le document dit la décision 2 ─────────────────────────────────────────────────────────
+
+def test_d2_le_document_dit_la_decision():
+    """Les vérifications du document qu'avait l'ancien test R1 (130fc9e), parties avec lui, rétablies sur la décision
+    prise : sans elles, la décision 2 réécrite en « (a), garder tel quel » laissait la suite verte (reproduit sur une
+    copie de baf68de)."""
+    d2 = _section(D2_DEBUT, D2_FIN)
+    assert "règle du reste de l'application" not in d2
+    assert "**Décidé le 22/10 : (b)**" in d2 and "**Décidé le 22/10 : (a)**" not in d2
+    for x in ("`_comptes_non_confirmes`", "ni « Demandez vos notes » (`carnet_notes.envoyer_rappels`)",
+              "ni récapitulatif « pièces à renouveler » (`run_document_expiry_alerts`)",
+              "ni alerte de marchés (`run_tender_alerts`", "ni veille amont (`run_amont_alerts`)",
+              "seulement dans ses 14 jours, `COURRIEL_FIN_JOURS`",
+              "test_r1_adresse_non_confirmee_aucun_courriel_planifie_vers_le_compte",
+              "test_r1_la_veille_amont_suit_la_meme_regle", "test_d2_le_document_dit_la_decision"):
+        assert x in d2, x
+    # Plus d'affirmation sans exception (RD2, RD3) : les deux exceptions sont dites.
+    assert "tout part au premier passage après la confirmation" not in d2
+    assert "Deux exceptions" in d2
+    s1 = _section(S1_DEBUT, S1_FIN)
+    for x in ("**Tant que l'adresse n'est pas confirmée, Adjugo ne lui envoie aucun courriel planifié**",
+              "ni alerte de marchés, ni « Demandez vos notes », ni récapitulatif « pièces à renouveler »",
+              "dans les 14 jours qui suivent le passage du marché à « Perdu »"):
+        assert x in s1, x
+    assert "ne reçoit plus d'alerte de marchés" in _plat(DOC)
+    # La section 5 ne dit plus « aucun test retiré sans remplaçant » sans le manque, et nomme le test qui le comble.
+    dec = _section("### Décisions d'Eliot (22/10/2026)", "### Relecture des décisions d'Eliot (22/10/2026)")
+    assert "Aucun test n'est affaibli ni retiré sans remplaçant." not in dec
+    assert "les vérifications du document sur la décision 2 étaient parties avec l'ancien test R1" in dec
+
+
+# ─── RD2 (remarques 2 et 5) : le récapitulatif des attestations d'un marché de collègue ─────────────────────────────
+
+def test_d2_le_recapitulatif_des_attestations_d_un_marche_de_collegue_attend_le_palier_suivant(client, auth, monkeypatch):
+    """Propriétaire du compte confirmé, marché créé par un collègue (membre de l'équipe) qui a changé d'adresse : au
+    palier J-7, le partenaire est prévenu et son alerte est notée (`piece.expiring`), rien au collègue. Le collègue
+    confirme : le même palier ne lui envoie rien ; le palier J-3 lui envoie le récapitulatif. Témoin : propriétaire
+    non confirmé, rien n'est noté ni envoyé ; confirmé, le partenaire et le récapitulatif partent dans le même palier.
+    Comportement de la vague 2b, inchangé ; baf68de affirmait « ils partent au premier passage après la confirmation »
+    sans cette exception (auth.py, docstring, document)."""
+    import uuid
+    import app.routers.invites as inv_router
+    import app.services.alerts as al
+    from app.models import AuditLog, User
+    from tests.test_convention_groupement import _invite, _project
+    envois = []
+    monkeypatch.setattr(al, "send_email", lambda to, sujet, texte, *a, **k: envois.append((to, sujet)) or True)
+    monkeypatch.setattr(inv_router, "_send_mails_async", lambda m: None)
+    proprio = _user_id(auth["email"])
+    r = client.post("/api/org/invite", headers=_h(auth), json={"email": f"collegue_{uuid.uuid4().hex[:8]}@test.fr",
+                                                                "full_name": "Collègue RD2"})
+    assert r.status_code == 201, r.text
+    collegue, c_email, mdp = r.json()["id"], r.json()["email"], r.json()["temp_password"]
+    _maj_user(collegue, email_verified=True)
+    r = client.post("/api/auth/login", json={"email": c_email, "password": mdp})
+    assert r.status_code == 200, r.text
+    hc = {"Authorization": f"Bearer {r.json()['access_token']}"}
+    # La tournée ne touche qu'à ces deux comptes (les autres sont écartés comme le compte de démonstration).
+    monkeypatch.setattr(al, "_demo_user_ids",
+                        lambda db: {u for (u,) in db.query(User.id).filter(User.id.notin_([proprio, collegue])).all()})
+    p_proprio = f"p_{uuid.uuid4().hex[:8]}@partenaire.fr"
+    p_collegue = f"p_{uuid.uuid4().hex[:8]}@partenaire.fr"
+    RECAP = "1 partenaire : attestation(s) à surveiller"
+
+    def tournee(jour):
+        envois.clear()
+        db = _db()
+        try:
+            al._run_piece_expiry_alerts(db, jour)
+        finally:
+            db.close()
+        return [(to, sujet) for to, sujet in envois if to in (auth["email"], c_email, p_proprio, p_collegue)]
+
+    def notes(pid):
+        db = _db()
+        try:
+            return db.query(AuditLog).filter(AuditLog.project_id == pid, AuditLog.action == "piece.expiring").count()
+        finally:
+            db.close()
+    aujourd_hui = date.today()
+    try:
+        # Témoin : le marché du propriétaire, propriétaire non confirmé. Rien n'est noté : tout part après.
+        pid_p = _project(client, _h(auth), name=f"AO RD2 propriétaire {uuid.uuid4().hex[:5]}", deadline_days=6)
+        _invite(client, _h(auth), pid_p, "Partenaire du propriétaire SARL", recipient=p_proprio)
+        _maj_user(proprio, email_verified=False)
+        assert tournee(aujourd_hui) == [] and notes(pid_p) == 0
+        _maj_user(proprio, email_verified=True)
+        vus = tournee(aujourd_hui)
+        assert [to for to, _s in vus if to == p_proprio] == [p_proprio]
+        recap = [s for to, s in vus if to == auth["email"]]
+        assert len(recap) == 1 and recap[0].startswith(RECAP), vus
+        # L'exception : le marché du collègue, collègue non confirmé (changement d'adresse), propriétaire confirmé.
+        pid_c = _project(client, hc, name=f"AO RD2 collègue {uuid.uuid4().hex[:5]}", deadline_days=6)
+        _invite(client, hc, pid_c, "Partenaire du collègue SARL", recipient=p_collegue)
+        _maj_user(collegue, email_verified=False)
+        vus = tournee(aujourd_hui)                                          # palier J-7
+        assert [to for to, _s in vus] == [p_collegue] and notes(pid_c) == 1  # le partenaire, noté ; rien au collègue
+        _maj_user(collegue, email_verified=True)
+        assert tournee(aujourd_hui) == []                                   # confirmé, même palier : rien
+        vus = tournee(aujourd_hui + timedelta(days=3))                      # palier J-3
+        recap = [s for to, s in vus if to == c_email]
+        assert len(recap) == 1 and recap[0].startswith(RECAP), vus
+    finally:
+        _maj_user(proprio, email_verified=True)
+        _maj_user(collegue, email_verified=True)
+    # Les trois textes disent l'exception (et plus « ils partent » sans elle).
+    c = _commentaire_auth()
+    assert "ils partent au premier passage après la confirmation" in c        # (test_s5 de la vague 2b)
+    for x in ("sauf deux exceptions", "le récapitulatif des attestations d'un marché créé par un collègue non confirmé",
+              "le collègue confirmé n'a que le récapitulatif du palier suivant"):
+        assert x in c, x
+    doc = _docstring_non_confirmes()
+    for x in ("sauf deux exceptions", "le récapitulatif des attestations d'un marché créé par un collègue non confirmé",
+              "n'a que le récapitulatif du palier suivant (J-3), aucun si c'était déjà J-3",
+              "Propriétaire non confirmé : rien n'est noté, tout part après"):
+        assert x in doc, x
+    d2 = _section(D2_DEBUT, D2_FIN)
+    for x in ("**le récapitulatif des attestations des partenaires d'un marché créé par un collègue**",
+              "son alerte est notée pour tout le palier, J-7 ou J-3 (`_piece_alerts_due`)",
+              "seulement celui du palier suivant (J-3)", "au palier J-3, il n'en reçoit aucun",
+              "Quand c'est le propriétaire du compte qui n'est pas confirmé, rien n'est noté",
+              "test_d2_le_recapitulatif_des_attestations_d_un_marche_de_collegue_attend_le_palier_suivant"):
+        assert x in d2, x
+    assert "n'arrive qu'au palier suivant (section 3, décision 2)" in _section(S1_DEBUT, S1_FIN)
+    plus_tard = _section("### Plus tard (rien ne bloque la mise en ligne)", "## 4. Procédure")
+    assert "**Récapitulatif des attestations d'un marché créé par un collègue non confirmé**" in plus_tard
+
+
+# ─── RD3 (remarque 3) : la veille amont rallumée ne reprend pas un projet lu avant la confirmation ─────────────────
+
+def test_d2_la_veille_amont_ne_reprend_pas_un_projet_lu_avant_la_confirmation(client, auth, monkeypatch):
+    """Deux abonnés à la veille amont rallumée : un compte confirmé, et ce compte, non confirmé. Passage 1 : le projet A
+    est lu, enregistré et envoyé pour l'autre abonné, rien pour ce compte. Il confirme. Passage 2 : seul le projet B est
+    encore dans les délibérations lues. Ce compte n'a que B ; A n'est jamais enregistré ni envoyé pour lui. baf68de
+    disait seulement « elle suit la même règle » (document) et « ils partent au premier passage » (auth.py)."""
+    import uuid
+    import app.services.agents.amont as agents_amont
+    import app.services.alerts as al
+    import app.sourcing.sources.deliberations as deliberations
+    from app.models import Signal, User
+    monkeypatch.setenv("PROJETS_A_VENIR", "1")
+    uid = _user_id(auth["email"])
+    autre_email = f"autre_{uuid.uuid4().hex[:8]}@test.fr"
+    r = client.post("/api/auth/register", json={"email": autre_email, "password": "motdepasse123",
+                                                "full_name": "Autre abonné", "company_name": "Autre SARL"})
+    assert r.status_code == 201, r.text
+    autre = _user_id(autre_email)
+    envois = []
+    monkeypatch.setattr(al, "send_email", lambda to, sujet, texte, *a, **k: envois.append((to, texte)) or True)
+    monkeypatch.setattr(al, "_demo_user_ids",
+                        lambda db: {u for (u,) in db.query(User.id).filter(User.id.notin_([uid, autre])).all()})
+    monkeypatch.setattr(deliberations.DeliberationSource, "fetch_recent", lambda self, *a, **k: [{"titre": "x"}])
+    lus = [[{"intitule": "Projet A RD3, lu avant la confirmation", "collectivite": "Ville A", "source": "A"}],
+           [{"intitule": "Projet B RD3, lu après la confirmation", "collectivite": "Ville B", "source": "B"}]]
+    monkeypatch.setattr(agents_amont, "detect_from_deliberations", lambda *a, **k: lus.pop(0))
+    monkeypatch.setattr(agents_amont, "score_pertinence", lambda p, c, d=None: (80, "pertinent"))
+
+    def signaux(u):
+        db = _db()
+        try:
+            return sorted(s.intitule for s in db.query(Signal).filter(Signal.user_id == u).all())
+        finally:
+            db.close()
+    _maj_user(uid, amont_alerts_enabled=True, email_verified=False)
+    _maj_user(autre, amont_alerts_enabled=True, email_verified=True)
+    try:
+        r1 = al.run_amont_alerts(_db())
+        assert r1["users_notified"] == 1 and signaux(uid) == []
+        assert signaux(autre) == ["Projet A RD3, lu avant la confirmation"]
+        assert [to for to, _t in envois] == [autre_email]
+        _maj_user(uid, email_verified=True)
+        envois.clear()
+        al.run_amont_alerts(_db())
+    finally:
+        _maj_user(uid, amont_alerts_enabled=False, email_verified=True)
+        _maj_user(autre, amont_alerts_enabled=False)
+    assert signaux(uid) == ["Projet B RD3, lu après la confirmation"]          # A n'est jamais repris pour ce compte
+    mes = [t for to, t in envois if to == auth["email"]]
+    assert len(mes) == 1 and "Projet B RD3" in mes[0] and "Projet A RD3" not in mes[0]
+    # Les textes le disent.
+    c = _commentaire_auth()
+    assert ("la veille amont, qui n'enregistre aucun projet pour une adresse non confirmée et ne reprend ensuite que "
+            "ceux des délibérations qu'elle lit alors") in c
+    assert ("un projet lu entre-temps et sorti des délibérations récentes n'est jamais ajouté"
+            in _docstring_non_confirmes())
+    src = _plat((ROOT / "app" / "services" / "alerts.py").read_text(encoding="utf-8").replace("#", ""))
+    assert "Un projet lu entre-temps (pour les autres abonnés) et sorti des délibérations récentes n'est donc jamais" in src
+    d2 = _section(D2_DEBUT, D2_FIN)
+    for x in ("**la veille amont, si elle est rallumée**", "elle n'enregistre pas non plus les projets de « Projets à venir »",
+              "un projet lu entre-temps et sorti des délibérations récentes n'est jamais ajouté pour ce compte, ni envoyé",
+              "À trancher au rallumage", "test_d2_la_veille_amont_ne_reprend_pas_un_projet_lu_avant_la_confirmation"):
+        assert x in d2, x
+    plus_tard = _section("### Plus tard (rien ne bloque la mise en ligne)", "## 4. Procédure")
+    assert "**Veille amont, au moment de la rallumer**" in plus_tard
+    moteur = _plat((ROOT / "docs" / "MOTEUR_LOT1.md").read_text(encoding="utf-8"))
+    assert ("la veille amont, rallumée, n'enregistre aucun projet pour une adresse non confirmée et ne reprend ensuite "
+            "que ceux des délibérations qu'elle lit alors") in moteur
+
+
+# ─── RD4 (remarque 4) : un collègue invité est créé non confirmé, sans lien de confirmation ─────────────────────────
+
+def test_d2_un_collegue_invite_est_cree_non_confirme_sans_lien_de_confirmation(client, auth, monkeypatch):
+    """POST /api/org/invite crée le collègue non confirmé (il entre dans _comptes_non_confirmes) ; seul le courriel
+    d'invitation part, avec le mot de passe provisoire et sans lien ; la connexion n'en envoie pas non plus ;
+    « Renvoyer l'email de vérification » l'envoie. L'écran plein « Confirmez votre adresse email » vaut pour tout
+    compte non confirmé, collègue compris. Le document (baf68de) ne citait que le changement d'adresse."""
+    import uuid
+    import app.routers.auth as auth_router
+    import app.services.alerts as al
+    import app.services.email as em
+    liens, envois = [], []
+    monkeypatch.setattr(auth_router, "_send_verification", lambda u: liens.append(u.email))
+    monkeypatch.setattr(em, "send_email", lambda to, sujet, texte, *a, **k: envois.append((to, sujet, texte)) or True)
+    email = f"collegue_{uuid.uuid4().hex[:8]}@test.fr"
+    r = client.post("/api/org/invite", headers=_h(auth), json={"email": email, "full_name": "Collègue RD4"})
+    assert r.status_code == 201, r.text
+    cid, mdp = r.json()["id"], r.json()["temp_password"]
+    try:
+        assert cid in al._comptes_non_confirmes(_db())
+        assert [to for to, _s, _t in envois] == [email]                     # un seul courriel : l'invitation
+        sujet, texte = envois[0][1], envois[0][2]
+        assert sujet.startswith("Invitation à rejoindre") and "Mot de passe provisoire" in texte
+        assert "verify" not in texte and liens == []                       # aucun lien de confirmation
+        r = client.post("/api/auth/login", json={"email": email, "password": mdp})
+        assert r.status_code == 200, r.text
+        hc = {"Authorization": f"Bearer {r.json()['access_token']}"}
+        assert liens == []                                                 # ni à la connexion
+        assert client.get("/api/auth/me", headers=hc).json()["email_verified"] is False
+        assert client.post("/api/auth/resend-verification", headers=hc).status_code == 200
+        assert liens == [email]                                            # « Renvoyer » : le lien part
+    finally:
+        _maj_user(cid, email_verified=True)
+    # L'écran plein bloque tout compte non confirmé, sans condition de rôle, et dit qu'un lien a été envoyé.
+    assert ('data-test="ecran-confirmation-email" v-if="token && user && user.id && user.email_verified===false"'
+            in HTML)
+    assert "Un lien de confirmation vous a été envoyé par email" in HTML
+    assert "Renvoyer l'email de vérification</button>" in HTML
+    s1 = _section(S1_DEBUT, S1_FIN)
+    for x in ("**un collègue invité depuis Réglages › Collègues**", "aucun lien de confirmation ne lui est envoyé, ni à "
+              "l'invitation", "ni à la connexion", "« Renvoyer l'email de vérification »",
+              "**un compte qui change d'adresse**", "C'est le seul cas où la décision retire des courriels à un client",
+              "ne peut rien créer depuis l'application avant d'avoir confirmé (ni alerte, ni marché, ni pièce)",
+              "« Un lien de confirmation vous a été envoyé par email », ce qui est faux pour lui"):
+        assert x in s1, x
+    d2 = _section(D2_DEBUT, D2_FIN)
+    for x in ("un collègue invité depuis Réglages › Collègues sont aussi non confirmés",
+              "Le collègue invité ne reçoit aucun lien de confirmation, ni à l'invitation ni à la connexion",
+              "C'est le seul compte à qui la décision retire des courriels",
+              "test_d2_un_collegue_invite_est_cree_non_confirme_sans_lien_de_confirmation"):
+        assert x in d2, x
+    plus_tard = _section("### Plus tard (rien ne bloque la mise en ligne)", "## 4. Procédure")
+    assert "**Collègue invité : aucun lien de confirmation** (production, inchangé)" in plus_tard
+    c = _commentaire_auth()
+    assert ("Un collègue invité (org.invite_member) est créé non confirmé et ne reçoit aucun lien de confirmation, ni à "
+            "l'invitation ni à la connexion") in c
+
+
+# ─── RD5 (remarque 7) : le contrat du moteur dit quel test D3 passait déjà ──────────────────────────────────────────
+
+def test_d3_le_contrat_du_moteur_dit_quel_test_passait_deja():
+    """Reproduit sur une extraction de 130fc9e avec les tests de baf68de : test_d3_la_bulle_… échoue,
+    test_d3_ce_que_dit_la_bulle_est_vrai passe (il fixe ce que la bulle affirme). MOTEUR_LOT1.md disait « Chaque test
+    cité échouait sur 130fc9e »."""
+    m = _plat((ROOT / "docs" / "MOTEUR_LOT1.md").read_text(encoding="utf-8"))
+    a = m.index("## Décisions d'Eliot (22/10/2026)")
+    dec = m[a:]
+    assert "Chaque test cité échouait sur `130fc9e`" not in dec
+    assert ("`test_d3_ce_que_dit_la_bulle_est_vrai` passait déjà sur `130fc9e` : il fixe ce que la bulle affirme"
+            in dec)
+    assert "Les autres tests cités échouaient sur `130fc9e`" in dec
+    # Le bilan disait déjà juste (« passait déjà »).
+    assert "`test_d3_ce_que_dit_la_bulle_est_vrai` (passait déjà : il fixe ce que la bulle affirme)" in _plat(DOC)
