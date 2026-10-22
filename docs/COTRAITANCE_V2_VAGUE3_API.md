@@ -595,7 +595,8 @@ moment. » Le partenaire est rattaché à « Mes partenaires » (source « Rése
 | 409 | `{"code": "injoignable", "message": "Ce partenaire ne peut pas être contacté pour le moment."}` |
 | 429 | plafond de l'organisation · « Ce partenaire a reçu beaucoup d'invitations aujourd'hui : réessayez demain. » (10 sollicitations / 24 h par profil : invitations créées et relances, même compteur à l'envoi et à la relance) |
 
-Email envoyé au partenaire (par Adjugo) : objet « Une entreprise vous propose un groupement — … »,
+Email envoyé au partenaire (par Adjugo) : objet « Une entreprise vous propose un groupement — … » (« Une entreprise vous
+propose d'intervenir comme sous-traitant — … » pour le rôle de sous-traitant, contrôle des bugs, deuxième passe),
 nom du chef de file, marché, part proposée, lien, « Votre adresse n'est pas communiquée au chef de
 file tant que vous n'avez pas accepté », et comment retirer sa publication.
 

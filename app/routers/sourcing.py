@@ -337,6 +337,9 @@ def renewals(request: Request, req: RenewalRequest,
 
     # 1) DECP — déterministe, sans LLM, sans quota.
     motif = "DECP sans résultat"
+    # Erreurs de la DECP gardées pour la réponse du repli : l'écran dit qu'une source n'a pas répondu au lieu
+    # d'affirmer « Aucune échéance proche » (contrôle des bugs, deuxième passe). Aucun changement du débit.
+    erreurs_decp = []
     try:
         from app.services.decp import detect_renewals_decp
         res = detect_renewals_decp(req.query or "travaux", deps, gonogo, domaines=req.domaines)
@@ -344,9 +347,11 @@ def renewals(request: Request, req: RenewalRequest,
             return res
         if res.get("errors"):
             motif = "DECP indisponible"
+            erreurs_decp = [str(x) for x in res["errors"]]
     except Exception as e:
         logger.warning("Radar DECP en échec, repli BOAMP+IA : %s", e)
         motif = "DECP en erreur"
+        erreurs_decp = [f"DECP indisponible : {type(e).__name__}"]
 
     # 2) Repli : BOAMP + enrichissement IA (consomme un quota, remboursé si rien). Gardé (décision 12) ;
     # chaque repli est noté dans le journal avec ce qu'il trouve (_journal_repli_a_venir).
@@ -373,7 +378,8 @@ def renewals(request: Request, req: RenewalRequest,
     # Partie écran du lot 1 (point 12) : l'onglet dit d'où viennent ces fins de contrat (avis d'attribution du BOAMP,
     # durée lue ou estimée, pas la durée publiée de la DECP) et ce qu'est devenue l'analyse, débitée ou remboursée.
     # Rien d'autre ne change : même débit, même remboursement.
-    return {**res, "source": "BOAMP", "analyse": "remboursee" if rembourse else "debitee"}
+    return {**res, "errors": erreurs_decp + list(res.get("errors") or []),
+            "source": "BOAMP", "analyse": "remboursee" if rembourse else "debitee"}
 
 
 # Sort de l'analyse noté au journal quand le repli est remboursé parce qu'il porte sur l'outre-mer ou la Corse.
@@ -416,6 +422,35 @@ class AnalyzeRequest(BaseModel):
     tender: dict  # NormalizedTender choisi par l'utilisateur (étape 1)
 
 
+def _date_limite_lue(texte):
+    """La date « JJ/MM/AAAA » d'un texte d'analyse (« 11/11/2026 à 12h00 »), comme demo_seed._date_limite, ou None."""
+    import datetime as _dt
+    import re
+    m = re.search(r"(\d{2})/(\d{2})/(\d{4})", str(texte or ""))
+    if not m:
+        return None
+    try:
+        return _dt.date(int(m.group(3)), int(m.group(2)), int(m.group(1)))
+    except ValueError:
+        return None
+
+
+def _date_limite_du_marche(tender, details):
+    """Date limite enregistrée sur un marché créé par « Analyser ce marché » (Project.deadline, que lisent le courriel
+    d'invitation, les rappels J-3 et J-1 de la part, « Avant de déposer », le compte à rebours du partenaire, « À
+    faire ») : celle de l'avis officiel (date ISO de la source), à défaut celle que l'analyse lit et que la page du
+    marché affiche. Jamais une date quand un rectificatif a changé la date limite sans qu'on ait pu la lire : ni
+    l'ancienne, ni une date devinée (contrôle des bugs, deuxième passe : la colonne restait toujours vide)."""
+    import datetime as _dt
+    if tender is not None and getattr(tender, "date_limite_rectifiee_non_lue", False):
+        return None
+    iso = str(getattr(tender, "date_limite", "") or "")[:10] if tender is not None else ""
+    try:
+        return _dt.date.fromisoformat(iso)
+    except ValueError:
+        return _date_limite_lue((details or {}).get("date_limite"))
+
+
 @router.post("/analyze")
 @limiter.limit("30/hour")
 def analyze_tender(request: Request, req: AnalyzeRequest,
@@ -436,7 +471,8 @@ def analyze_tender(request: Request, req: AnalyzeRequest,
             _proj = Project(user_id=current_user.id,
                             name=(_a.get("details", {}).get("intitule_marche") or tender.objet)[:500],
                             client=tender.acheteur or "", match_score=_score, go_decision=_decision,
-                            ai_summary=_a.get("summary", ""), ai_analysis=_a, source_url=_safe_link(tender.provenance.source_url))
+                            ai_summary=_a.get("summary", ""), ai_analysis=_a, source_url=_safe_link(tender.provenance.source_url),
+                            deadline=_date_limite_du_marche(tender, _a.get("details")))
             db.add(_proj); db.commit(); db.refresh(_proj)
             return {"project_id": _proj.id, "decision": _decision, "score": _score, "dce_available": True,
                     "confidence": tender.confidence, "summary": _a.get("summary", ""),
@@ -484,6 +520,9 @@ def analyze_tender(request: Request, req: AnalyzeRequest,
         decision = None
         analysis.pop("match_score", None)
     analysis["go_decision"] = decision
+    if tender.date_limite_rectifiee_non_lue:
+        # Gardé pour l'import du dossier (_finish_analysis) : la date qu'il lira peut être l'ancienne.
+        analysis["date_limite_rectifiee_non_lue"] = True
 
     project = Project(
         user_id=current_user.id,
@@ -492,6 +531,7 @@ def analyze_tender(request: Request, req: AnalyzeRequest,
         match_score=score, go_decision=decision,
         ai_summary=analysis.get("summary", ""), ai_analysis=analysis,
         source_url=_safe_link(tender.provenance.source_url),
+        deadline=_date_limite_du_marche(tender, analysis.get("details")),
     )
     # Décision 11 (rédaction) : ce dossier importé impose-t-il son fichier de réponse ? (agrégat)
     from app.services.atelier import mesurer_import
@@ -626,6 +666,12 @@ def _finish_analysis(db, project, analysis, company_data, gonogo, user, lecture=
     _keep_grille_choices(prev, analysis, lecture)
     analysis["source"] = _safe_source(prev.get("source"))
     analysis["lead_score"] = prev.get("lead_score")
+    if isinstance(prev, dict) and prev.get("date_limite_rectifiee_non_lue"):
+        analysis["date_limite_rectifiee_non_lue"] = True
+    # La date limite que lit le dossier (celle que la page du marché affiche), seulement si le marché n'en a pas : une
+    # date déjà enregistrée (avis officiel, saisie) n'est jamais écrasée (contrôle des bugs, deuxième passe).
+    if project.deadline is None and not analysis.get("date_limite_rectifiee_non_lue"):
+        project.deadline = _date_limite_lue((analysis.get("details") or {}).get("date_limite"))
     score = analysis.get("match_score", 0)
     decision = _verdict(score, gonogo)
     analysis["go_decision"] = decision

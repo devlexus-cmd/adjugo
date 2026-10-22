@@ -88,6 +88,15 @@ def _status_value(project) -> str:
     return st.value if hasattr(st, "value") else str(st or "")
 
 
+def _date_limite_fr(brut) -> str:
+    """La date limite d'un avis telle que l'écran l'affiche (fmtDate) : « 21/11/2026 » pour « 2026-11-21 » ou
+    « 2026-11-21+02:00 » (TED), sans fuseau ; un autre texte tel quel (contrôle des bugs, deuxième passe : le courriel
+    écrivait la valeur brute de la source). La date d'un avis TED est déjà le jour de l'acheteur."""
+    s = str(brut or "")
+    m = re.match(r"^(\d{4})-(\d{2})-(\d{2})", s)
+    return f"{m.group(3)}/{m.group(2)}/{m.group(1)}" if m else s
+
+
 def _fr(d) -> str:
     try:
         return d.strftime("%d/%m/%Y")
@@ -620,10 +629,10 @@ def run_tender_alerts(db: Session) -> dict:
         for name, tenders in blocks:
             lines.append(f"\n● {name} ({len(tenders)} nouveau(x)) :")
             for t in tenders[:_MARCHES_PAR_ALERTE]:
-                ech = f" — clôture {t['date_limite']}" if t.get("date_limite") else ""
+                ech = f" — clôture {_date_limite_fr(t['date_limite'])}" if t.get("date_limite") else ""
                 # Décision 8 (réorganisation) : pas de note sur 100 avant le dossier du marché ; l'ordre de la
                 # liste (le plus adapté d'abord) suffit. Ce que promet la vitrine : objet, acheteur, date limite, lien.
-                lines.append(f"   • {t['objet'][:90]} — {t.get('acheteur') or 'acheteur n/d'}{ech}\n     {t['url']}")
+                lines.append(f"   • {t['objet'][:90]} — {t.get('acheteur') or 'acheteur non précisé'}{ech}\n     {t['url']}")
             reste = len(tenders) - _MARCHES_PAR_ALERTE
             if reste > 0:
                 # Rien n'est caché en silence (moteur § 7, règle 8) : les marchés au-delà des 10 premiers sont comptés.

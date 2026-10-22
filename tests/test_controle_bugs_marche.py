@@ -145,14 +145,16 @@ def test_export_zip_et_formulaire_avec_une_barre_oblique_dans_l_intitule(client,
     z = zipfile.ZipFile(io.BytesIO(r.content))
     formulaires = [n for n in z.namelist() if n.startswith("01_Formulaires_officiels/")]
     assert formulaires and all(n.count("/") == 1 for n in formulaires), formulaires
-    assert ("01_Formulaires_officiels/DC1_Travaux_de_voirie_2026_2027_" + date.today().isoformat() + ".pdf"
+    # Le jour de Paris dans les noms de fichiers (contrôle des bugs, deuxième passe), plus le jour UTC du serveur.
+    from app.services.pieces_fin import jour_paris
+    assert ("01_Formulaires_officiels/DC1_Travaux_de_voirie_2026_2027_" + jour_paris().isoformat() + ".pdf"
             in formulaires), formulaires
     cd = r.headers["content-disposition"]
     assert "/" not in cd.split("filename*=UTF-8''", 1)[1] and "2026_2027" in cd, cd
     sommaire = z.read("00_SOMMAIRE.txt").decode()
     assert "Projet : Travaux de voirie 2026/2027" in sommaire                   # l'intitulé, lui, reste tel quel
     lignes = [l for l in sommaire.splitlines() if l.startswith("  - DC1_")]
-    assert lignes == ["  - DC1_Travaux_de_voirie_2026_2027_" + date.today().isoformat() + ".pdf"], lignes
+    assert lignes == ["  - DC1_Travaux_de_voirie_2026_2027_" + jour_paris().isoformat() + ".pdf"], lignes
     r = client.post(f"/api/cerfa/{pid}/dc1", headers=h)
     assert r.status_code == 200, r.text[:300]
     cd = r.headers["content-disposition"]

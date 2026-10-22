@@ -1520,7 +1520,7 @@ const __adjApp = createApp({
         analyzing: false, analysis: null, projectId: null, chosen: null, lectureMsg: "",
         alerts: [],
         // source : « DECP » ou « BOAMP » (repli payant) ; analyse : « debitee » / « remboursee » après un repli payant.
-        renewals: { list: [], loading: false, done: false, prep: "", source: "", analyse: "" },
+        renewals: { list: [], loading: false, done: false, prep: "", source: "", analyse: "", errors: [] },
         searched: false, empty: null, prefilled: false, manqueMetier: false, cpvSeuls: false,
         marketEst: null, marketEstBusy: false,
       },
@@ -3619,10 +3619,15 @@ const __adjApp = createApp({
       if (el && el.open) await this.sharedJournalLoad();
     },
     async sharedDecline() {
+      // Un sous-traitant n'est pas membre du groupement : la phrase suit son rôle (contrôle des bugs, deuxième passe).
+      const st = this.sharedAo.role === "sous_traitant";
       if (!(await this.confirmer({ title: "Décliner l'invitation ?", ok: "Décliner l'invitation", danger: true,
-        lines: ["Vous sortez du groupement : votre part ne figurera pas dans la réponse commune.", "Ce lien ne sera plus utilisable."] }))) return;
+        lines: [st ? "Vous n'interviendrez pas comme sous-traitant sur ce marché : le chef de file sera prévenu."
+          : "Vous sortez du groupement : votre part ne figurera pas dans la réponse commune.", "Ce lien ne sera plus utilisable."] }))) return;
       try {
-        const r = await fetch("/api/invite/" + this.sharedAo.token + "/decline", { method: "POST" });
+        // Avec la session : une invitation du réseau ne se décline que depuis le compte destinataire (contrôle des bugs,
+        // deuxième passe), et sans elle le serveur demanderait un code.
+        const r = await fetch("/api/invite/" + this.sharedAo.token + "/decline", { method: "POST", headers: this.token ? { Authorization: "Bearer " + this.token } : {} });
         if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error((typeof e.detail === "string" && e.detail) || "Impossible de décliner"); }
         this.go("shared"); this.loadShared(); this.notify("Invitation déclinée");
       } catch (e) { this.notify(e.message, "err"); }
@@ -3783,6 +3788,11 @@ const __adjApp = createApp({
     aoPendingInvites() {
       return (this.ao.share.invites || []).filter(i => !i.revoked && !this.inviteDeclined(i) && i.can_contribute && i.contribution_status !== "submitted");
     },
+    // Parts reçues des invitations encore actives (ni révoquées, ni déclinées, avec une part) : « Toutes les parts sont
+    // reçues » n'est vrai qu'avec au moins une (contrôle des bugs, deuxième passe : le seul partenaire avait décliné).
+    aoPartsRecues() {
+      return (this.ao.share.invites || []).filter(i => !i.revoked && !this.inviteDeclined(i) && i.can_contribute && i.contribution_status === "submitted").length;
+    },
     aoPendingRelancables() {
       return this.aoPendingInvites().filter(i => this.inviteRelancable(i));
     },
@@ -3824,12 +3834,52 @@ const __adjApp = createApp({
         "groupement.depose": "Dossier marqué déposé", "groupement.depot_annule": "Marquage « déposé » retiré",
         "guest.export_journal": "Le partenaire a exporté son journal", "guest.update_piece": "Pièce mise à jour par le partenaire (type ou date de validité)",
         "grille.choix": "Critère de notation confirmé ou retiré",
+        // Contrôle des bugs, deuxième passe : chaque action écrite avec un marché a sa phrase (le journal montrait la
+        // clé technique, « atelier.sans_ia »…). La pastille dit qui : Vous, Invité (un partenaire) ou Adjugo.
+        "grille.exigence": "Exigence ajoutée à la grille de notation", "grille.relire": "Grille de notation relue dans le dossier, sans IA",
+        "atelier.sans_ia": "Réglage « sans IA » du dossier de présentation", "atelier.export": "Dossier de présentation exporté",
+        "atelier.derogation_export": "Dossier de présentation exporté malgré ce qui bloquait (dérogation)",
+        "atelier.partie_validee": "Partie du dossier de présentation validée",
+        "carnet.demande": "Demande de vos notes à l'acheteur", "carnet.notes": "Notes de l'acheteur enregistrées",
+        "carnet.savoir_faire": "Dossier gagné ajouté à « Mon savoir-faire »",
+        "entretien.question_adressee": "Question sur le chantier posée à un partenaire",
+        "entretien.question_reprise": "Question sur le chantier reprise par le chef de file",
+        "entretien.reponse": "Réponse d'un partenaire à une question sur le chantier",
+        "network.invite_sent": "Invitation envoyée par le réseau Adjugo",
+        "network.match_query": "Recherche de partenaires partie par partie (réseau Adjugo et registre officiel)",
+        "redaction.repartition": "Répartition du dossier de présentation modifiée",
+        "redaction.partie_confiee": "Partie du dossier de présentation confiée à un partenaire",
+        "redaction.partie_reprise": "Partie du dossier de présentation confiée à un autre rédacteur",
+        "redaction.parts_demandees": "Parties du dossier de présentation demandées aux partenaires",
+        "redaction.part_envoyee": "Partie du dossier de présentation envoyée par un partenaire",
+        "redaction.part_validee": "Partie du dossier de présentation validée par un partenaire",
+        "redaction.part_retablie": "Partie du dossier de présentation rétablie par un partenaire",
+        "redaction.part_modifiee": "Partie d'un partenaire modifiée par le chef de file : à revalider",
+        "redaction.part_redigee_par_chef": "Partie d'un partenaire rédigée par le chef de file : à valider",
+        "redaction.parts_reprises": "Parties d'un partenaire reprises par le chef de file",
+        "redaction.dossier_valide": "Dossier de présentation assemblé validé",
+        "redaction.dossier_a_revalider": "Dossier de présentation assemblé modifié : à revalider",
+        "redaction.partie_groupement_validee": "Partie tirée du groupement validée",
+        "redaction.partie_groupement_a_jour": "Partie tirée du groupement mise à jour : à revalider",
+        "redaction.harmonisation": "Ton du dossier harmonisé (phrases de transition)",
+        "redaction.transition_ajoutee": "Phrase de transition ajoutée au début d'une partie",
+        "redaction.fait_relu": "Fait d'une partie envoyée relu par le partenaire",
+        "redaction.fait_a_relire": "Fait d'une partie envoyée remis à relire par le partenaire",
+        "redaction.espace_ouvert": "Espace privé de rédaction ouvert par un partenaire",
+        "redaction.espace_rouvert": "Espace privé de rédaction d'un partenaire ouvert sur un autre appareil",
+        "redaction.espace_reinitialise": "Espace privé de rédaction d'un partenaire réinitialisé",
+        "redaction.documents_conditions": "Conditions de dépôt de documents acceptées par un partenaire",
+        "redaction.document_depose": "Document déposé par un partenaire dans son espace privé",
+        "redaction.document_supprime": "Document supprimé par un partenaire de son espace privé",
+        "redaction.documents_effaces": "Documents déposés par un partenaire effacés",
       };
-      return m[a.action] || a.action;
+      return m[a.action] || "Action enregistrée";
     },
     auditWhen(s) { if (!s) return ""; try { return new Date(s).toLocaleString("fr-FR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }); } catch (e) { return s; } },
     // Horodatage du journal (audit_logs.created_at) : UTC « naïf » côté serveur → lu comme UTC,
-    // affiché à l'heure locale (sinon décalé d'une ou deux heures par rapport à « Vérifié le … »).
+    // affiché à l'heure locale (sinon décalé d'une ou deux heures par rapport à « Vérifié le … »). Même lecture pour
+    // le suivi des invitations (dernière consultation, envoi par email) et l'historique des simulations, horodatés
+    // de la même façon (contrôle des bugs, deuxième passe : ils passaient par auditWhen, deux heures de retard à Paris).
     auditAt(s) { return s ? this.auditWhen(_isoUtc(s)) : ""; },
     verifWhen(c) { const s = (c && (c.freshness_date || (c.provenance && c.provenance.fetched_at))) || ""; if (!s) return ""; try { return new Date(s).toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" }); } catch (e) { return String(s).slice(0, 10); } },
     async aoLoadDocs() {
@@ -4410,7 +4460,8 @@ const __adjApp = createApp({
     },
     rnDecline(inv) {
       this._convAsk({ title: "Décliner l'invitation ?", ok: "Décliner l'invitation",
-        lines: ["Vous ne ferez pas partie de ce groupement : " + (inv.mandataire || "le chef de file") + " sera prévenu.", "Votre adresse ne lui est pas communiquée.", "Ce lien ne fonctionnera plus ensuite."],
+        lines: [(inv.role === "sous_traitant" ? "Vous n'interviendrez pas comme sous-traitant sur ce marché : " : "Vous ne ferez pas partie de ce groupement : ")
+          + (inv.mandataire || "le chef de file") + " sera prévenu.", "Votre adresse ne lui est pas communiquée.", "Ce lien ne fonctionnera plus ensuite."],
         run: async () => {
           const r = this.reseau.recues; if (r.busy) return;
           r.busy = inv.token;
@@ -5840,19 +5891,34 @@ const __adjApp = createApp({
       return !!u && u.quota_scope !== "essai" && !!u.overage_enabled && (u.plan === "pro" || u.plan === "business")
         && typeof u.analyses_remaining === "number" && u.analyses_remaining <= 0 && !!u.overage_price;
     },
+    // Sources de « À venir » qui n'ont pas répondu, en clair (le message brut de l'erreur n'est jamais montré).
+    srcRenErreurs() {
+      const errs = (this.src.renewals && this.src.renewals.errors) || [];
+      const out = [];
+      for (const e of errs) {
+        const t = /^DECP/.test(e) ? "Les données publiées des marchés attribués n'ont pas répondu."
+          : /^BOAMP/.test(e) ? "Les avis d'attribution du BOAMP n'ont pas répondu." : "Une source n'a pas répondu.";
+        if (!out.includes(t)) out.push(t);
+      }
+      return out;
+    },
     async srcRenewals() {
       if (this.src.renewals.loading) return;   // Entrée maintenue dans les champs de l'onglet « À venir » : une seule recherche
       this.src.renewals.loading = true; this.src.renewals.done = false;
       this.src.renewals.list = [];   // vide le scan précédent (sinon résultats périmés affichés)
-      this.src.renewals.source = ""; this.src.renewals.analyse = "";
+      this.src.renewals.source = ""; this.src.renewals.analyse = ""; this.src.renewals.errors = [];
       try {
         const r = await this.api("POST", "/api/sourcing/renewals", { query: this.src.query || "travaux", departements: this.srcDeps() });
         this.src.renewals.list = r.renewals || []; this.src.renewals.done = true;
+        // Une source qui n'a pas répondu est dite (comme « Publiés ») : jamais « Aucune échéance proche » à sa place.
+        this.src.renewals.errors = Array.isArray(r.errors) ? r.errors.map(String) : [];
         // Repli payant (« BOAMP ») : l'écran dit ce qu'est devenue l'analyse, et le compteur d'analyses est relu.
         this.src.renewals.source = r.source === "BOAMP" ? "BOAMP" : (r.source || "");
         this.src.renewals.analyse = (r.analyse === "debitee" || r.analyse === "remboursee") ? r.analyse : "";
         if (this.src.renewals.analyse) this.loadStats();
-        this.notify(r.count ? (r.count + " marché(s) en fin de contrat détecté(s)") : "Aucune échéance proche sur ce périmètre", r.count ? "ok" : "err");
+        this.notify(r.count ? (r.count + " marché(s) en fin de contrat détecté(s)")
+          : (this.src.renewals.errors.length ? "Aucune fin de contrat trouvée, mais une source n'a pas répondu : réessayez plus tard."
+            : "Aucune échéance proche sur ce périmètre"), r.count ? "ok" : "err");
       } catch (err) {
         if ((err.message || "").toLowerCase().includes("uota")) { this.notify("Quota d'analyses atteint", "err"); this.go("billing"); }
         else this.notify(err.message, "err");

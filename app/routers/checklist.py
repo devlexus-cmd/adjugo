@@ -214,10 +214,13 @@ def _mots_significatifs(piece_name) -> list:
 
 
 # Mots-clés de trois lettres que l'on trouve à l'intérieur de mots courants : « rib » dans « attribution »,
-# « contribution » ; « rge » dans « charges », « décharge ». Ils ne comptent que comme un mot à part entière (contrôle
-# des bugs, octobre 2026 : un « Avis d'attribution 2025.pdf » cochait le RIB, un « Cahier des charges » la
-# qualification). Les autres mots-clés, eux, se lisent comme avant.
+# « contribution » ; « rge » dans « charges », « décharge ». Ils ne comptent pas au milieu d'un mot (contrôle des bugs,
+# octobre 2026 : un « Avis d'attribution 2025.pdf » cochait le RIB, un « Cahier des charges » la qualification). Un
+# nom qui les colle à un autre mot reste reconnu (deuxième passe : « RIBBNP.pdf », « RIBdupont.pdf », « monrib.pdf »
+# l'étaient avant la correction) : « rib » en début ou en fin de mot, « rge » en début de mot seulement (« décharge »
+# finit par « rge »). Les autres mots-clés, eux, se lisent comme avant.
 _MOTS_CLES_ENTIERS = frozenset({"rib", "rge"})
+_MOTIF_MOT_CLE_COURT = {"rib": re.compile(r"(?<![a-z])rib|rib(?![a-z])"), "rge": re.compile(r"(?<![a-z])rge")}
 _CASSE = re.compile(r"(?<=[a-z])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])")     # « MonRIB », « RIBEntreprise »
 
 
@@ -229,9 +232,11 @@ def _texte_a_mots(texte) -> str:
 
 def _mot_cle_present(terme: str, texte_norm: str, texte_mots: str) -> bool:
     """Un mot-clé est dans un nom : tel quel en général (« qualif », « methodologi » sont des débuts de mots), mais
-    comme un mot entier pour les mots-clés de `_MOTS_CLES_ENTIERS` (ni lettre avant, ni lettre après)."""
+    jamais au milieu d'un mot pour les mots-clés de `_MOTS_CLES_ENTIERS` (`_MOTIF_MOT_CLE_COURT`), lus dans le nom tel
+    quel (« ribbnp ») et découpé aux changements de casse (« MonRIBEntreprise » → « mon rib entreprise »)."""
     if terme in _MOTS_CLES_ENTIERS:
-        return re.search(r"(?<![a-z])" + terme + r"(?![a-z])", texte_mots) is not None
+        motif = _MOTIF_MOT_CLE_COURT[terme]
+        return motif.search(texte_norm) is not None or motif.search(texte_mots) is not None
     return terme in texte_norm
 
 

@@ -744,9 +744,9 @@ courriels existants (carte de `app/services/email_templates.py`). Une seule comp
 | Courriel | Quand | Route (inchangée) | Objet |
 |---|---|---|---|
 | Invitation d'un **partenaire connu** | Fenêtre d'invitation, cas « partenaire connu », avec un email | `POST /api/projects/{id}/invites` | « Invitation à répondre ensemble à un marché — [marché] » (celui de la vague 1) |
-| Invitation d'un **membre du réseau Adjugo** | Fenêtre d'invitation, cas « réseau » ; Adjugo remplit l'adresse | `POST /api/projects/{id}/reseau/invitations` | « Une entreprise vous propose un groupement — [marché] » (celui d'avant) |
-| **Renvoi** par le chef de file | « Renvoyer l'invitation par email » (même lien) | `POST /api/projects/{id}/invites/{inv}/resend` | « Rappel : invitation à répondre ensemble à un marché — … » ou « Rappel : une entreprise vous propose un groupement — … » |
-| **Rappel planifié** de la part | J-3 puis J-1 de la date limite, part non soumise | `POST /api/admin/run-cotraitance-reminders` (cron) | « Rappel — il vous reste N jours pour votre part ([marché]) » (celui d'avant) |
+| Invitation d'un **membre du réseau Adjugo** | Fenêtre d'invitation, cas « réseau » ; Adjugo remplit l'adresse | `POST /api/projects/{id}/reseau/invitations` | « Une entreprise vous propose un groupement — [marché] » (celui d'avant) ; pour un sous-traitant, « Une entreprise vous propose d'intervenir comme sous-traitant — [marché] » (contrôle des bugs, deuxième passe : l'objet disait un groupement que le corps démentait) |
+| **Renvoi** par le chef de file | « Renvoyer l'invitation par email » (même lien) | `POST /api/projects/{id}/invites/{inv}/resend` | « Rappel : invitation à répondre ensemble à un marché — … » ou « Rappel : une entreprise vous propose un groupement — … » (« … d'intervenir comme sous-traitant — … » pour un sous-traitant du réseau) |
+| **Rappel planifié** de la part | J-3 puis J-1 de la date limite, part non soumise | `POST /api/admin/run-cotraitance-reminders` (cron) | « Rappel — il vous reste N jours pour votre part ([marché]) » (celui d'avant) ; le jour même de la date limite, « Rappel — dernier jour pour votre part ([marché]) » (contrôle des bugs, deuxième passe) |
 
 L'entreprise du registre officiel ne reçoit toujours rien (la PME copie le lien).
 

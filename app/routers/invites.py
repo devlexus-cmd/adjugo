@@ -377,6 +377,34 @@ def _label_of(x) -> str:
     return str(x or "")
 
 
+# « Ce que le groupement comble », lu par le PARTENAIRE : les libellés du plan sont écrits pour le chef de file
+# (groupement_scoring._LABELS : « … non couvert par votre activité », « … hors de votre zone d'intervention »,
+# « … — à confirmer auprès du partenaire ») et deviennent faux sous les yeux du partenaire, que « votre » désigne. Il
+# lit le même manque sans phrase qui le vise (contrôle des bugs, deuxième passe ; démo de Kerhel comprise).
+_MANQUE_POUR_LE_PARTENAIRE = {
+    "metier": "Métier du marché",
+    "zone": "Lieu d'exécution",
+    "capacite": "Chiffre d'affaires minimum exigé",
+    "qualifs": "Qualifications exigées",
+    "references": "Références de travaux similaires exigées",
+    "effectif": "Effectif minimum exigé",
+}
+
+
+def _manque_pour_le_partenaire(g) -> str:
+    """Libellé d'un manque comblé pour le partenaire : celui de sa clé ; une ancienne entrée sans clé (texte seul) est
+    reconnue à son libellé du chef de file ; sinon le libellé tel quel."""
+    key = g.get("key") if isinstance(g, dict) else None
+    if key in _MANQUE_POUR_LE_PARTENAIRE:
+        return _MANQUE_POUR_LE_PARTENAIRE[key]
+    label = _label_of(g)
+    from app.services.groupement_scoring import _LABELS
+    for k, chef in _LABELS.items():
+        if label.startswith(chef) and k in _MANQUE_POUR_LE_PARTENAIRE:
+            return _MANQUE_POUR_LE_PARTENAIRE[k]
+    return label
+
+
 def _for_member(inv: ProjectInvite, project: Project, db: Session) -> dict:
     """Vue co-traitant « Pourquoi vous dans ce groupement » : le % COMMUN (jamais le score
     seul du mandataire), SON apport, les seuils en booléens (jamais les chiffres des
@@ -425,9 +453,12 @@ def _for_member(inv: ProjectInvite, project: Project, db: Session) -> dict:
         my_apport.append({"key": key, "label": label})
 
     n_members = int(st.get("n_members") or 0)
-    # Total de l'offre : membres du groupement seulement. Jamais un sous-traitant ; et, une fois la
-    # convention générée, seulement un signataire (un lien ajouté après la génération ne l'a pas).
-    sees_total = bool(st.get("offer_frozen")) and (inv.role or "") != "sous_traitant"
+    # Total de l'offre : membres du groupement seulement. Jamais un sous-traitant ni un lien en lecture seule (il
+    # n'apporte aucune part et ne signe jamais : groupement_members.apporte_une_part), même avec l'ancienne route
+    # « figer » ; et, une fois la convention générée, seulement un signataire (un lien ajouté après la génération ne
+    # l'a pas). Même règle que son journal (journal_membre.voit_le_total).
+    from app.services.journal_membre import voit_le_total
+    sees_total = bool(st.get("offer_frozen")) and voit_le_total(inv)
     if sees_total:
         try:
             from app.services import groupement_convention as _gc
@@ -452,7 +483,7 @@ def _for_member(inv: ProjectInvite, project: Project, db: Session) -> dict:
         },
         "my_apport": my_apport,
         "score_groupement": project.groupement_score,     # le % COMMUN, jamais match_score
-        "gaps_combles": [_label_of(g) for g in (plan.get("gaps_combles") or []) if _label_of(g)],
+        "gaps_combles": [_manque_pour_le_partenaire(g) for g in (plan.get("gaps_combles") or []) if _label_of(g)],
         "seuils": {"ca_cumule_ok": _plan_breakdown_ok(breakdown, "capacite"),
                    "qualifs_ok": _plan_breakdown_ok(breakdown, "qualifs")},
         # À 2 membres (mandataire + 1 partenaire), le total révèle la part de l'autre : compté sur les membres du
@@ -947,12 +978,39 @@ def project_audit(project_id: int, current_user: User = Depends(get_current_user
     rows = db.query(AuditLog).filter(
         AuditLog.project_id == project_id
     ).order_by(AuditLog.created_at.desc()).limit(min(max(limit, 1), 500)).all()
+    noms = _noms_de_l_equipe(rows, current_user, db)
     return [{
         "id": r.id, "at": r.created_at.isoformat() if r.created_at else None,
         "actor": r.actor, "actor_kind": r.actor_kind, "action": r.action,
+        "actor_label": _auteur_lisible(r, noms),
         "target_type": r.target_type, "target_id": r.target_id,
         "detail": r.detail, "ip": r.ip,
     } for r in rows]
+
+
+_ACTEUR_COMPTE = re.compile(r"^user:(\d+)$")
+
+
+def _noms_de_l_equipe(rows: list, current_user: User, db: Session) -> dict:
+    """{id: nom ou adresse} des comptes de l'organisation cités « user:N » dans ces entrées."""
+    ids = {int(m.group(1)) for r in rows for m in [_ACTEUR_COMPTE.match(r.actor or "")] if m}
+    if not ids:
+        return {}
+    equipe = set(member_ids(current_user, db))
+    return {u.id: ((u.full_name or "").strip() or u.email or "") for u in
+            db.query(User).filter(User.id.in_(ids & equipe)).all()}
+
+
+def _auteur_lisible(r, noms: dict) -> str:
+    """L'auteur d'une entrée du journal d'accès, lisible : Adjugo pour une action d'Adjugo, le nom (à défaut l'adresse)
+    d'un compte de l'équipe, jamais un identifiant « user:N » (contrôle des bugs, deuxième passe) ; un partenaire
+    garde le nom enregistré."""
+    if (r.actor_kind or "") == "system":
+        return "Adjugo"
+    m = _ACTEUR_COMPTE.match(r.actor or "")
+    if m:
+        return noms.get(int(m.group(1))) or "Un ancien membre de votre équipe"
+    return r.actor or ""
 
 
 @router.get("/api/audit/integrity")
@@ -1505,6 +1563,22 @@ class ContributionSave(BaseModel):
         return out
 
 
+def _sync_a_la_reponse(inv: ProjectInvite, db: Session) -> None:
+    """Invitation du RÉSEAU acceptée depuis le compte du partenaire ou dont la part est soumise : ses capacités et
+    qualifications déclarées pendant l'aperçu limité, que le chef de file ne voyait pas (`_owner_hides_part`),
+    rejoignent sa fiche « Mes partenaires », comme celles d'une invitation ordinaire. Pas au code vérifié : le
+    partenaire le saisit aussi pour décliner, et son brouillon resterait chez le chef de file après le refus (contrôle
+    des bugs, deuxième passe). Best-effort."""
+    if not _is_network_invite(inv):
+        return
+    try:
+        c = db.query(ProjectContribution).filter(ProjectContribution.invite_id == inv.id).first()
+        if c is not None and not _owner_hides_part(inv, c) and (c.capacites or c.qualifications):
+            _sync_annuaire_capacites(inv, c, db)
+    except Exception:
+        db.rollback()
+
+
 def _sync_annuaire_capacites(inv: ProjectInvite, c: ProjectContribution, db: Session) -> None:
     """Si le mandataire a ce partenaire dans « Mes partenaires » (même SIRET, à défaut même
     nom), ses capacités DÉCLARÉES PAR LE PARTENAIRE LUI-MÊME remplacent celles saisies par
@@ -1651,7 +1725,8 @@ def guest_save_contribution(token: str, body: ContributionSave, request: Request
                      project_id=inv.project_id, actor=_guest_actor(inv), actor_kind="guest",
                      target_type="contribution", target_id=c.id, invite_id=inv.id,
                      detail=(c.company_name or inv.company_name or "")[:255], ip=audit.client_ip(request))
-        _sync_annuaire_capacites(inv, c, db)
+        if not _owner_hides_part(inv, c):
+            _sync_annuaire_capacites(inv, c, db)
     return _serialize_contribution(c, db)
 
 
@@ -1834,6 +1909,7 @@ def guest_submit_contribution(token: str, request: Request, db: Session = Depend
     c.submitted_at = utcnow()
     _mark_network_accepted(inv)
     db.commit()
+    _sync_a_la_reponse(inv, db)
     audit.record(db, action="guest.submit_contribution", owner_id=inv.owner_id, project_id=inv.project_id,
                  actor=_guest_actor(inv), actor_kind="guest",
                  target_type="contribution", target_id=c.id, invite_id=inv.id,
@@ -1846,6 +1922,42 @@ def guest_submit_contribution(token: str, request: Request, db: Session = Depend
 
 
 # ── Déclin : le partenaire sort du groupement de lui-même ─────────────────────
+_DECLIN_RESERVE = ("Seul le compte propriétaire de votre organisation, à qui Adjugo a envoyé l'invitation, peut la "
+                   "décliner.")
+
+
+def _refuse_declin_reseau(inv: ProjectInvite, request: Request, db: Session) -> None:
+    """Invitation du RÉSEAU : seul le compte destinataire la décline, comme il est seul à l'accepter (écran « Réservée
+    au compte propriétaire », contrat COTRAITANCE_V2_VAGUE3_API.md § 6.3). Avant (contrôle des bugs, deuxième
+    passe), un collègue de son organisation, qui reçoit le jeton dans ses invitations, la déclinait : refus définitif,
+    part, brouillons et documents effacés, au nom du partenaire.
+    - Avec une session : le compte qui l'a acceptée, ou, tant que personne ne l'a acceptée, le compte de l'adresse à
+      laquelle Adjugo l'a envoyée. Tout autre compte : 403.
+    - Sans session (le lien reçu par courriel) : comme pour soumettre sa part, l'adresse doit être prouvée par code
+      quand les codes peuvent être envoyés (`_binding_required`), sinon 403 « identity_unverified » (l'écran du lien
+      demande alors le code, envoyé à l'adresse du destinataire).
+    Une invitation manuelle ne change pas (décision laissée à Eliot, docs/REORGANISATION_V2A.md, section R)."""
+    if not _is_network_invite(inv):
+        return
+    auth = request.headers.get("authorization") or ""
+    user = None
+    if auth.lower().startswith("bearer "):
+        try:
+            user = get_current_user(token=auth[7:].strip(), db=db)
+        except HTTPException:
+            user = None
+    if user is not None:
+        rcpt = (inv.recipient or "").strip().lower()
+        if inv.accepted_by_user_id:
+            ok = inv.accepted_by_user_id == user.id
+        else:      # même règle que « peut_accepter » de ses invitations reçues (reseau.invitations_recues)
+            ok = not rcpt or rcpt == (user.email or "").strip().lower()
+        if not ok:
+            raise HTTPException(403, _DECLIN_RESERVE)
+        return
+    if _binding_required(inv) and not inv.verified_at:
+        raise HTTPException(403, {"code": "identity_unverified",
+                                  "message": "Vérifiez votre adresse email avant de décliner l'invitation."})
 @router.post("/api/invite/{token}/decline")
 @limiter.limit("10/hour")
 def guest_decline(token: str, request: Request, db: Session = Depends(get_db)):
@@ -1854,6 +1966,7 @@ def guest_decline(token: str, request: Request, db: Session = Depends(get_db)):
     (410) ; le mandataire peut créer une nouvelle invitation s'il veut le rouvrir."""
     inv = _valid_invite(token, db)           # déjà décliné → 410, révoqué → 404
     _refuse_if_demo_invite(inv, db)          # vitrine partagée : on ne la ferme pas aux suivants
+    _refuse_declin_reseau(inv, request, db)  # invitation du réseau : le compte destinataire seulement
     inv.declined_at = utcnow()
     c = db.query(ProjectContribution).filter(ProjectContribution.invite_id == inv.id).first()
     if c and c.status == "submitted":
@@ -1879,11 +1992,18 @@ def guest_decline(token: str, request: Request, db: Session = Depends(get_db)):
             project = db.query(Project).filter(Project.id == inv.project_id).first()
             pname = (project.name if project else "votre marché")
             who = inv.company_name or "Un partenaire"
-            _send_mails_async([(
-                to, f"{who} a décliné l'invitation — {pname[:60]}",
-                f"Bonjour,\n\n{who} a décliné l'invitation à rejoindre le groupement sur le marché "
-                f"« {pname} ». Sa part ne figurera pas dans la réponse commune.\n\n"
-                f"Vous pouvez inviter un autre partenaire depuis la page de ce marché, dans Adjugo.\n\n— Adjugo")])
+            if (inv.role or "") == "sous_traitant":
+                # Un sous-traitant n'est pas invité à rejoindre le groupement (il n'en est pas membre) : la phrase de
+                # son invitation (contrôle des bugs, deuxième passe).
+                corps = (f"{who} a décliné votre invitation à intervenir comme sous-traitant sur le marché "
+                         f"« {pname} ». Il ne figurera pas dans votre réponse.\n\n"
+                         f"Vous pouvez inviter une autre entreprise depuis la page de ce marché, dans Adjugo.")
+            else:
+                corps = (f"{who} a décliné l'invitation à rejoindre le groupement sur le marché "
+                         f"« {pname} ». Sa part ne figurera pas dans la réponse commune.\n\n"
+                         f"Vous pouvez inviter un autre partenaire depuis la page de ce marché, dans Adjugo.")
+            _send_mails_async([(to, f"{who} a décliné l'invitation — {pname[:60]}",
+                                f"Bonjour,\n\n{corps}\n\n— Adjugo")])
     except Exception:
         pass
     return {"ok": True}
@@ -2742,6 +2862,13 @@ def guest_coffre_croise(token: str, request: Request, db: Session = Depends(get_
     if _network_pending(inv, db):        # aperçu minimal : pas la composition du groupement
         raise HTTPException(403, "Acceptez d'abord l'invitation depuis votre compte Adjugo pour voir "
                                  "les attestations du groupement.")
+    from app.services.groupement_members import apporte_une_part
+    if not apporte_une_part(inv):
+        # Un lien en lecture seule n'est pas membre du groupement (REORGANISATION_V2B § S.4) : l'état des pièces
+        # des membres, prévu pour les membres seulement, ne lui est pas communiqué ; aucun écran ne le lui montre
+        # (contrôle des bugs, deuxième passe).
+        raise HTTPException(403, "Ce lien est en lecture seule : l'état des pièces des membres ne vous est pas "
+                                 "communiqué.")
     return coffre_croise(db, project, active_invites(db, project.id), viewer_invite_id=inv.id, for_owner=False)
 
 
@@ -2929,7 +3056,8 @@ def consortium_cockpit(project_id: int, current_user: User = Depends(get_current
             "total_ht": state.get("total_offre_ht"),
             "frozen_at": state.get("frozen_at"),
             # Total prévisionnel = celui de la convention (« Convention et accords ») : part du chef de file, partenaires
-            # et partenaires hors ligne, sans sous-traitant ; None tant qu'il manque un élément (comme la convention).
+            # et partenaires hors ligne, sans sous-traitant ; None tant qu'un prix manque ou sans partenaire (comme la
+            # convention : le nom de l'entreprise du chef de file, s'il manque, empêche de générer, pas de compter).
             "total_ht_estime": total_prev,
             "lead_total_ht": lead_part,
             "lead_source": lead_source,          # « convention » (part saisie) | « estimation » (estimation de prix)
@@ -3124,6 +3252,25 @@ _NOTIF_LABELS = {
 }
 
 
+# Notifications qui disent quelque chose de la part d'un partenaire (pièce déposée, capacités mises à jour).
+_NOTIF_DE_LA_PART = ("guest.upload_piece", "guest.capacites_updated")
+
+
+def _sans_part_cachee(rows: list, db: Session) -> list:
+    """Retire les notifications qui disent quelque chose d'une part que le chef de file ne voit pas (invitation du
+    réseau sans réponse ou déclinée : `_owner_hides_part`), lue au moment de la lecture : rien du brouillon (nom d'une
+    pièce, capacités) ne lui arrive par la cloche, comme par la liste des parts (contrôle des bugs, deuxième passe).
+    Une fois l'invitation acceptée, elles réapparaissent avec la part."""
+    ids = {r.invite_id for r in rows if r.action in _NOTIF_DE_LA_PART and r.invite_id}
+    if not ids:
+        return rows
+    invs = {i.id: i for i in db.query(ProjectInvite).filter(ProjectInvite.id.in_(ids)).all()}
+    contribs = {c.invite_id: c for c in db.query(ProjectContribution).filter(
+        ProjectContribution.invite_id.in_(ids)).all()}
+    cachees = {i for i in ids if invs.get(i) is not None and _owner_hides_part(invs[i], contribs.get(i))}
+    return [r for r in rows if not (r.action in _NOTIF_DE_LA_PART and r.invite_id in cachees)]
+
+
 @router.get("/api/notifications")
 def notifications(current_user: User = Depends(get_current_user),
                   db: Session = Depends(get_db), days: int = 21):
@@ -3135,6 +3282,7 @@ def notifications(current_user: User = Depends(get_current_user),
         AuditLog.action.in_(list(_NOTIF_LABELS)),
         AuditLog.created_at >= since
     ).order_by(AuditLog.created_at.desc()).limit(40).all()
+    rows = _sans_part_cachee(rows, db)
     pids = {r.project_id for r in rows if r.project_id}
     names = {}
     if pids:
@@ -3225,6 +3373,7 @@ def claim_invite(token: str, request: Request, current_user: User = Depends(get_
         inv.accepted_by_user_id = current_user.id
         _mark_network_accepted(inv)
         db.commit()
+        _sync_a_la_reponse(inv, db)
         audit.record(db, action="invite.claimed", owner_id=inv.owner_id, project_id=inv.project_id,
                      actor=(inv.company_name or "invité")[:160],
                      actor_kind="guest", target_type="invite", target_id=inv.id, invite_id=inv.id,

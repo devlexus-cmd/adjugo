@@ -193,7 +193,13 @@ def invitation(*, chef: str, marche: str, url: str, date_limite=None, role: str 
         notes = [(f"Vous recevez ce message parce que {chez} a indiqué votre adresse pour vous inviter sur "
                   "Adjugo. Si vous ne connaissez pas cette entreprise, ignorez simplement ce message.")]
 
-    base = "Une entreprise vous propose un groupement" if reseau else "Invitation à répondre ensemble à un marché"
+    # L'objet dit la même chose que le corps : un sous-traitant du réseau n'est pas proposé dans un groupement
+    # (contrôle des bugs, deuxième passe).
+    if reseau:
+        base = ("Une entreprise vous propose d'intervenir comme sous-traitant" if sous_traitant
+                else "Une entreprise vous propose un groupement")
+    else:
+        base = "Invitation à répondre ensemble à un marché"
     objet = net(("Rappel : " + base[:1].lower() + base[1:]) if relance else base) + f" — {net(marche, 60) or m}"
 
     texte = "\n".join([
@@ -239,13 +245,21 @@ def rappel_part(*, chef: str, marche: str, url: str, date_limite, jours_restants
     du_chef = f"de {chef_nom}" if chef_nom else "du chef de file"
     chez = chef_nom or "le chef de file"
     m = net(marche, 300) or "sans titre"
-    reste = "il vous reste 1 jour" if jours_restants <= 1 else f"il vous reste {int(jours_restants)} jours"
-    reste_maj = reste[:1].upper() + reste[1:]
+    # Le jour même de la date limite (0 jour) : « dernier jour », comme l'écran du partenaire (« Dernier jour :
+    # soumettez votre part aujourd'hui. ») ; « il vous reste 1 jour » est réservé à la veille (contrôle des bugs,
+    # deuxième passe).
+    dernier = jours_restants <= 0
+    reste = ("dernier jour" if dernier else "il vous reste 1 jour" if jours_restants == 1
+             else f"il vous reste {int(jours_restants)} jours")
     echeance = jour(date_limite)
     attestations = [net(x, 300) for x in attestations if net(x)]
     parties = [net(x, 300) for x in parties if net(x)]
-    phrase = (f"{reste_maj} pour ajouter votre part au groupement {du_chef} sur le marché « {m} »"
-              + (f" (date limite : {echeance})." if echeance else "."))
+    if dernier:
+        phrase = (f"C'est le dernier jour pour ajouter votre part au groupement {du_chef} sur le marché « {m} »"
+                  + (f" (date limite : aujourd'hui, {echeance})." if echeance else "."))
+    else:
+        phrase = (f"{reste[:1].upper() + reste[1:]} pour ajouter votre part au groupement {du_chef} sur le marché "
+                  f"« {m} »" + (f" (date limite : {echeance})." if echeance else "."))
     a_chef = f"à {chef_nom}" if chef_nom else "au chef de file"     # jamais « à le chef de file »
     suite = (f"Complétez votre part et soumettez-la {a_chef}. Sans elle, votre entreprise ne figurera pas dans la "
              "réponse commune.")

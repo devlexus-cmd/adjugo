@@ -745,7 +745,8 @@ def test_signature_dans_les_documents_produits(client, auth):
     try:
         conv = db.query(GroupementConvention).filter(GroupementConvention.project_id == pid).one()
         project = db.get(Project, pid)
-        assert conv.params["modele_texte"] == 2 and not gc.is_stale(db, project, conv)
+        # Modèle courant (3 depuis le contrôle des bugs, deuxième passe : « 1 jour » ; même phrase de signature que le 2).
+        assert conv.params["modele_texte"] == gc.MODELE_TEXTE == 3 and not gc.is_stale(db, project, conv)
         # Convention figée AVANT la correction : modèle 1, même empreinte qu'à sa génération.
         ancien = gc.build_context(db, project, conv, gc._company_for(db, project), version=conv.version)["ctx"]
         ancien["modele"] = 1

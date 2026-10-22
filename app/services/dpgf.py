@@ -4,7 +4,6 @@ Génération de la DPGF (Décomposition du Prix Global et Forfaitaire) et du BPU
 (reportlab, cohérent avec les CERFA). Les montants viennent du calcul déterministe.
 """
 import io
-from datetime import date
 from xml.sax.saxutils import escape as _xml_escape
 
 from reportlab.lib import colors
@@ -48,7 +47,8 @@ def generate_dpgf_pdf(estimate: dict, company_name: str, project_name: str, tva_
     story.append(Paragraph(_esc(company_name or "Entreprise"), h1))
     story.append(Paragraph("Estimation détaillée du prix (présentée comme une décomposition du prix)", h2))
     story.append(Paragraph(f"Marché : {_esc(project_name or '')}", sub))
-    story.append(Paragraph(f"Établi le {date.today().strftime('%d/%m/%Y')}", sub))
+    from app.services import pieces_fin       # le jour de Paris, jamais le jour UTC du serveur (format.py)
+    story.append(Paragraph(f"Établi le {pieces_fin.jour_paris().strftime('%d/%m/%Y')}", sub))
     # Ce document est l'estimation d'Adjugo, pas la pièce de prix exigée par l'acheteur : on le dit.
     story.append(Paragraph(ESTIMATION_NOTE, sub))
     story.append(Spacer(1, 7 * mm))

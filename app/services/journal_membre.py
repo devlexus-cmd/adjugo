@@ -276,6 +276,16 @@ def first_own_id(db, inv):
     return first
 
 
+def voit_le_total(inv) -> bool:
+    """Le lien peut-il recevoir le total de l'offre commune ? Jamais un sous-traitant (il n'est pas membre du
+    groupement, règle de la vague 2), jamais un lien en lecture seule (il n'apporte aucune part et ne sera jamais
+    signataire : groupement_members.apporte_une_part, REORGANISATION_V2B § S.4). Une seule règle pour sa vue
+    (invites._for_member), son journal, la vérification du journal et ses exports (contrôle des bugs, deuxième
+    passe : le total sortait par le journal d'un lien en lecture seule)."""
+    from app.services.groupement_members import apporte_une_part
+    return (getattr(inv, "role", "") or "") != "sous_traitant" and apporte_une_part(inv)
+
+
 def project_row(r, inv, names: dict, first_id=None):
     """Projection d'UNE entrée vers le membre : {at, action, label, who, detail} ou None.
     SANS ip, SANS email, SANS identifiant interne ; l'acteur devient « vous » / « mandataire »
@@ -301,9 +311,10 @@ def project_row(r, inv, names: dict, first_id=None):
             who, label = "partenaire", LABELS_PARTNER.get(r.action, r.action)
         detail = names.get(r.invite_id, "") if r.invite_id else (
             r.detail if r.action in _DETAIL_OK else "")
-        # Un sous-traitant n'est pas membre du groupement : il ne reçoit jamais le total de
-        # l'offre commune (règle de la vague 2), pas même dans le détail du journal.
-        if r.action == "offer.frozen" and ((getattr(inv, "role", "") or "") == "sous_traitant"
+        # Un sous-traitant ou un lien en lecture seule n'est pas membre du groupement : il ne reçoit jamais le
+        # total de l'offre commune (voit_le_total), pas même dans le détail du journal. Vider le détail ne touche pas
+        # la chaîne vérifiable (maillon_of ne lit jamais `detail`).
+        if r.action == "offer.frozen" and (not voit_le_total(inv)
                                            or (first_id is not None and r.id < first_id)):
             detail = ""
     else:

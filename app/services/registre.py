@@ -40,6 +40,32 @@ def _client(timeout: float = 12):
     return httpx.Client(timeout=timeout, headers={"User-Agent": "Adjugo/1.0 (+https://adjugo.fr)"})
 
 
+def _plier(s) -> str:
+    import unicodedata
+    s = unicodedata.normalize("NFKD", str(s or "").upper())
+    return re.sub(r"[^A-Z0-9]+", " ", "".join(c for c in s if not unicodedata.combining(c))).strip()
+
+
+def _voie(adresse, code_postal, commune) -> str:
+    """L'adresse SANS son code postal ni sa commune : l'API Recherche d'entreprises écrit `adresse` en entier
+    (« 3 RUE DU PORT 29200 BREST »), en plus de `code_postal` et `libelle_commune`, qu'Adjugo garde à part (Mon
+    entreprise : Adresse, Code postal, Ville) et que les formulaires officiels et la convention recollent. Sans ce
+    retrait, ils écrivaient « 3 RUE DU PORT 29200 BREST 29200 BREST » (contrôle des bugs, deuxième passe). Seule une fin
+    « code postal [commune…] » est retirée ; une adresse qui ne finit pas ainsi reste telle quelle."""
+    a = " ".join(str(adresse or "").split())
+    cp = str(code_postal or "").strip()
+    if not a or not cp:
+        return a
+    occ = list(re.finditer(r"(?:^|\s)" + re.escape(cp) + r"(?=\s|$)", a))
+    if not occ:
+        return a
+    voie, reste = a[:occ[-1].start()].strip(" ,"), a[occ[-1].end():].strip()
+    ville = _plier(commune)
+    if voie and (not reste or (ville and _plier(reste).startswith(ville))):
+        return voie
+    return a
+
+
 def _normalize(e: dict) -> dict:
     """Transforme un résultat de l'API en dict entreprise Adjugo."""
     siege = e.get("siege", {}) or {}
@@ -55,7 +81,8 @@ def _normalize(e: dict) -> dict:
         # et la 1re recherche à l'activation par SIRET (repli : libellé NAF).
         "specialite": _specialite(e.get("activite_principale")),
         "forme_juridique": _forme_label(forme),
-        "address": siege.get("adresse") or f"{siege.get('numero_voie','')} {siege.get('libelle_voie','')}".strip(),
+        "address": (_voie(siege.get("adresse"), siege.get("code_postal"), siege.get("libelle_commune"))
+                    or f"{siege.get('numero_voie','')} {siege.get('libelle_voie','')}".strip()),
         "postal_code": siege.get("code_postal", ""),
         "city": siege.get("libelle_commune", ""),
         "departement": (siege.get("code_postal", "") or "")[:2],
@@ -146,7 +173,9 @@ def discover_cotraitants(activity: str = "", departement: str = "",
                 x = _normalize(e)
                 et = local_etablissement(e, departement)
                 if et:      # l'établissement DU département, pas le siège lointain
-                    x.update({"siret": et.get("siret") or x["siret"], "address": et.get("adresse") or x["address"],
+                    x.update({"siret": et.get("siret") or x["siret"],
+                              "address": _voie(et.get("adresse"), et.get("code_postal"), et.get("libelle_commune"))
+                              or x["address"],
                               "postal_code": et.get("code_postal") or x["postal_code"],
                               "city": et.get("libelle_commune") or x["city"],
                               "departement": (et.get("code_postal") or "")[:2] or x["departement"]})

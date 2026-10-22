@@ -6,7 +6,6 @@ import io
 import os
 import re
 import zipfile
-import datetime
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
@@ -144,7 +143,12 @@ def export_dossier(
 
     # Creer le ZIP
     zip_buf = io.BytesIO()
-    date_str = datetime.date.today().strftime("%Y-%m-%d")
+    # Le jour de Paris (format.py), jamais le jour UTC du serveur : noms de fichiers en AAAA-MM-JJ (ils se rangent dans
+    # l'ordre), dates du sommaire en JJ/MM/AAAA comme les autres textes (contrôle des bugs, deuxième passe).
+    from app.services import pieces_fin
+    jour = pieces_fin.jour_paris()
+    date_str = jour.strftime("%Y-%m-%d")
+    date_fr = jour.strftime("%d/%m/%Y")
     project_slug = _nom_de_fichier(project.name)[:30]
 
     # DC4 (déclaration de sous-traitance) UNIQUEMENT si un sous-traitant est déclaré —
@@ -227,7 +231,7 @@ def export_dossier(
         else:
             sommaire.append("Montant de l'offre (HT) : " + ("{:,.0f} EUR".format(est.get("total_ht")).replace(",", " ") if est.get("total_ht") else "à chiffrer (aucun chiffrage enregistré)"))
         sommaire.append("Reference : marche n° {:04d}".format(project.id))
-        sommaire.append("Date : " + date_str)
+        sommaire.append("Date : " + date_fr)
         sommaire.append("")
         sommaire.append("-" * 60)
         sommaire.append("ENTREPRISE CANDIDATE")
@@ -243,11 +247,17 @@ def export_dossier(
         sommaire.append("CA N-1 : " + ("{:,.0f} EUR".format(_ca1).replace(",", " ") if _ca1 else "—"))
         sommaire.append("")
 
-        if pd["cotraitants"]:
+        # Un sous-traitant n'est pas membre du groupement (DC1 « candidat seul », DC4 joint) : sa rubrique à part
+        # (contrôle des bugs, deuxième passe : il était compté parmi les « partenaires du groupement »).
+        from app.services.cerfa import _groupement_members, _soustraitants
+        for titre, liste in (("PARTENAIRES DU GROUPEMENT", _groupement_members(pd["cotraitants"])),
+                             ("SOUS-TRAITANTS DÉCLARÉS (DC4)", _soustraitants(pd["cotraitants"]))):
+            if not liste:
+                continue
             sommaire.append("-" * 60)
-            sommaire.append("PARTENAIRES DU GROUPEMENT ({})".format(len(pd["cotraitants"])))
+            sommaire.append("{} ({})".format(titre, len(liste)))
             sommaire.append("-" * 60)
-            for i, ct in enumerate(pd["cotraitants"]):
+            for i, ct in enumerate(liste):
                 sommaire.append("{}. {} - SIRET: {}".format(i + 1, ct.get("name", ""), ct.get("siret", "")))
             sommaire.append("")
 
@@ -285,7 +295,7 @@ def export_dossier(
 
         sommaire.append("")
         sommaire.append("=" * 60)
-        sommaire.append("Genere par adjugo. le " + date_str)
+        sommaire.append("Genere par adjugo. le " + date_fr)
 
         zf.writestr("00_SOMMAIRE.txt", "\n".join(sommaire))
 

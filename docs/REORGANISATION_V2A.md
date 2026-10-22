@@ -1552,3 +1552,136 @@ hebdomadaire, ni mémoire ni date de passage posées, elle repart au passage sui
   pièce d'origine (`documents.parent_id`) ; les lignes d'une table sont relues sans ordre fixe et insérées par paquets.
   Sur PostgreSQL, une version placée dans un paquet avant celui de son origine serait refusée. Aucun cas observé.
 - **Deux onglets** : le second reçoit « Cet email est déjà utilisé », ce qui est exact (le compte existe).
+
+## R. Contrôle des bugs (23/10/2026), deuxième passe
+
+Vingt-sept signalements vérifiés réels par la deuxième passe (régressions de la première, parcours client,
+cloisonnement, textes), tous **reproduits** sur `f31ebef` puis corrigés ; aucun rejeté. Tests :
+`tests/test_controle_bugs_deuxieme_passe.py` et `tests/test_controle_bugs_deuxieme_passe_reseau.py` (invitations du
+réseau, registre simulé), un ou deux tests par défaut, tous en échec sur `f31ebef`, chacun sur son défaut. Ni prix, ni
+quota, ni offre, ni page juridique touchés. Les numéros ci-dessous sont ceux des tests.
+
+### R.1 Cotraitance : ce que voit chacun
+
+- **(1) « Total prévisionnel » sans nom d'entreprise.** Régression de la correction du n° 30 : la page du marché
+  reprend le total de la convention, qui valait `null` dès qu'un manque existait, y compris « Nom de votre entreprise
+  (chef de file) à indiquer… » (compte Google, inscription sans nom d'entreprise). Tous les prix connus, la ligne
+  disparaissait. **Corrigé** (`build_context`, `app/services/groupement_convention.py`) : le total est la somme des
+  prix dès que chaque part a son prix et qu'il y a un partenaire ; le seul manque qui n'est pas un prix
+  (`MANQUE_NOM_CHEF`) ne le masque plus, ni sur la page du marché ni dans « Convention et accords » (contrat
+  `COTRAITANCE_V2_VAGUE2_API.md` : « `null` si une part manque »). La génération exige toujours qu'il ne manque rien.
+- **(5) « Pourquoi vous dans ce groupement », partenaire avec compte.** Le texte disait toujours « CA cumulé
+  suffisant » et « Qualifications couvertes », seule l'icône changeait. **Corrigé** (`app.html`) : les phrases du lien
+  du partenaire (« Chiffre d'affaires cumulé suffisant » ou « … à vérifier », « Qualifications exigées couvertes » ou
+  « … à vérifier »), selon la donnée ; néerlandais et espagnol.
+- **(6) « Ce que le groupement comble », lu par le partenaire.** Il recevait les libellés écrits pour le chef de file
+  (« … non couvert par votre activité », « … hors de votre zone d'intervention », « … à confirmer auprès du
+  partenaire ») : dans la démo, Breizh Désamiantage lisait « hors de votre zone » pour le 56 qu'il couvre. **Corrigé**
+  (`_for_member`, `app/routers/invites.py`) : un libellé par clé de manque, sans « votre » (« Métier du marché »,
+  « Lieu d'exécution », « Chiffre d'affaires minimum exigé », « Qualifications exigées »…). Les données de la démo ne
+  changent pas ; son lien de Breizh Désamiantage lit ces libellés.
+- **(7) « Les membres du groupement » après l'envoi de la part** (lien du partenaire). Le bloc lu au chargement
+  disait encore « parts reçues 0 sur 1 · brouillon ». **Corrigé** (`invite.html`) : quand le statut de la part change
+  (envoi, enregistrement qui la repasse en brouillon), la carte est relue (`rafraichirPourquoi`) ; le chargement ne
+  relit rien.
+- **(8) « Toutes les parts sont reçues » sans aucune part.** Le seul partenaire avait décliné (ou était révoqué, ou
+  lien en lecture seule). **Corrigé** : la phrase n'est dite qu'avec au moins une part reçue d'une invitation active
+  (`aoPartsRecues`), sinon « Aucune part reçue : invitez un partenaire ». Démo de Kerhel (1 sur 1) inchangée.
+- **(11) Le total de l'offre commune et un lien en lecture seule.** Il n'est ni membre ni signataire, mais son journal
+  (et la vérification du journal, et ses exports) lui donnait « total 100 000 € HT », et avec l'ancienne route
+  « figer », sa vue aussi. **Corrigé** : une seule règle, `voit_le_total` (`app/services/journal_membre.py`) : jamais
+  un sous-traitant, jamais un lien en lecture seule ; la vue (`_for_member`) et le journal (`project_row`) la lisent.
+  Vider le détail ne touche pas la chaîne vérifiable (`maillon_of` ne lit pas le détail).
+- **(12) Invitation du réseau sans réponse : son brouillon chez le chef de file.** Capacités et qualifications
+  recopiées dans « Mes partenaires » (restées après un refus), notifications « a déposé une pièce » (avec le nom du
+  fichier) et « a mis à jour ses capacités ». **Corrigé** : pas de recopie tant que la part est cachée
+  (`_owner_hides_part`), à l'enregistrement comme à la reprise des preuves ; la recopie se fait quand le partenaire
+  accepte depuis son compte ou soumet sa part (`_sync_a_la_reponse`), pas au code vérifié (il sert aussi à décliner) ;
+  les notifications de la part d'une invitation cachée sont retirées à la lecture (`_sans_part_cachee`) et
+  réapparaissent une fois l'invitation acceptée.
+- **(13) Un collègue déclinait l'invitation du réseau** reçue par son organisation (refus définitif, travail effacé),
+  avant comme après l'acceptation par le propriétaire. **Corrigé** (`_refuse_declin_reseau`) : avec une session, le
+  compte qui l'a acceptée, ou, avant, celui de l'adresse destinataire ; sans session (le lien du courriel), l'adresse
+  prouvée par code quand les codes partent, comme pour soumettre sa part : `invite.html` demande alors le code, puis
+  décline. « Partagé avec moi » envoie la session. Un collègue reçoit 403 « Seul le compte propriétaire de votre
+  organisation, à qui Adjugo a envoyé l'invitation, peut la décliner. ».
+- **(14) Coffre-fort croisé lu par un lien en lecture seule** (état et dates de fin des attestations des membres).
+  **Corrigé** : 403 « Ce lien est en lecture seule : l'état des pièces des membres ne vous est pas communiqué. » ;
+  aucun écran ne le lui montrait (le bloc est déjà caché, l'erreur y est attrapée).
+
+### R.2 Marché : dates, pièces, formulaires
+
+- **(2) Un RIB au nom collé** (« RIBBNP.pdf », « RIBdupont.pdf », « monrib.pdf »), reconnu sur `cfe04e1`, ne l'était
+  plus depuis la correction du n° 0 (N.3). **Corrigé** (`_mot_cle_present`, `app/routers/checklist.py`) : « rib » en
+  début ou en fin de mot, « rge » en début de mot, lus dans le nom tel quel et découpé aux changements de casse ;
+  « attribution », « contribution », « distribution », « charges », « décharge » restent écartés.
+- **(3) Date limite d'un marché analysé depuis « Publiés ».** `Project.deadline` restait vide (la colonne n'était
+  jamais écrite hors démo) : courriel d'invitation « pas encore indiquée », aucun rappel J-3 / J-1, « Avant de
+  déposer » à aujourd'hui seulement, pas de compte à rebours. **Corrigé** (`app/routers/sourcing.py`) : à la création,
+  la date de l'avis officiel, à défaut celle que lit l'analyse (celle que la page affiche) ; à l'import du dossier,
+  celle du dossier seulement si le marché n'en a pas (jamais une date déjà là écrasée) ; aucune date quand un
+  rectificatif l'a changée sans pouvoir être lu (`date_limite_rectifiee_non_lue`, gardé pour l'import). Dans la
+  démonstration, un marché créé par « Analyser » porte la date de sa page, comme les marchés de la démo.
+- **(4) Adresse du registre écrite deux fois** (« 3 rue du Port 29200 Brest 29200 BREST » dans DC1, DC2, ATTRI1 et la
+  convention). L'API Recherche d'entreprises écrit `adresse` en entier, code postal et commune compris. **Corrigé**
+  (`_voie`, `app/services/registre.py`) : la fin « code postal [commune…] » est retirée (siège et établissement du
+  département) ; une adresse qui ne finit pas ainsi reste telle quelle. **Choix pour Eliot** : les fiches déjà
+  enregistrées ne sont pas réécrites (l'entreprise peut corriger le champ Adresse ; une reprise des données existantes
+  serait à décider).
+- **(15) ATTRI1** : la ville du candidat et le jour du document étaient écrits sur la ligne « A : …, le … » de
+  l'acheteur (page 6). **Corrigé** : rien sur cette page ; le lieu et la date du candidat restent en C1 (page 4).
+- **(16) DC4** : lieu et date tombaient sous « Le représentant de l'acheteur », la ville du titulaire dans les deux
+  colonnes. **Corrigé** : sur les lignes du sous-traitant et du titulaire (459,6 points du bas du modèle), le
+  sous-traitant avec sa ville, ou une ligne à remplir.
+- **(17) Jour des documents générés** : le jour UTC du serveur (la veille entre 0 h et 2 h à Paris). **Corrigé** :
+  formulaires (`_jour_fr`), estimation détaillée, compte-rendu (« édité le », « Offre commune figée le » au jour de
+  Paris de l'instant figé), export ZIP : noms de fichiers au jour de Paris (AAAA-MM-JJ), « Date : » et « Genere par
+  adjugo. le » du sommaire en JJ/MM/AAAA. `test_controle_bugs_marche.py` lit le jour de Paris pour les noms du ZIP.
+- **(22) Compte-rendu interne** : « total 125 000 € HT » pour 125 000,50 € HT. **Corrigé** : au centime
+  (`groupement_convention.eur`), comme la convention.
+- **(23) Sommaire du ZIP** : un sous-traitant rangé sous « PARTENAIRES DU GROUPEMENT ». **Corrigé** : membres du
+  groupement d'un côté, « SOUS-TRAITANTS DÉCLARÉS (DC4) » de l'autre ; pas de rubrique vide.
+
+### R.3 Écrans et textes
+
+- **(9) Heures du suivi des invitations et des simulations** lues comme heure locale (deux heures de retard à Paris).
+  **Corrigé** : `auditAt` (UTC naïf lu comme UTC), comme le journal.
+- **(10) « À venir », sources injoignables** : « Aucune échéance proche sur ce périmètre. » alors qu'aucune source
+  n'avait répondu, et l'erreur de la DECP perdue. **Corrigé** : la route rend aussi l'erreur de la DECP quand le
+  repli part ; l'écran dit chaque source qui n'a pas répondu, en clair (jamais le message brut), et « Aucune fin de
+  contrat trouvée, mais une source n'a pas répondu : réessayez plus tard. ». Débit et remboursement inchangés.
+- **(18) Courriel « Mes alertes »** : « clôture 2026-11-21+02:00 », « acheteur n/d ». **Corrigé** : « clôture
+  21/11/2026 » (format de l'écran), « acheteur non précisé ». `test_moteur_lot1_reunion.py`,
+  `test_reorganisation_v1_relecture.py` et `docs/MOTEUR_LOT1.md` (point 18) suivent le nouveau format.
+- **(19) Rappel de la part le jour même** : « il vous reste 1 jour ». **Corrigé** : « C'est le dernier jour pour
+  ajouter votre part … (date limite : aujourd'hui, 22/10/2026). », objet « Rappel — dernier jour pour votre part » ;
+  « 1 jour » reste pour la veille (contrat `REORGANISATION_V2B.md` § B4.1 complété).
+- **(20) Journal d'accès** : clés techniques (« atelier.sans_ia »), « Vous » pour une alerte d'Adjugo, « user:2 »
+  comme auteur. **Corrigé** : une phrase pour chaque action écrite avec un marché (le test recense les clés du code),
+  repli « Action enregistrée » ; pastille « Adjugo » ; auteur lisible (`actor_label` : nom, à défaut adresse, d'un
+  compte de l'équipe ; « Adjugo »). **Choix écrit** : ces phrases ne sont pas traduites, comme le reste du journal.
+- **(21) Convention : « dans un délai de 1 jours »**. **Corrigé** dans un nouveau modèle de texte (`MODELE_TEXTE = 3`,
+  « 1 jour », même phrase de signature que le 2) : une convention déjà figée garde son texte et son empreinte (aucune
+  n'est rendue caduque) ; pour toute autre valeur, le texte ne change pas. `test_correctifs_urgents.py` lit le modèle
+  courant. La proposition du § 9 de `docs/A_CORRIGER_PAGES_JURIDIQUES_LIBELLES.md` (« Référence de la
+  consultation ») reste pour un prochain modèle, avec la relecture prévue.
+- **(24) Invitation du réseau d'un sous-traitant** : l'objet disait « vous propose un groupement ». **Corrigé** :
+  « Une entreprise vous propose d'intervenir comme sous-traitant — [marché] » (et « Rappel : … ») ; contrats
+  `REORGANISATION_V2B.md` § B4.1 et `COTRAITANCE_V2_VAGUE3_API.md` complétés.
+- **(25) Un sous-traitant décline** : courriel « … a décliné l'invitation à rejoindre le groupement », fenêtre
+  « Vous ne ferez plus partie de ce groupement ». **Corrigé** : « … a décliné votre invitation à intervenir comme
+  sous-traitant sur le marché « … ». Il ne figurera pas dans votre réponse. » ; fenêtres selon le rôle (lien du
+  partenaire, « Partagé avec moi », invitations reçues du réseau).
+- **(26) Invitation d'un collègue par un compte sans nom** : « Bonjour, ⏎⏎ vous invite… ». **Corrigé** : « Un
+  collègue vous invite… ».
+- **(27) Abonnement** : « Essai gratuit · 1 j restants ». **Corrigé** : « 1 j restant », le pluriel à partir de 2.
+
+### R.4 Laissé, avec sa raison
+
+- **Journal du marché et invitation du réseau sans réponse** : `/api/projects/{id}/audit` (journal d'accès, avec
+  adresses IP) garde la ligne « Pièce déposée par le partenaire » et le nom du fichier. Le filtrer cacherait une trace
+  du journal d'accès : à trancher par Eliot, non modifié.
+- **Invitation manuelle rattachée à un compte** : elle se décline encore avec le seul lien, que détient le chef de
+  file, et le journal attribue le refus au partenaire. Même famille que le (13), à trancher par Eliot.
+- **Rappel planifié d'un sous-traitant** (lu dans le code, `rappel_part`) : « ajouter votre part au groupement de … »
+  ne tient pas compte du rôle. Hors de la liste : signalé, non corrigé.

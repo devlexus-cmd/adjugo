@@ -3,7 +3,7 @@ Adjugo - CERFA Overlay v4 FINAL
 Coordonnees precises relevees sur les grilles officielles.
 Support co-traitants pour DC1 section E et DC2 multiples.
 """
-import io, os, datetime
+import io, os
 from xml.sax.saxutils import escape as _xml_escape
 from pypdf import PdfReader, PdfWriter
 from reportlab.pdfgen import canvas
@@ -18,6 +18,14 @@ TEMPLATES_DIR = os.path.join(
 BLACK = HexColor("#111111")
 W, H = A4  # 595.28 x 841.89
 
+
+
+def _jour_fr() -> str:
+    """Le jour imprimé sur les formulaires (« Fait à …, le … », lieu et date du titulaire) : celui de Paris, comme les
+    documents lus par une TPE (app/services/format.py), jamais le jour UTC du serveur, qui est la veille entre 0 h et
+    2 h à Paris (contrôle des bugs, deuxième passe). Lu à chaque appel (pieces_fin.jour_paris)."""
+    from app.services import pieces_fin
+    return pieces_fin.jour_paris().strftime("%d/%m/%Y")
 
 def _esc(s) -> str:
     """Échappe une valeur DYNAMIQUE (nom d'entreprise, objet du marché…) avant de l'insérer
@@ -174,7 +182,7 @@ def generate_dc1(c, p):
     if not os.path.exists(tpl):
         return _fallback("DC1", c, p)
 
-    d = datetime.date.today().strftime("%d/%m/%Y")
+    d = _jour_fr()
     addr = (str(c.get("address", "")) + " " + str(c.get("postal_code", "")) + " " + str(c.get("city", ""))).strip()
     # SECTION E = membres du GROUPEMENT uniquement. Les sous-traitants sont exclus ici
     # (ils sont déclarés au DC4), sinon un sous-traitant apparaissait à tort comme membre.
@@ -331,7 +339,7 @@ def generate_dc2(c, p):
 
 
 def _generate_single_dc2(tpl, c, p):
-    d = datetime.date.today().strftime("%d/%m/%Y")
+    d = _jour_fr()
     addr = (str(c.get("address", "")) + " " + str(c.get("postal_code", "")) + " " + str(c.get("city", ""))).strip()
     name = c.get("name", "")
     siret = c.get("siret", "")
@@ -405,7 +413,7 @@ def generate_dc4(c, p):
 
 
 def _generate_single_dc4(tpl, c, sub, p):
-    d = datetime.date.today().strftime("%d/%m/%Y")
+    d = _jour_fr()
     addr = (str(c.get("address", "")) + " " + str(c.get("postal_code", "")) + " " + str(c.get("city", ""))).strip()
 
     fields = {
@@ -428,13 +436,14 @@ def _generate_single_dc4(tpl, c, sub, p):
         # Page 3 (idx 2): E - identité du SOUS-TRAITANT (positions relevées sous chaque
         # libellé du template, alignées sur la section D).
         2: [], 3: [], 4: [], 5: [], 6: [],
-        # Page 8: M - Signatures
-        7: [
-            {"x": 55, "y": 622, "text": "A " + str(c.get("city", "")), "size": 9},
-            {"x": 170, "y": 622, "text": "le " + d, "size": 9},
-            {"x": 305, "y": 622, "text": "A " + str(c.get("city", "")), "size": 9},
-            {"x": 420, "y": 622, "text": "le " + d, "size": 9},
-        ],
+        # Page 8 : M - Signatures. Lieu et date sur les lignes « A …, le … » du sous-traitant (x 77,9) et du titulaire
+        # (x 326), à 459,6 points du bas du modèle (382 depuis le haut) ; la zone de l'acheteur, plus bas, reste vide.
+        # Le sous-traitant a sa ville à lui, ou une ligne à remplir (contrôle des bugs, deuxième passe : les quatre
+        # textes tombaient sous « Le représentant de l'acheteur », la ville du titulaire dans les deux colonnes).
+        7: ([{"x": 87, "y": 382, "text": str((sub or {}).get("city") or ""), "size": 9},
+             {"x": 192, "y": 382, "text": d, "size": 9}] if sub else [])
+           + [{"x": 336, "y": 382, "text": str(c.get("city", "")), "size": 9},
+              {"x": 428, "y": 382, "text": d, "size": 9}],
         8: [],
     }
 
@@ -464,7 +473,7 @@ def generate_attri1(c, p):
     if not os.path.exists(tpl):
         return _fallback("ATTRI1", c, p)
 
-    d = datetime.date.today().strftime("%d/%m/%Y")
+    d = _jour_fr()
     addr = (str(c.get("address", "")) + " " + str(c.get("postal_code", "")) + " " + str(c.get("city", ""))).strip()
     try:
         budget = max(0.0, float(p.get("budget", 0) or 0))   # négatif (chiffrage erroné) → traité « non chiffré »
@@ -518,11 +527,10 @@ def generate_attri1(c, p):
         4: [
             {"x": 42, "y": 438, "text": p.get("client", ""), "size": 10, "bold": True},
         ],
-        # Page 6
-        5: [
-            {"x": 130, "y": 142, "text": "A " + str(c.get("city", "")), "size": 9},
-            {"x": 300, "y": 142, "text": "le " + d, "size": 9},
-        ],
+        # Page 6 : la fin de la partie D, lieu, date et signature de l'ACHETEUR, qu'il remplit à l'attribution. Rien n'y
+        # est écrit (contrôle des bugs, deuxième passe : la ville du candidat et le jour de création du document
+        # tombaient sur sa ligne « A : …, le … »). Le lieu et la date du candidat sont en C1 (page 4).
+        5: [],
         6: [],
     }
 
@@ -744,7 +752,7 @@ def generate_dume(c, p, lang_name=None):
         Paragraph(tr("Le signataire atteste l'exactitude des informations ci-dessus et accepte de fournir, "
                      "sur demande de l'acheteur, les certificats et documents justificatifs correspondants."), body),
         Spacer(1, 8 * mm),
-        kv([(tr("Fait à"), c.get("city")), (tr("Le"), datetime.date.today().strftime("%d/%m/%Y")),
+        kv([(tr("Fait à"), c.get("city")), (tr("Le"), _jour_fr()),
             (tr("Signature (nom, qualité)"), c.get("representant_legal"))]),
     ]
     doc.build(e)
@@ -757,7 +765,6 @@ def generate_dume(c, p, lang_name=None):
 # « brouillon à reporter sur le modèle officiel », jamais le formulaire officiel.
 # ================================================================
 def _resolve_source(key, c, p):
-    import datetime as _dt
     addr = " ".join(str(c.get(k, "") or "") for k in ("address", "postal_code", "city")).strip()
     m = {
         "company.name": c.get("name"),
@@ -776,7 +783,7 @@ def _resolve_source(key, c, p):
         "project.objet": p.get("name"),
         "project.acheteur": p.get("client"),
         "project.reference": p.get("reference"),
-        "date.today": _dt.date.today().strftime("%d/%m/%Y"),
+        "date.today": _jour_fr(),
     }
     return m.get(key)  # None pour "manual" / clé inconnue → champ à remplir
 
@@ -787,7 +794,6 @@ def generate_national_form(c, p, spec):
     from reportlab.platypus import (SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle)
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from reportlab.lib import colors as _colors
-    import datetime as _dt
 
     buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=18 * mm, bottomMargin=16 * mm)
@@ -827,7 +833,7 @@ def generate_national_form(c, p, spec):
     e.append(Spacer(1, 8 * mm))
     e.append(kv([
         [Paragraph("<b>" + _esc(sig.get("place", "Lieu")) + "</b>", body), Paragraph(_esc(c.get("city") or "—"), body)],
-        [Paragraph("<b>" + _esc(sig.get("date", "Date")) + "</b>", body), Paragraph(_dt.date.today().strftime("%d/%m/%Y"), body)],
+        [Paragraph("<b>" + _esc(sig.get("date", "Date")) + "</b>", body), Paragraph(_jour_fr(), body)],
         [Paragraph("<b>" + _esc(sig.get("signatory", "Signature")) + "</b>", body), Paragraph(_esc(c.get("representant_legal") or "—"), body)],
     ]))
     if spec.get("official_url"):
@@ -912,7 +918,7 @@ def generate_attestation_honneur(c, p):
         Spacer(1, 4),
         Paragraph("Fait pour servir et valoir ce que de droit.", body),
         Spacer(1, 10 * mm),
-        kv([("Fait à", c.get("city")), ("Le", datetime.date.today().strftime("%d/%m/%Y")),
+        kv([("Fait à", c.get("city")), ("Le", _jour_fr()),
             ("Nom et qualité du signataire", c.get("representant_legal")), ("Signature", "")]),
         Spacer(1, 6),
         Paragraph("<font size=7 color='#888888'>Document pré-rempli par Adjugo à partir de votre "

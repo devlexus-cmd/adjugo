@@ -153,8 +153,8 @@ class ReprisePreuvesIn(RepriseIn):
 def _reprendre(inv, c, request: Request, db: Session, *, version, publiques, preuves=(), owner=None) -> dict:
     """Même verrou de version que l'enregistrement de la part ; une part soumise repasse en brouillon
     (comme toute modification), l'offre figée et la convention suivent la même règle."""
-    from app.routers.invites import (_guest_actor, _serialize_contribution, _sync_annuaire_capacites,
-                                     _unfreeze_offer_if_needed)
+    from app.routers.invites import (_guest_actor, _owner_hides_part, _serialize_contribution,
+                                     _sync_annuaire_capacites, _unfreeze_offer_if_needed)
     if version is None:
         raise HTTPException(428, "Version requise (verrou optimiste). Rechargez la contribution.")
     # Lecture des sources publiques AVANT de réserver la version : aucun appel réseau pendant que la ligne
@@ -188,7 +188,9 @@ def _reprendre(inv, c, request: Request, db: Session, *, version, publiques, pre
         _unfreeze_offer_if_needed(db, inv.project_id, c.company_name or inv.company_name or "un partenaire",
                                   actor=_guest_actor(inv), actor_kind="guest",
                                   ip=audit.client_ip(request), invite_id=inv.id)
-    if r["qualifications"]:
+    if r["qualifications"] and not _owner_hides_part(inv, c):
+        # Invitation du réseau sans réponse : rien de son brouillon dans « Mes partenaires » du chef de file
+        # (contrôle des bugs, deuxième passe) ; ses qualifications y arrivent à sa première réponse.
         _sync_annuaire_capacites(inv, c, db)
     morceaux = []
     if r["references"]:

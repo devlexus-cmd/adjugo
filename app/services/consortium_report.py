@@ -16,7 +16,6 @@ DOCTRINE DE VISIBILITÉ (oct. 2026) : le chef de file peut le transférer → ja
 membre (prix de lot, approche prix, décomposition). Seul le total de l'offre commune FIGÉE.
 """
 import io
-from datetime import date
 from xml.sax.saxutils import escape as _xml_escape
 
 from reportlab.lib import colors
@@ -33,6 +32,21 @@ _MUTED = colors.HexColor("#5A6573")
 _OK = colors.HexColor("#1A7F4B")
 _WARN = colors.HexColor("#9A6700")
 
+
+
+def _jour_mois_paris(frozen_at) -> str:
+    """« 23/10 » : le jour de Paris d'un horodatage ISO (UTC s'il est naïf) ; le texte tel quel s'il ne se lit pas."""
+    from datetime import datetime, timezone
+    brut = str(frozen_at or "")
+    try:
+        dt = datetime.fromisoformat(brut)
+    except ValueError:
+        return brut[:10]
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    from app.services.format import _tz_paris
+    tz = _tz_paris()
+    return dt.astimezone(tz if tz is not None else timezone.utc).strftime("%d/%m")
 
 def _e(value) -> str:
     """Valeur dynamique échappée (« A & B <Sàrl> » ne casse ni n'injecte de balisage)."""
@@ -86,7 +100,9 @@ def generate_consortium_report_pdf(project_name: str, mandataire: str, data: dic
     el.append(_p("Document interne au chef de file — ne fait pas partie du dossier remis à l'acheteur", muted))
     el.append(Spacer(1, 7))
     el.append(_m(f"<b>{_e(project_name)}</b>", st))
-    el.append(_p(f"Chef de file : {mandataire or '—'} · édité le {date.today().strftime('%d/%m/%Y')}", muted))
+    from app.services import pieces_fin       # le jour de Paris, jamais le jour UTC du serveur (format.py)
+    el.append(_p(f"Chef de file : {mandataire or '—'} · édité le {pieces_fin.jour_paris().strftime('%d/%m/%Y')}",
+                 muted))
     el.append(Spacer(1, 9))
 
     # Synthèse : les parts reçues, « N sur M » (comme la page du marché).
@@ -105,14 +121,12 @@ def generate_consortium_report_pdf(project_name: str, mandataire: str, data: dic
     # Offre commune figée (seul montant imprimé, le document pouvant être transféré : le TOTAL).
     state = data.get("state") if isinstance(data.get("state"), dict) else {}
     if state.get("offer_frozen") and state.get("total_offre_ht") is not None:
-        frozen = str(state.get("frozen_at") or "")[:10]
-        try:
-            d, m = frozen[8:10], frozen[5:7]
-            frozen_fr = f"{d}/{m}" if d and m else frozen
-        except Exception:
-            frozen_fr = frozen
-        total = f"{float(state['total_offre_ht']):,.0f}".replace(",", " ")
-        el.append(_p(f"Offre commune figée le {frozen_fr} : total {total} € HT", h2))
+        # Le jour de Paris de l'instant figé (UTC naïf côté serveur), comme le texte de la convention (« figée le … (heure
+        # de Paris) ») ; le total au centime, comme la convention et l'acte d'engagement (groupement_convention.eur),
+        # jamais arrondi à l'euro (contrôle des bugs, deuxième passe).
+        frozen_fr = _jour_mois_paris(state.get("frozen_at"))
+        from app.services.groupement_convention import eur
+        el.append(_p(f"Offre commune figée le {frozen_fr} : total {eur(state['total_offre_ht'])} HT", h2))
 
     # Lots couverts
     if lots:

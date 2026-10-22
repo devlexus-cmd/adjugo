@@ -221,6 +221,9 @@
     let MY_TOKEN = null, MY_COMPANY = "", RELOAD_JOURNAL = null;
     // Rédaction, vague 4 : l'écran « Mes parties du dossier de présentation » (redaction-partenaire.js).
     let RP = null;
+    // Carte « Pourquoi vous dans ce groupement » et ses membres (« parts reçues N sur M ») : relue quand le statut de
+    // MA part change (envoi, enregistrement qui la repasse en brouillon), sans recharger la page.
+    let POURQUOI = null;
     const PIECE_TYPES = [["kbis", "Kbis"], ["fiscale", "Attestation fiscale"], ["sociale", "Attestation sociale (URSSAF)"], ["assurance", "Assurance (RC / décennale)"], ["rib", "RIB"], ["qualification", "Qualification / certificat"], ["dpgf_lot", "Tableau de prix de votre partie (prix de vente)"], ["autre", "Autre pièce"]];
     const PIECE_LABEL = Object.fromEntries(PIECE_TYPES);
     const $ = (h) => { const t = document.createElement("template"); t.innerHTML = h.trim(); return t.content.firstChild; };
@@ -399,6 +402,22 @@
     const apiDate = (s) => new Date(typeof s === "string" && /T\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/.test(s) ? s + "Z" : s);
     const fmtShort = (s) => { if (!s) return ""; try { return apiDate(s).toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" }); } catch (e) { return s; } };
     const fmtDT = (s) => { if (!s) return ""; try { const d = apiDate(s); return d.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" }) + " " + d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }); } catch (e) { return s; } };
+    // Fenêtre « Décliner l'invitation ? » : un sous-traitant n'est pas membre du groupement (« vous n'êtes pas membre du
+    // groupement », plus bas) ; la phrase suit son rôle (contrôle des bugs, deuxième passe).
+    function texteDeclin(d) {
+      if (d && d.invited && d.invited.role === "sous_traitant")
+        return "Vous n'interviendrez pas comme sous-traitant sur ce marché ; le chef de file sera prévenu. Ce lien ne fonctionnera plus ensuite.";
+      return "Vous ne ferez plus partie de ce groupement ; le chef de file sera prévenu. Ce lien ne fonctionnera plus ensuite.";
+    }
+    // Contrôle des bugs, deuxième passe : après « Soumettre au chef de file », le haut de la page disait « Votre part est
+    // soumise » et le bloc des membres, lu au chargement, « parts reçues 0 sur 1 · brouillon ». Il est relu ici.
+    async function rafraichirPourquoi() {
+      if (!POURQUOI) return;
+      const d = await fetch("/api/invite/" + encodeURIComponent(TOKEN)).then(r => r.ok ? r.json() : null).catch(() => null);
+      if (!d || !d.for_member) return;
+      POURQUOI.innerHTML = "";
+      try { renderForMember(POURQUOI, d.for_member, d); icons(); } catch (e) { console.warn("for_member", e); }
+    }
     // Vague 2b (B3) : le stepper des 5 étapes du groupement a laissé la place à la barre de « Votre part » (renderBarre).
     function renderForMember(carte, fm, d) {
       const st = fm.state || {};
@@ -608,7 +627,7 @@
       // dossier partagé de l'application (en-tête et faits · barre · grille · pourquoi vous). Contenu inchangé.
       if (d.for_member) {
         const pq = $(`<div class="card pad g-pourquoi" style="margin-bottom:16px"></div>`);
-        try { renderForMember(pq, d.for_member, d); root.appendChild(pq); } catch (e) { console.warn("for_member", e); }
+        try { renderForMember(pq, d.for_member, d); root.appendChild(pq); POURQUOI = pq; } catch (e) { console.warn("for_member", e); }
       }
 
       // Convention de groupement (vague 2) : état d'attente, brouillon, texte figé + accords.
@@ -905,10 +924,17 @@
       const declineWrap = $(`<div style="margin-top:14px;text-align:right"></div>`);
       const btnDecline = $(`<button class="g-link" type="button">Décliner l'invitation</button>`);
       btnDecline.onclick = async () => {
-        const ok = await openModal({ title: "Décliner l'invitation ?", bodyHtml: "Vous ne ferez plus partie de ce groupement ; le chef de file sera prévenu. Ce lien ne fonctionnera plus ensuite." + (cvPartLocksConvention() ? " La convention de groupement <b>ne sera plus à jour</b> : le chef de file devra la régénérer." : ""), confirmLabel: "Décliner l'invitation", cancelLabel: "Annuler" });
+        const ok = await openModal({ title: "Décliner l'invitation ?", bodyHtml: texteDeclin(d) + (cvPartLocksConvention() ? " La convention de groupement <b>ne sera plus à jour</b> : le chef de file devra la régénérer." : ""), confirmLabel: "Décliner l'invitation", cancelLabel: "Annuler" });
         if (!ok) return;
         btnDecline.disabled = true;
-        const r = await fetch("/api/invite/" + encodeURIComponent(TOKEN) + "/decline", { method: "POST" }).catch(() => null);
+        const decliner = () => fetch("/api/invite/" + encodeURIComponent(TOKEN) + "/decline", { method: "POST" }).catch(() => null);
+        let r = await decliner();
+        // Invitation du réseau : seul le destinataire la décline ; depuis ce lien, il prouve son adresse par un code.
+        if (r && r.status === 403) {
+          const e0 = await r.clone().json().catch(() => ({}));
+          if (e0 && e0.detail && e0.detail.code === "identity_unverified"
+              && await verifyIdentity(msg, { purpose: "Pour décliner l'invitation", cancelMsg: "Vérification annulée : l'invitation n'est pas déclinée." })) r = await decliner();
+        }
         if (r && r.ok) { finalScreen("hand", "Vous avez décliné cette invitation", "Le chef de file est prévenu. Ce lien ne fonctionne plus ; il pourra vous inviter de nouveau si besoin."); return; }
         btnDecline.disabled = false; const e = r ? await r.json().catch(() => ({})) : {}; msg.textContent = errText(e, "Impossible de décliner pour le moment.");
       };
@@ -1035,7 +1061,8 @@
       content().appendChild(jCard);
       reloadCoffre(); loadJournal();
 
-      const setStatus = (s) => { const ok = s === "submitted"; status.innerHTML = ok ? ico("check", 12, "vertical-align:0") + "Soumise" : "Brouillon"; status.className = ok ? "pill go" : "pill neutral"; status.style.fontSize = "11px"; if (ok) icons(); BARRE.partStatut = s || ""; renderBarre(); };
+      let statutLu;     // statut de la part déjà affiché (undefined au chargement : rien à relire)
+      const setStatus = (s) => { const ok = s === "submitted"; status.innerHTML = ok ? ico("check", 12, "vertical-align:0") + "Soumise" : "Brouillon"; status.className = ok ? "pill go" : "pill neutral"; status.style.fontSize = "11px"; if (ok) icons(); BARRE.partStatut = s || ""; renderBarre(); const change = statutLu !== undefined && statutLu !== (s || ""); statutLu = s || ""; if (change) rafraichirPourquoi(); };
       let curVer = 0;   // verrou optimiste : version chargée
       // ── Détail du chiffrage chiffré : état local ──
       let curEnv = null;          // enveloppe actuellement enregistrée côté serveur

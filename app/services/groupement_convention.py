@@ -47,14 +47,17 @@ NATURE_ACCORD = ("Votre accord est enregistré par Adjugo (date, empreinte du te
 # « restent à signer au moment du dépôt », ce qui est faux (signature au dépôt seulement si le règlement
 # l'exige) ; le modèle 2 le corrige. Une convention déjà générée garde le modèle avec lequel elle a été
 # figée (son empreinte, donc les accords déjà donnés, restent valables) ; toute génération nouvelle
-# prend le modèle courant.
-MODELE_TEXTE = 2
+# prend le modèle courant. Le modèle 3 accorde « jour » au singulier (« dans un délai de 1 jour », « au moins 1 jour
+# avant ») dans les articles 5, 6 et 7 ; le modèle 2 écrivait « 1 jours » (contrôle des bugs, deuxième passe). Pour
+# toute autre valeur, le texte des modèles 2 et 3 est le même.
+MODELE_TEXTE = 3
 _SIGNATURE_FORMULAIRES = {
     1: "Les formulaires officiels (DC1, ATTRI1) restent à signer au moment du dépôt.",
     2: ("Les formulaires officiels (DC1, DC2) se signent au dépôt si le règlement de la consultation "
         "l'exige ; l'acte d'engagement (ATTRI1) se signe à l'attribution, sauf si le règlement demande "
         "de le signer dès le dépôt."),
 }
+_SIGNATURE_FORMULAIRES[3] = _SIGNATURE_FORMULAIRES[2]
 
 
 def modele_de(conv) -> int:
@@ -508,6 +511,12 @@ def _is_sous_traitant(role) -> bool:
     return str(role or "").strip().lower().replace("-", "_") == "sous_traitant"
 
 
+# Le seul manque de collect_members qui ne touche à aucun prix : il empêche de générer la convention, jamais de calculer
+# le total (contrôle des bugs, deuxième passe : le « Total prévisionnel » disparaissait de la page du marché pour un
+# chef de file sans nom d'entreprise, tous les prix connus).
+MANQUE_NOM_CHEF = "Nom de votre entreprise (chef de file) à indiquer dans Mon entreprise, onglet « Identité »"
+
+
 def collect_members(db, project, conv, company, include_incomplete: bool = False) -> dict:
     """Membres de la convention à partir des FAITS actuels (jamais du client) :
     mandataire (profil entreprise + paramètres) → invitations ACTIVES de rôle co-traitant
@@ -522,7 +531,7 @@ def collect_members(db, project, conv, company, include_incomplete: bool = False
     comp = company
     lead_name = (comp.name if comp is not None and comp.name else "") or "Le mandataire"
     if comp is None or not (comp.name or "").strip():
-        manques.append("Nom de votre entreprise (chef de file) à indiquer dans Mon entreprise, onglet « Identité »")
+        manques.append(MANQUE_NOM_CHEF)
     part = params.get("part_mandataire_ht")
     if part is None:
         manques.append("Votre part (chef de file) : montant € HT à indiquer")
@@ -668,6 +677,11 @@ def render(ctx: dict, mask: str = "none", viewer_invite_id: Optional[int] = None
     lead = next((m for m in members if m.get("role") == "mandataire"), {"company": "Le mandataire"})
     lead_name = md(lead.get("company")) or "Le mandataire"
     delai = int(p.get("delai_reponse_jours") or 5)
+    modele = ctx.get("modele") if ctx.get("modele") in _SIGNATURE_FORMULAIRES else 1
+
+    def jours(n: int) -> str:
+        """« 5 jours » ; « 1 jour » à partir du modèle 3 (les conventions figées avant gardent leur texte)."""
+        return f"{n} jour" if (n == 1 and modele >= 3) else f"{n} jours"
 
     L = ["# Convention de groupement momentané d'entreprises", ""]
     if ctx.get("brouillon"):
@@ -737,12 +751,12 @@ def render(ctx: dict, mask: str = "none", viewer_invite_id: Optional[int] = None
         L += ["Les décisions qui engagent tout le groupement (offre commune, planning commun, réponse à "
               "l'acheteur qui concerne plusieurs membres) sont prises à l'unanimité des membres."]
     L += ["Aucune décision ne peut modifier la part ou le prix d'un membre sans son accord écrit. "
-          f"Chaque membre répond aux demandes du mandataire dans un délai de {delai} jours ; le silence "
+          f"Chaque membre répond aux demandes du mandataire dans un délai de {jours(delai)} ; le silence "
           "ne vaut pas accord.", ""]
 
     L += ["## Article 6 — Si un membre ne fait pas sa part (défaillance)",
           f"Le mandataire met le membre concerné en demeure par écrit. Si rien n'est réglé dans un délai "
-          f"de {delai} jours :"]
+          f"de {jours(delai)} :"]
     if p.get("defaillance") == "reprise_par_les_autres":
         L += ["- les autres membres reprennent ensemble cette part, à proportion de leurs propres parts, "
               "sous réserve de l'accord de l'acheteur."]
@@ -755,7 +769,7 @@ def render(ctx: dict, mask: str = "none", viewer_invite_id: Optional[int] = None
     L += ["## Article 7 — Quitter le groupement"]
     if sortie:
         L += [f"Avant la remise de l'offre, un membre peut quitter le groupement en prévenant les autres par "
-              f"écrit au moins {sortie} jours avant la date limite de remise des offres."]
+              f"écrit au moins {jours(sortie)} avant la date limite de remise des offres."]
     else:
         L += ["Avant la remise de l'offre, un membre peut quitter le groupement en prévenant les autres par "
               "écrit avant la date limite de remise des offres."]
@@ -830,7 +844,6 @@ def render(ctx: dict, mask: str = "none", viewer_invite_id: Optional[int] = None
     L += ["Les prix sont les prix de vente de chaque part. Ils ne comprennent ni le détail des coûts ni les "
           "marges, qui restent confidentiels.", ""]
 
-    modele = ctx.get("modele") if ctx.get("modele") in _SIGNATURE_FORMULAIRES else 1
     L += ["## Accord des membres",
           "Chaque membre donne son accord sur ce texte depuis son espace Adjugo. Cet accord est enregistré "
           "avec la date et l'empreinte du texte : ce n'est pas une signature électronique qualifiée. "
@@ -843,7 +856,10 @@ def build_context(db, project, conv, company, version: Optional[int] = None, bro
     brouillon (aperçu), les membres dont la part est incomplète figurent sans prix."""
     col = collect_members(db, project, conv, company, include_incomplete=brouillon)
     members = col["members"]
-    complete = not col["manques"]
+    # Le total : la somme des prix, dès que chaque part a son prix et qu'il y a au moins un partenaire (contrat de la
+    # vague 2 : « null si une part manque »). Le nom manquant du chef de file ne le masque pas ; la génération, elle,
+    # exige toujours qu'il ne manque rien (contexte_generation).
+    prix_complets = all(m == MANQUE_NOM_CHEF for m in col["manques"])
     params = merged_params(conv, project)
     legal = {k: params.get(k) for k in PARAM_KEYS}
     ctx = {
@@ -855,7 +871,7 @@ def build_context(db, project, conv, company, version: Optional[int] = None, bro
         "habilitation": merged_habilitation(conv),
         "params": legal,
         "members": members,
-        "total_ht": total_of(members) if complete else None,
+        "total_ht": total_of(members) if prix_complets else None,
         "brouillon": brouillon,
         # Texte d'une version DÉJÀ figée (version donnée) : son propre modèle ; sinon le modèle courant.
         "modele": modele_de(conv) if version is not None else MODELE_TEXTE,

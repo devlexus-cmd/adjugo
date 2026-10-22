@@ -222,7 +222,9 @@ def test_aucun_n_sur_m_avec_une_barre_dans_les_phrases_du_serveur():
 def test_courriels_des_alertes_sans_note_sur_100():
     al = _py("app/services/alerts.py")
     assert "/100]" not in al
-    assert "lines.append(f\"   • {t['objet'][:90]} — {t.get('acheteur') or 'acheteur n/d'}{ech}\\n     {t['url']}\")" in al
+    # Contrôle des bugs, deuxième passe : « acheteur non précisé » (plus « n/d ») et la date limite au format de l'écran.
+    assert "lines.append(f\"   • {t['objet'][:90]} — {t.get('acheteur') or 'acheteur non précisé'}{ech}\\n     {t['url']}\")" in al
+    assert "ech = f\" — clôture {_date_limite_fr(t['date_limite'])}\" if t.get(\"date_limite\") else \"\"" in al
     # Ce que promet la vitrine, exactement : objet, acheteur, date limite et lien vers l'annonce.
     assert "avec un mail récap : objet, acheteur, date limite et lien vers l'annonce." in LANDING
     assert "compétences attendues" not in LANDING

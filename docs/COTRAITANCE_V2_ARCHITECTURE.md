@@ -266,6 +266,9 @@ juridique, ni de la démonstration (tests : `tests/test_controle_bugs_cotraitanc
   calcul. La part du chef de file est celle saisie dans la convention, à défaut son estimation de prix,
   et l'écran dit laquelle ; le prix d'un sous-traitant n'y entre pas ; rien n'est affiché tant qu'un prix
   manque. Avant : prix du sous-traitant compris, part du chef de file lue seulement dans l'estimation.
+  Deuxième passe : un manque qui n'est pas un prix (nom de l'entreprise du chef de file) ne masque plus le
+  total, ni ici ni dans « Convention et accords » ; il empêche toujours de générer la convention
+  (`MANQUE_NOM_CHEF`, `build_context`).
   « Figer l'offre » (route de la vague 1, sans bouton) : même total, et le courriel « L'offre commune est
   figée … total » ne part plus au sous-traitant ni au lien en lecture seule.
 - **Invitation du réseau sans réponse** (ou déclinée) : la liste des invitations du chef de file ne dit

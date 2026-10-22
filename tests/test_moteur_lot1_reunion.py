@@ -395,7 +395,8 @@ def test_alerte_reelle_contient_les_marches_que_sa_note_cachait(client, auth, mo
                   "Aménagement du parking de la piscine municipale",
                   "TRAVAUX DE RENFORCEMENT 2027-2028 DE LA VOIRIE COMMUNALE", "Travaux de voirie - Programme 2026"):
         assert objet in texte, objet
-    assert "clôture 2026-12-07" in texte and "clôture 2026-11-19" in texte      # dates Mégalis lues (chantier Sources)
+    # Dates Mégalis lues (chantier Sources), écrites comme à l'écran (contrôle des bugs, deuxième passe).
+    assert "clôture 07/12/2026" in texte and "clôture 19/11/2026" in texte
     assert "/100" not in texte and "… et " not in texte
 
     db = SessionLocal()

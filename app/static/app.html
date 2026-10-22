@@ -23,7 +23,7 @@
 <script src="/static/vendor/lucide-1.20.0.min.js" integrity="sha384-vEpkK5oidsrH6UhRc6tAPlgJZ/qXFwumFY+Kx8vBSeZ7NBag809YZCSmxFYGe/pt"></script>
 <!-- Chiffrement par membre du détail de chiffrage (co-traitance v2) : window.AdjugoCrypto, chargé AVANT app.js -->
 <script src="/static/cotraitance-crypto.js" integrity="sha384-q8DL80RVudBWgsaCfc4AJZ3iCrB4O6OoIs5lA81bOty2NmjC5qh+tkxKPVJDzShC"></script>
-<script src="/static/i18n.js" integrity="sha384-VToQNBSjmDkNCiBC3Wxx+XSu0ElcVD3pIdSFS9P+vSm936+1/VuC6VuOFdmxoZt0" defer></script>
+<script src="/static/i18n.js" integrity="sha384-DYCSyeKadCnYDDu1Ph40MlQ609xSu1hqaaGq/Ds1Xa9Cldl1Sgdb4Ag7oGQJuSnL" defer></script>
 </head>
 <body>
 <div id="app">
@@ -730,7 +730,7 @@
                     <div v-if="ao.grp.historyLoading" class="muted small" style="margin-top:6px"><span class="spin"></span> Chargement…</div>
                     <div v-else-if="!ao.grp.history.length" class="muted small" style="margin-top:6px">Aucune simulation enregistrée pour ce marché.</div>
                     <div v-for="h in ao.grp.history" :key="'h'+h.id" class="row wrap small" style="padding:5px 0;border-bottom:1px solid var(--hairline);gap:8px;align-items:center">
-                      <span class="muted" style="min-width:96px">{{ auditWhen(h.created_at) }}</span>
+                      <span class="muted" style="min-width:96px">{{ auditAt(h.created_at) }}</span>
                       <span style="flex:1;min-width:120px">{{ (h.members||[]).map(m=>m.name).join(', ')||'—' }}</span>
                       <span class="num">Seul {{ h.score_seul }} % · À plusieurs {{ h.score_groupement }} %</span>
                       <span class="pill" :class="h.decision||'neutral'" style="font-size:10px">{{ h.decision_label||decLabel(h.decision) }}</span>
@@ -1063,7 +1063,8 @@
                 <!-- Barre de COMMANDE du groupement : les 2 actions clés du mandataire, en un clic -->
                 <div data-test="marche-commande-groupement" v-if="ao.share.invites && ao.share.invites.length" class="row wrap" style="margin-top:10px;gap:8px;align-items:center">
                   <span v-if="aoPendingInvites().length" class="small" style="color:var(--warning-text);font-weight:600"><i data-lucide="clock" style="width:13px;height:13px;vertical-align:-2px"></i> {{ aoPendingInvites().length }} partenaire(s) en attente de leur part</span>
-                  <span v-else class="small" style="color:var(--success);font-weight:600"><i data-lucide="check-circle-2" style="width:13px;height:13px;vertical-align:-2px"></i> Toutes les parts sont reçues</span>
+                  <span v-else-if="aoPartsRecues()" class="small" style="color:var(--success);font-weight:600"><i data-lucide="check-circle-2" style="width:13px;height:13px;vertical-align:-2px"></i> Toutes les parts sont reçues</span>
+                  <span v-else class="small muted">Aucune part reçue : invitez un partenaire</span>
                   <div class="spacer"></div>
                   <button v-if="aoPendingRelancables().length" class="btn sm" @click="aoRelanceRetardataires()"><i data-lucide="send"></i>Relancer les {{ aoPendingRelancables().length }} en attente</button>
                   <button class="btn sm primary" @click="aoAssemble()" :disabled="ao.generating"><span v-if="ao.generating" class="spin"></span><i v-else data-lucide="package"></i>Assembler le dossier commun</button>
@@ -1078,17 +1079,17 @@
                       <span v-if="inviteSourceLabel(inv)" class="pill go_groupement" style="font-size:10px">{{ inviteSourceLabel(inv) }}</span>
                       <span v-if="inv.contribution_status==='submitted'" class="pill go" style="font-size:10px"><i data-lucide="check" style="width:11px;height:11px"></i>Part reçue</span>
                       <span v-else-if="inv.can_contribute && !inv.revoked && !inviteDeclined(inv)" class="pill a_etudier" style="font-size:10px">En attente de sa part</span>
-                      <div class="muted small">{{ inv.view_count }} consultation(s)<span v-if="inv.last_viewed_at"> · dernière {{ auditWhen(inv.last_viewed_at) }}</span></div>
+                      <div class="muted small">{{ inv.view_count }} consultation(s)<span v-if="inv.last_viewed_at"> · dernière {{ auditAt(inv.last_viewed_at) }}</span></div>
                       <!-- Invitation du réseau : l'adresse reste masquée tant que le partenaire n'a pas accepté
                            (le serveur renvoie recipient vide) ; Adjugo envoie l'email, le lien n'est jamais remis. -->
                       <div v-if="inviteIsNetwork(inv)" class="muted small" style="font-size:10.5px">
                         <span v-if="inv.recipient_masque"><i data-lucide="lock" style="width:12px;height:12px;vertical-align:-2px"></i> Adresse visible quand le partenaire aura accepté</span>
                         <span v-else-if="inv.recipient">{{ inv.recipient }}</span>
-                        <span v-if="inv.emailed_at" style="color:var(--success)"> · <i data-lucide="check" style="width:12px;height:12px;vertical-align:-2px"></i> Envoyée par Adjugo {{ auditWhen(inv.emailed_at) }}</span>
+                        <span v-if="inv.emailed_at" style="color:var(--success)"> · <i data-lucide="check" style="width:12px;height:12px;vertical-align:-2px"></i> Envoyée par Adjugo {{ auditAt(inv.emailed_at) }}</span>
                         <span v-else style="color:var(--warning)"> · Email non parti : le partenaire la retrouve dans son espace Adjugo</span>
                       </div>
                       <div v-else-if="inv.recipient && inv.recipient.includes('@')" class="muted small" style="font-size:10.5px">
-                        <span v-if="inv.emailed_at" style="color:var(--success)"><i data-lucide="check" style="width:12px;height:12px;vertical-align:-2px"></i> Email envoyé {{ auditWhen(inv.emailed_at) }}</span>
+                        <span v-if="inv.emailed_at" style="color:var(--success)"><i data-lucide="check" style="width:12px;height:12px;vertical-align:-2px"></i> Email envoyé {{ auditAt(inv.emailed_at) }}</span>
                         <span v-else style="color:var(--warning)">Email non envoyé — copiez le lien ou relancez</span>
                       </div>
                     </div>
@@ -1555,9 +1556,9 @@
                 <div v-if="!ao.share.audit.length" class="muted small">Aucun accès enregistré pour l'instant.</div>
                 <div v-for="a in ao.share.audit" :key="a.id" class="row small" style="padding:6px 0;border-bottom:1px solid var(--hairline);gap:8px;align-items:baseline">
                   <span class="muted" style="min-width:108px">{{ auditAt(a.at) }}</span>
-                  <span class="pill" :class="a.actor_kind==='guest'?'neutral':'go'" style="font-size:9px;min-width:54px;justify-content:center">{{ a.actor_kind==='guest'?'Invité':'Vous' }}</span>
+                  <span class="pill" :class="a.actor_kind==='guest'||a.actor_kind==='system'?'neutral':'go'" style="font-size:9px;min-width:54px;justify-content:center">{{ a.actor_kind==='guest'?'Invité':(a.actor_kind==='system'?'Adjugo':'Vous') }}</span>
                   <span style="flex:1;min-width:0">{{ auditLabel(a) }}<span v-if="a.detail" class="muted"> · {{ a.detail }}</span></span>
-                  <span class="muted" style="font-size:11px">{{ a.actor }}</span>
+                  <span class="muted" style="font-size:11px">{{ a.actor_label || a.actor }}</span>
                 </div>
               </div>
             </div>
@@ -1600,8 +1601,11 @@
                  conseil n'y sont pas annoncés : cette fonction (Veille V1) n'est pas en ligne. Relecture de la vague 2b :
                  la zone de cette recherche est le champ « Départements » de l'onglet (srcDeps), jamais celle de « Ce que je
                  cherche » ; « Modifier ma zone » y met le focus (srcRenZone). -->
+            <!-- Sources qui n'ont pas répondu (affichées, jamais masquées, comme dans « Publiés ») -->
+            <div v-for="e in srcRenErreurs()" :key="e" class="row small" style="margin-top:8px;gap:8px;color:var(--warning-text)"><i data-lucide="alert-triangle"></i><span>{{ e }}</span></div>
             <div v-if="!src.renewals.list.length && !src.renewals.loading" class="row wrap small" style="margin-top:8px;gap:8px;align-items:center">
-              <span class="muted">{{ src.renewals.done ? "Aucune échéance proche sur ce périmètre." : "Contrats de votre zone qui arrivent à échéance." }}</span>
+              <span v-if="src.renewals.done && srcRenErreurs().length" class="muted">Aucune fin de contrat trouvée, mais une source n'a pas répondu : réessayez plus tard.</span>
+              <span v-else class="muted">{{ src.renewals.done ? "Aucune échéance proche sur ce périmètre." : "Contrats de votre zone qui arrivent à échéance." }}</span>
               <button type="button" class="linkbtn small" @click="srcRenZone()">Modifier ma zone</button>
             </div>
             <div v-for="r in src.renewals.list" :key="r.idweb" class="row avenir-carte" style="padding:10px;margin-top:8px;border:1px solid var(--border);border-radius:10px;align-items:flex-start;gap:10px">
@@ -3365,7 +3369,7 @@
 
         <section data-test="vue-billing" v-if="view==='billing'">
           <div class="row" style="margin-bottom:18px"><span class="muted">Votre offre :</span>
-            <span v-if="plan.trial_state==='active'" class="pill go">Essai gratuit · {{ plan.trial_days_left }} j restants</span>
+            <span v-if="plan.trial_state==='active'" class="pill go">Essai gratuit · {{ plan.trial_days_left }} j restant{{ plan.trial_days_left>1?'s':'' }}</span>
             <span v-else-if="plan.trial_state==='expired'" class="pill" style="background:#fdeceb;color:#c0392b">{{ plan.ia_pause==='forfait' ? 'Aucun forfait actif' : 'Essai terminé — abonnez-vous' }}</span>
             <span v-else class="pill go" style="text-transform:capitalize">{{ plan.plan||'starter' }}</span>
             <div class="spacer"></div><button v-if="(plan.plan||'starter')!=='starter'" class="btn" @click="portal"><i data-lucide="settings"></i>Gérer mon abonnement</button></div>
@@ -3973,7 +3977,7 @@
                 <b style="font-size:13.5px">Pourquoi vous dans ce groupement</b>
                 <div v-if="(sfm().my_apport||[]).length" class="row wrap" style="gap:4px;margin-top:4px;align-items:center"><span class="muted small">Vous apportez :</span><span v-for="a in sfm().my_apport" :key="a.key" class="sg-chip by">{{ a.label }}</span></div>
                 <div v-else class="muted small" style="margin-top:4px">{{ sfm().score_groupement!=null ? 'Le chef de file n\'a pas précisé ce que vous apportez.' : 'Le chef de file n\'a pas encore calculé le score du groupement.' }}</div>
-                <div v-if="sfm().seuils" class="row wrap small" style="gap:12px;margin-top:6px"><span :style="sfm().seuils.ca_cumule_ok?'color:var(--success-text)':''"><i :data-lucide="sfm().seuils.ca_cumule_ok?'check':'circle'" style="width:13px;height:13px;vertical-align:-2px"></i> CA cumulé suffisant</span><span :style="sfm().seuils.qualifs_ok?'color:var(--success-text)':''"><i :data-lucide="sfm().seuils.qualifs_ok?'check':'circle'" style="width:13px;height:13px;vertical-align:-2px"></i> Qualifications couvertes</span></div>
+                <div v-if="sfm().seuils" class="row wrap small" style="gap:12px;margin-top:6px"><span :style="sfm().seuils.ca_cumule_ok?'color:var(--success-text)':''"><i :data-lucide="sfm().seuils.ca_cumule_ok?'check':'circle'" style="width:13px;height:13px;vertical-align:-2px"></i> <span v-if="sfm().seuils.ca_cumule_ok===true">Chiffre d'affaires cumulé suffisant</span><span v-else>Chiffre d'affaires cumulé à vérifier</span></span><span :style="sfm().seuils.qualifs_ok?'color:var(--success-text)':''"><i :data-lucide="sfm().seuils.qualifs_ok?'check':'circle'" style="width:13px;height:13px;vertical-align:-2px"></i> <span v-if="sfm().seuils.qualifs_ok===true">Qualifications exigées couvertes</span><span v-else>Qualifications exigées à vérifier</span></span></div>
               </div>
             </div>
             <div v-if="(sfmState().members||[]).length" style="margin-top:10px">
@@ -4668,6 +4672,6 @@
 <script src="/static/redaction-partenaire.js" integrity="sha384-0jgm5b/r+FlC5YZVhiyqvLZyxecxtCABbOw03QuJfDDsfua5T9wxISR2Hfis2Dh+" defer></script>
 <script src="/static/sources-publiques.js" integrity="sha384-/0soYF6qmMI5KHOb/uzkHBoYNeOr5+R784XFb0c0+HjUkhtEyVBgunl6Xo08Dok+" defer></script>
 <script src="/static/carnet-notes.js" integrity="sha384-BlD0ZOe8GvU2A/UrOZPvlBWhqfWmplvFwf6Tr3MsW7XgMQW5bveM9WFMCBRKUH1Q" defer></script>
-<script src="/static/app.js" integrity="sha384-ZDDlGXA1lwT6puo3BCsIIzChCPT0u/Oc7SB5F/clDuJNF7JuaI75CT1S4tAYdr0d" defer></script>
+<script src="/static/app.js" integrity="sha384-bsIWAU5nytYSAaHAkMH3FQ9sl/YSl3IX2YquGBh0+hm0zbYCNyT148FjvrnoWdYg" defer></script>
 </body>
 </html>

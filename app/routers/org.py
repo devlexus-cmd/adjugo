@@ -203,8 +203,11 @@ def invite_member(data: InviteIn, request: Request, current_user: User = Depends
         # propre adresse. Sinon, le mot de passe provisoire est affiché à transmettre.
         if not getattr(current_user, "email_verified", False):
             raise RuntimeError("expéditeur non confirmé")
+        # Un compte peut n'avoir aucun nom (champ facultatif à l'inscription, compte Google sans nom) : la phrase garde
+        # un sujet (contrôle des bugs, deuxième passe : « Bonjour,  vous invite à rejoindre… »).
+        qui = (current_user.full_name or "").strip() or "Un collègue"
         emailed = send_email(member.email, f"Invitation à rejoindre {org.name} sur Adjugo",
-                   f"Bonjour,\n\n{current_user.full_name} vous invite à rejoindre l'espace "
+                   f"Bonjour,\n\n{qui} vous invite à rejoindre l'espace "
                    f"« {org.name} » sur Adjugo.\n\nIdentifiant : {member.email}\n"
                    f"Mot de passe provisoire : {temp_password}\n\nConnectez-vous puis "
                    f"changez votre mot de passe (menu Réglages, puis Mon compte).\n\n— Adjugo")
