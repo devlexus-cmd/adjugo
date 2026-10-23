@@ -764,7 +764,12 @@ def metrics(request: Request):
     if token:
         auth = request.headers.get("authorization", "")
         provided = auth[7:] if auth.lower().startswith("bearer ") else request.query_params.get("token", "")
-        if provided != token:
+        # Comparaison à TEMPS CONSTANT sur des octets (comme le secret cron / le code DCE) :
+        # un « != » fuite la longueur du préfixe correct par le temps de réponse.
+        import secrets as _secrets
+        ok = bool(provided) and _secrets.compare_digest(
+            provided.encode("utf-8", "surrogateescape"), token.encode("utf-8", "surrogateescape"))
+        if not ok:
             return JSONResponse(status_code=401, content={"error": "jeton metrics requis"})
     from app.core.metrics import render
     return PlainTextResponse(render(), media_type="text/plain; version=0.0.4")

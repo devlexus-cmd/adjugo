@@ -342,16 +342,31 @@ def get_me(current_user: User = Depends(get_current_user)):
     return current_user
 
 
+class ProfileUpdate(BaseModel):
+    full_name: Optional[str] = None
+    email: Optional[str] = None
+    # Exigé UNIQUEMENT pour changer l'adresse email (ci-dessous). Un token de session volé ne
+    # doit pas suffire à détourner l'adresse puis à prendre le compte via « mot de passe
+    # oublié » : on redemande le mot de passe courant, comme change-password / delete-account.
+    current_password: Optional[str] = None
+
+
 @router.put("/me", response_model=UserOut)
 @limiter.limit("10/hour")
 def update_me(
     request: Request,
-    full_name: str = None,
-    email: str = None,
+    data: ProfileUpdate,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Mettre à jour le profil."""
+    """Mettre à jour le profil (nom, adresse email).
+
+    Le nom et l'adresse passent dans le CORPS JSON, jamais en paramètres d'URL : une donnée
+    personnelle ne doit pas finir dans les logs d'accès, l'historique du navigateur ou l'en-tête
+    Referer. Changer l'adresse exige en plus le mot de passe courant (ré-authentification).
+    """
+    full_name = data.full_name
+    email = data.email
     # Le compte démo est partagé et public : son identité ne change jamais (sinon un visiteur
     # détournait l'adresse de la démo et recevait les emails qui lui sont destinés).
     from app.services.demo_search import is_demo
@@ -379,6 +394,13 @@ def update_me(
         if existing:
             raise HTTPException(status_code=400, detail="Email déjà utilisé")
         if email != (current_user.email or "").strip().lower():
+            # Ré-authentification OBLIGATOIRE : un token de session seul ne suffit pas à changer
+            # l'adresse. Sans ça, une session volée (poste partagé, token fuité) permettait de
+            # pointer l'adresse vers l'attaquant, puis de prendre le compte DÉFINITIVEMENT via
+            # « mot de passe oublié » (qui n'exige pas d'adresse vérifiée) → victime verrouillée.
+            if not verify_password(data.current_password or "", current_user.hashed_password or ""):
+                raise HTTPException(status_code=403,
+                                    detail="Mot de passe actuel requis pour changer d'adresse email.")
             if not _verify_mail_budget(current_user.id, consume=False):
                 raise HTTPException(status_code=429, detail="Trop de changements d'adresse aujourd'hui. "
                                                             "Réessayez demain ou écrivez-nous.")

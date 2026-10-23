@@ -32,19 +32,34 @@ router = APIRouter(prefix="/api/dce", tags=["Rédacteur de DCE (acheteur)"])
 
 
 def _has_valid_acheteur_token(request: Request) -> bool:
-    """Un acheteur CONNECTÉ (token JWT `typ=acheteur` valide) vaut accès — plus besoin du
-    code. On vérifie signature + expiration + claim (pas de DB ici : la validation complète
-    a lieu sur les endpoints /api/acheteur/*, celui-ci n'est qu'un portillon de confort)."""
+    """Un acheteur CONNECTÉ (token JWT `typ=acheteur` valide) vaut accès — plus besoin du code.
+
+    Validation COMPLÈTE (comme get_current_acheteur) : signature + expiration + claim `typ`, jeton
+    de SESSION (tv présent, pas de `purpose`), compte EXISTANT et ACTIF, version de token à jour
+    (session non révoquée) et, pour une session démo par lien privé, clé courante. Sans la relecture
+    en base, un acheteur désactivé ou dont les sessions ont été révoquées gardait l'accès au
+    générateur (LLM payant) jusqu'à l'expiration du jeton."""
     auth = request.headers.get("authorization", "")
     if not auth.lower().startswith("bearer "):
         return False
     try:
         p = decode_token(auth[7:].strip())
-        if p.get("typ") != "acheteur":
+        if p.get("typ") != "acheteur" or p.get("purpose") or "tv" not in p:
             return False
         # Session démo ouverte par le lien privé : refusée dès que la clé a changé (sans base).
         from app.core.demo_guard import DEMO_LIEN_CLAIM, demo_lien_jeton_valide
-        return not p.get(DEMO_LIEN_CLAIM) or demo_lien_jeton_valide(p)
+        if p.get(DEMO_LIEN_CLAIM) and not demo_lien_jeton_valide(p):
+            return False
+        from app.core.database import SessionLocal
+        from app.models import Acheteur
+        db = SessionLocal()
+        try:
+            a = db.query(Acheteur).filter(Acheteur.id == int(p.get("sub"))).first()
+        finally:
+            db.close()
+        if a is None or not getattr(a, "is_active", True):
+            return False
+        return int(p.get("tv") or 0) == int(getattr(a, "token_version", 0) or 0)
     except Exception:
         return False
 

@@ -58,7 +58,9 @@ def test_changement_d_adresse_plafonne_par_compte(client, mails):
     h, _ = _register(client, verified=False, prefix="me")
     codes = []
     for i in range(VERIFY_MAILS_PER_DAY + 4):
-        r = client.put("/api/auth/me", headers=h, params={"email": f"victime{i}_{uuid.uuid4().hex[:6]}@exemple.fr"})
+        r = client.put("/api/auth/me", headers=h,
+                       json={"email": f"victime{i}_{uuid.uuid4().hex[:6]}@exemple.fr",
+                             "current_password": "motdepasse123"})
         codes.append(r.status_code)
     assert 429 in codes
     confirm = [m for m in mails if "Confirmez" in m[1]]

@@ -168,6 +168,12 @@ class GroupementRequest(BaseModel):
     project_id: int
 
 
+# Bornes par requête (anti-amplification, cf. optimize_groupement) : au plus 40 lots listés et
+# 12 recherches de co-traitants (discover) — un marché réel dépasse rarement une dizaine de lots.
+_MAX_LOTS_GROUPEMENT = 40
+_MAX_DISCOVER_GROUPEMENT = 12
+
+
 @router.post("/groupement")
 @limiter.limit("30/hour")
 def optimize_groupement(request: Request, req: GroupementRequest,
@@ -199,12 +205,19 @@ def optimize_groupement(request: Request, req: GroupementRequest,
         dep = str(gonogo["departements"]).split(",")[0].strip()[:2]
     deps = [dep] if dep else []
 
-    lots = parse_lots(details.get("allotissement", ""))
+    # Bornes anti-amplification : un allotissement (forgé, ou extrait d'un DCE à rallonge) peut
+    # porter des dizaines de lots, et chaque lot non couvert déclenche un discover() ≈ 13 requêtes
+    # HTTP sortantes synchrones (avec retries). Sur le process unique (1 worker), une requête non
+    # bornée fige le service plusieurs minutes → DoS. On borne donc le nombre de lots traités ET le
+    # nombre de recherches de co-traitants par requête ; les lots au-delà sont listés mais non
+    # recherchés (couverture « non_couvert »).
+    lots = parse_lots(details.get("allotissement", ""))[:_MAX_LOTS_GROUPEMENT]
     mine = own_trades({**company_data, "specialites": gonogo.get("specialites", "")})
     trade_label = {t["key"]: t["label"] for t in TRADES}
 
     svc = _company_service()
     out_lots, n_propre, n_cot, n_non = [], 0, 0, 0
+    discovers = 0
     for lot in lots:
         key = infer_trade(lot["label"])
         entry = {"num": lot["num"], "label": lot["label"],
@@ -212,9 +225,10 @@ def optimize_groupement(request: Request, req: GroupementRequest,
         if key and key in mine:
             entry["couverture"], entry["role"] = "propre", "mandataire"
             n_propre += 1
-        elif key:
+        elif key and discovers < _MAX_DISCOVER_GROUPEMENT:
             # « PME seulement » (lot 1, point 5 ; moteur § 6.2 point 7), comme le verdict de groupement
             # (app/services/groupement_verdict.py) : une TPE cherche des partenaires à sa mesure.
+            discovers += 1
             res = svc.discover(activity=key, departement=dep, tender_departements=deps,
                                need_label=trade_label.get(key, ""), limit=6, pme_only=True)
             best = res["companies"][0] if res["companies"] else None
@@ -225,6 +239,11 @@ def optimize_groupement(request: Request, req: GroupementRequest,
             else:
                 entry["couverture"], entry["role"] = "non_couvert", None
                 n_non += 1
+        elif key:
+            # Budget de recherche de co-traitants épuisé pour cette requête : lot listé, pas de
+            # recherche réseau (évite l'amplification sur un allotissement à rallonge).
+            entry["couverture"], entry["role"] = "non_couvert", None
+            n_non += 1
         else:
             entry["couverture"], entry["role"] = "indetermine", None
             n_non += 1

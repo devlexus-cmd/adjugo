@@ -716,9 +716,36 @@ def _read_member_limited(zf, info, limit: int) -> bytes:
     return data
 
 
+def _real_member_size(zf, info, cap: int):
+    """Taille décompressée RÉELLE d'un membre, mesurée EN FLUX sans jamais garder plus de 64 Ko
+    en mémoire ni décompresser au-delà de `cap` + 1 octet. Retourne la taille réelle, ou None si
+    elle dépasse `cap` (ou si la compression n'est pas sûre).
+
+    On ne fait JAMAIS confiance à `info.file_size` : ce champ du répertoire central est contrôlé
+    par l'émetteur de l'archive. Une partie peut déclarer « 1 Ko » et étendre son flux deflate à
+    plusieurs Go — c'est la bombe de décompression. En lisant le flux par blocs et en s'arrêtant
+    dès `cap` dépassé, on borne la mémoire quoi que déclare l'en-tête."""
+    if info.compress_type not in _ZIP_SAFE_COMPRESSION:
+        return None
+    seen = 0
+    with zf.open(info) as fh:                     # flux décompressé, lu par blocs de 64 Ko
+        while True:
+            chunk = fh.read(65536)
+            if not chunk:
+                break
+            seen += len(chunk)
+            if seen > cap:                        # on s'arrête AVANT de matérialiser la bombe
+                return None
+    return seen
+
+
 def _docx_sizes_ok(data: bytes) -> bool:
-    """Un .docx est une archive : on vérifie ses tailles décompressées AVANT python-docx
-    (qui charge toutes les parties en mémoire et parse le XML)."""
+    """Un .docx/.xlsx/.ods/.odt est une archive : on vérifie ses tailles décompressées RÉELLES
+    AVANT que python-docx / `z.read(...)` ne chargent les parties en mémoire et ne parsent le XML.
+
+    La taille est MESURÉE en flux (jamais la valeur déclarée dans l'archive, falsifiable) : une
+    partie qui ment « 1 Ko » mais dont le flux réel pèse plusieurs Go est refusée sans faire
+    exploser la mémoire (cf. _real_member_size)."""
     import io, zipfile
     try:
         if not _zip_entry_count_ok(data):
@@ -729,10 +756,12 @@ def _docx_sizes_ok(data: bytes) -> bool:
                 if i.compress_type not in _ZIP_SAFE_COMPRESSION:
                     return False
                 is_xml = i.filename.lower().endswith((".xml", ".rels"))
-                if i.file_size > (DOCX_XML_MAX_BYTES if is_xml else DOCX_PART_MAX_BYTES):
+                part_max = DOCX_XML_MAX_BYTES if is_xml else DOCX_PART_MAX_BYTES
+                real = _real_member_size(z, i, part_max)
+                if real is None:                  # partie réellement trop grosse (ou compression piégée)
                     return False
-                total += i.file_size
-                xml_total += i.file_size if is_xml else 0
+                total += real
+                xml_total += real if is_xml else 0
                 if total > DOCX_TOTAL_MAX_BYTES or xml_total > DOCX_XML_TOTAL_MAX_BYTES:
                     return False
         return True

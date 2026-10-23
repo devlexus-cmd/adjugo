@@ -23,8 +23,7 @@ router = APIRouter(prefix="/api/admin", tags=["Administration"])
 def storage_diag(current_user: User = Depends(get_current_user)):
     """Diagnostic du stockage (sans exposer les secrets) : ce que le serveur voit
     réellement + un test d'écriture/lecture sur le bucket. RÉSERVÉ aux administrateurs."""
-    if not getattr(current_user, "is_admin", False):
-        raise HTTPException(403, "Réservé à l'administrateur")
+    _require_platform_admin(current_user)
     s = settings
 
     def mask(v):
@@ -72,8 +71,7 @@ def _check_cron(request: Request):
 def run_backup_now(current_user: User = Depends(get_current_user)):
     """Déclenche une sauvegarde immédiate de la base vers R2. Réservé à l'administrateur.
     (La sauvegarde tourne aussi toute seule chaque jour via le planificateur.)"""
-    if not getattr(current_user, "is_admin", False):
-        raise HTTPException(403, "Réservé à l'administrateur")
+    _require_platform_admin(current_user)
     from app.services.backup import run_backup
     return run_backup(keep=settings.BACKUP_KEEP)
 
@@ -81,8 +79,7 @@ def run_backup_now(current_user: User = Depends(get_current_user)):
 @router.get("/backups")
 def list_backups(current_user: User = Depends(get_current_user)):
     """Liste les sauvegardes présentes dans R2 (preuve que le filet fonctionne)."""
-    if not getattr(current_user, "is_admin", False):
-        raise HTTPException(403, "Réservé à l'administrateur")
+    _require_platform_admin(current_user)
     from app.services.storage import get_storage
     from app.services.backup import PREFIX, is_backup_key
     keys = sorted([k for k in get_storage().list_keys(PREFIX) if is_backup_key(k)], reverse=True)

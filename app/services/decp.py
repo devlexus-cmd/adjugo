@@ -191,8 +191,15 @@ def detect_renewals_decp(query: str, departements, criteria: dict, domaines=None
 
 def where_titulaire(siren: str) -> str:
     """Clause ODSQL : le SIREN figure comme titulaire 1, 2 OU 3 (rédaction, vague 5, E2 : un marché
-    remporté en groupement porte souvent l'entreprise en titulaire 2 ou 3). `siren` : 9 chiffres."""
-    return " or ".join(f'startswith(titulaire_id_{i}, "{siren}")' for i in (1, 2, 3))
+    remporté en groupement porte souvent l'entreprise en titulaire 2 ou 3). `siren` : 9 chiffres.
+
+    Le SIREN est RÉDUIT à ses chiffres avant interpolation (comme les départements/CPV filtrés
+    ailleurs) : jamais de caractère arbitraire injecté dans la requête ODSQL. Un SIREN vide/illisible
+    donne une clause qui ne matche rien (plutôt que de ramener tous les marchés)."""
+    s = "".join(ch for ch in str(siren or "") if ch.isdigit())[:9]
+    if not s:
+        return "titulaire_id_1 is null and titulaire_id_1 is not null"
+    return " or ".join(f'startswith(titulaire_id_{i}, "{s}")' for i in (1, 2, 3))
 
 
 def wins_by_siren(siren: str) -> dict:

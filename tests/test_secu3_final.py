@@ -166,7 +166,7 @@ def test_demo_profil_non_modifiable(client):
     if r.status_code != 200:
         pytest.skip("démo indisponible dans cet environnement")
     h = {"Authorization": f"Bearer {r.json()['access_token']}"}
-    r = client.put("/api/auth/me", headers=h, params={"email": "pirate@exemple.fr"})
+    r = client.put("/api/auth/me", headers=h, json={"email": "pirate@exemple.fr"})
     assert r.status_code == 403
     me = client.get("/api/auth/me", headers=h).json()
     assert me["email"] != "pirate@exemple.fr"

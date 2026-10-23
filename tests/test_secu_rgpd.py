@@ -496,7 +496,7 @@ def test_demo_ne_peut_plus_envoyer_d_email(client, demo, mails):
     assert "partenaire" in _demo_msg(r)
     _demo_msg(client.post(f"/api/projects/{pid}/invites/1/resend", headers=demo))
     _demo_msg(client.post("/api/org/invite", headers=demo, json={"email": "victime@tiers.example"}))
-    _demo_msg(client.put("/api/auth/me", params={"email": "victime@tiers.example"}, headers=demo))
+    _demo_msg(client.put("/api/auth/me", json={"email": "victime@tiers.example"}, headers=demo))
     _demo_msg(client.post(f"/api/projects/{pid}/offre/figer", headers=demo))
     assert mails == []
 

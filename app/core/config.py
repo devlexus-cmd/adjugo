@@ -199,6 +199,13 @@ class Settings(BaseSettings):
                                  "définissez une clé d'au moins 32 caractères.")
             import secrets as _secrets
             self.SECRET_KEY = _secrets.token_hex(32)
+        # CORS : en production, refuser une liste d'origines contenant « * ». Avec
+        # allow_credentials=True, une origine reflétée + Allow-Credentials:true permet le vol de
+        # session cross-origin. En dev/staging on tolère (pratique pour les previews).
+        if self.ENVIRONMENT == "production":
+            if any(o.strip() == "*" for o in (self.CORS_ORIGINS or "").split(",")):
+                raise ValueError("CORS_ORIGINS=* interdit en production (credentials activés) : "
+                                 "listez les origines autorisées explicitement.")
         return self
 
     class Config:

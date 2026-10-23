@@ -135,9 +135,10 @@ def test_ancien_lien_ne_prouve_pas_la_nouvelle_adresse(client, sent_links):
     # 1. L'utilisateur confirme son adresse initiale.
     assert client.post("/api/auth/verify-email", json={"token": link_a}).status_code == 200
 
-    # 2. Il la remplace par une adresse qu'il ne possède pas.
+    # 2. Il la remplace par une adresse qu'il ne possède pas (mot de passe courant exigé).
     email_b = _email("autre")
-    r = client.put("/api/auth/me", params={"email": email_b}, headers=_h(session))
+    r = client.put("/api/auth/me", json={"email": email_b, "current_password": "motdepasse123"},
+                   headers=_h(session))
     assert r.status_code == 200, r.text
     assert r.json()["email_verified"] is False
     _, link_b = sent_links[-1]
@@ -169,14 +170,46 @@ def test_lien_sans_adresse_refuse(client):
 
 def test_update_me_email_normalise_et_valide(client):
     email, session = _register(client)
-    r = client.put("/api/auth/me", params={"email": "pas-une-adresse"}, headers=_h(session))
+    r = client.put("/api/auth/me", json={"email": "pas-une-adresse", "current_password": "motdepasse123"},
+                   headers=_h(session))
     assert r.status_code == 400 and "invalide" in r.json()["detail"].lower()
     autre, _ = _register(client)
-    r = client.put("/api/auth/me", params={"email": autre.upper()}, headers=_h(session))
+    r = client.put("/api/auth/me", json={"email": autre.upper(), "current_password": "motdepasse123"},
+                   headers=_h(session))
     assert r.status_code == 400  # doublon insensible à la casse
     nouv = _email("Mixte").replace("mixte", "MiXte")
-    r = client.put("/api/auth/me", params={"email": nouv}, headers=_h(session))
+    r = client.put("/api/auth/me", json={"email": nouv, "current_password": "motdepasse123"},
+                   headers=_h(session))
     assert r.status_code == 200 and r.json()["email"] == nouv.lower()
+
+
+def test_changement_email_exige_le_mot_de_passe(client):
+    """EXPLOIT : une session volée (token seul, sans mot de passe) détournait l'adresse, puis
+    prenait le compte DÉFINITIVEMENT via « mot de passe oublié ». Le changement d'adresse exige
+    désormais le mot de passe courant — un token volé ne suffit plus."""
+    email, session = _register(client)
+    cible = _email("pirate")
+    # Sans mot de passe → refusé.
+    assert client.put("/api/auth/me", json={"email": cible}, headers=_h(session)).status_code == 403
+    # Mauvais mot de passe → refusé.
+    r = client.put("/api/auth/me", json={"email": cible, "current_password": "faux"}, headers=_h(session))
+    assert r.status_code == 403
+    # L'adresse n'a pas bougé.
+    assert client.get("/api/auth/me", headers=_h(session)).json()["email"] == email
+    # Avec le bon mot de passe → accepté (parcours légitime préservé).
+    r = client.put("/api/auth/me", json={"email": cible, "current_password": "motdepasse123"},
+                   headers=_h(session))
+    assert r.status_code == 200 and r.json()["email"] == cible.lower()
+
+
+def test_update_me_ignore_les_parametres_d_url(client):
+    """L'adresse ne doit JAMAIS transiter par la query string (logs d'accès, historique,
+    en-tête Referer) : passée en paramètre d'URL, elle n'a AUCUN effet (le corps JSON fait foi)."""
+    email, session = _register(client)
+    r = client.put("/api/auth/me", params={"email": _email("url"), "current_password": "motdepasse123"},
+                   json={}, headers=_h(session))
+    assert r.status_code == 200
+    assert client.get("/api/auth/me", headers=_h(session)).json()["email"] == email
 
 
 # ─── Faille 15 : invitation d'équipe insensible à la casse ───────────────────────────
