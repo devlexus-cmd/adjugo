@@ -23,14 +23,16 @@ def _details(p) -> dict:
 
 
 def _zone(p) -> str:
-    """Département déduit du CODE POSTAL (5 chiffres) du lieu d'exécution, sinon 'Inconnu'.
-    On exige un vrai code postal pour ne pas confondre une année (« 2024 ») ou un n° de rue
-    avec un département. DOM-TOM (97x/98x) conservés sur 3 chiffres."""
+    """Département déduit du CODE POSTAL (5 chiffres) du lieu d'exécution, sinon du numéro de
+    département écrit entre parenthèses (« Angers (49) », « Ajaccio (2A) », « Saint-Denis (974) »),
+    sinon 'Inconnu'. On exige un vrai code postal, ou les parenthèses, pour ne pas confondre une
+    année (« 2024 ») ou un n° de rue avec un département. DOM-TOM (97x/98x) conservés sur 3 chiffres."""
     import re
     lieu = str(_details(p).get("lieu_execution") or "")
     m = re.search(r"\b(\d{5})\b", lieu)
     if not m:
-        return "Inconnu"
+        d = re.search(r"\(\s*(0[1-9]|[1-8]\d|9[0-5]|2[AaBb]|97[1-6])\s*\)", lieu)
+        return d.group(1).upper() if d else "Inconnu"
     cp = m.group(1)
     if cp[:2] == "20":                 # Corse : 2A (20000-20199) / 2B (20200-20999), pas « 20 »
         return "2A" if cp < "20200" else "2B"
@@ -65,12 +67,17 @@ def agent_stats(current_user: User = Depends(get_current_user),
     projects = db.query(Project).filter(Project.user_id.in_(member_ids(current_user, db)),
                                         Project.deleted_at.is_(None)).all()
     total = len(projects)
-    by_status = {}
+    # Un seul axe d'étapes (vague 2a, décision 7) : les comptes viennent dans l'ordre de l'axe (À venir → … →
+    # Abandonné), seulement les étapes où il y a un marché ; l'entonnoir de l'accueil les lit dans cet ordre.
+    from app.models import AXE_ETAPES
+    comptes = {}
     for p in projects:
         key = _status(p)
-        by_status[key] = by_status.get(key, 0) + 1
+        comptes[key] = comptes.get(key, 0) + 1
+    by_status = {k: comptes[k] for k in AXE_ETAPES if comptes.get(k)}
+    by_status.update({k: n for k, n in comptes.items() if k not in by_status})
     won = by_status.get("gagne", 0)
-    sent = by_status.get("envoye", 0) + won + by_status.get("perdu", 0)
+    sent = by_status.get("depose", 0) + won + by_status.get("perdu", 0)
     win_rate = round(won / sent * 100) if sent > 0 else 0
     total_budget = sum(p.budget or 0 for p in projects if _status(p) == "gagne")
 
@@ -98,8 +105,9 @@ def agent_stats(current_user: User = Depends(get_current_user),
             for lk in links:
                 grp_ids.add(lk.project_id)
                 partners_by_proj.setdefault(lk.project_id, set()).add(names.get(lk.cotraitant_id) or "Partenaire")
+            from app.services.groupement_members import active_invite_filter
             for inv in db.query(ProjectInvite).filter(ProjectInvite.project_id.in_(pids2),
-                                                      ProjectInvite.revoked.is_(False)).all():
+                                                      active_invite_filter()).all():
                 grp_ids.add(inv.project_id)
                 if getattr(inv, "company_name", None):
                     partners_by_proj.setdefault(inv.project_id, set()).add(inv.company_name)

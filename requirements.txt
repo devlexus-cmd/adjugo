@@ -1,26 +1,33 @@
-fastapi==0.115.0
+# Dépendances DIRECTES de l'application, épinglées à la version exacte.
+# Ce fichier est la source lisible : c'est lui qu'on modifie à la main.
+# L'image Docker installe requirements.lock (toutes les dépendances, y compris
+# indirectes, avec leurs hachages, via pip --require-hashes), généré depuis ce fichier.
+# Après toute modification ici : régénérer le lock et relancer pip-audit
+# (procédure dans docs/DEPENDANCES.md).
+fastapi==0.133.0   # 1re version qui accepte starlette 1.x (requis pour starlette 1.3.1)
+starlette==1.3.1   # dépendance de fastapi, importée directement (middlewares) ; >= 1.3.1 : 7 CVE fermées
 uvicorn==0.30.0
 sqlalchemy==2.0.35
 alembic==1.13.0
 psycopg2-binary==2.9.9
-python-jose[cryptography]==3.3.0
+python-jose[cryptography]==3.5.0   # 3.5.0 et non 3.4.0 : 3.4.0 impose pyasn1<0.5, vulnérable
 passlib[bcrypt]==1.7.4
-python-multipart==0.0.9
+python-multipart==0.0.31   # >= 0.0.31 : DoS multipart / querystring corrigés
 pydantic[email]==2.9.0
 email-validator==2.2.0
 pydantic-settings==2.5.2
-anthropic==0.34.0
+anthropic==0.34.0   # invariant du projet : API utilisée telle quelle, ne pas monter
 httpx==0.27.2   # anthropic 0.34 passe proxies= ; httpx>=0.28 l'a supprimé → incompat
-python-dotenv==1.0.1
+python-dotenv==1.2.2   # >= 1.2.2 : CVE-2026-28684 (set_key et liens symboliques)
 boto3==1.35.0
 stripe==10.0.0
-pypdf==4.3.0
+pypdf==6.19.0  # >= 6.19 : derniers plafonds anti « bombe » PDF (mémoire, boucles infinies)
 python-docx==1.1.2
 beautifulsoup4==4.15.0   # parsing HTML de la plateforme Mégalis Bretagne (Atexo)
 reportlab==4.2.0
 pytesseract==0.3.13
 pdf2image==1.17.0
-pillow==10.4.0
+pillow==12.3.0   # >= 12.3.0 : écritures hors limites et bombes de décompression corrigées
 slowapi==0.1.10
 pytest==9.0.3
-sentry-sdk[fastapi]==2.18.0
+sentry-sdk[fastapi]==2.56.0   # 1re version compatible starlette 1.x (sinon Sentry se coupe au démarrage)

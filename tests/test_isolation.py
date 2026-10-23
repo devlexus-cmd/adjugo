@@ -13,6 +13,17 @@ def _register(client):
     r = client.post("/api/auth/register", json={
         "email": email, "password": "motdepasse123", "full_name": "X", "company_name": "Y SARL"})
     assert r.status_code == 201, r.text
+    # Adresse considérée vérifiée : ici on teste l'ISOLATION, pas le verrou email
+    # (consume_analysis renvoie 403 tant que l'adresse n'est pas confirmée).
+    from app.core.database import SessionLocal
+    from app.models import User
+    db = SessionLocal()
+    try:
+        u = db.query(User).filter(User.email == email).first()
+        u.email_verified = True
+        db.commit()
+    finally:
+        db.close()
     return {"Authorization": f"Bearer {r.json()['access_token']}"}, email
 
 

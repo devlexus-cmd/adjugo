@@ -17,6 +17,12 @@ from app.schemas import CompanyCreate, CompanyOut, CriteriaUpdate, CriteriaOut
 company_router = APIRouter(prefix="/api/company", tags=["Mon entreprise"])
 
 
+def _refuser_demo(user) -> None:
+    """Défense en profondeur (middleware démo) : le profil de la vitrine partagée ne change pas."""
+    from app.core.demo_guard import refuser_demo
+    refuser_demo(user, "modifier le profil de votre entreprise")
+
+
 @company_router.get("/", response_model=CompanyOut)
 def get_company(
     current_user: User = Depends(get_current_user),
@@ -24,7 +30,7 @@ def get_company(
 ):
     company = db.query(Company).filter(Company.user_id == data_owner_id(current_user, db)).first()
     if not company:
-        raise HTTPException(status_code=404, detail="Profil entreprise non créé")
+        raise HTTPException(status_code=404, detail="Entreprise non renseignée (Mon entreprise, onglet « Identité »)")
     return company
 
 
@@ -34,6 +40,7 @@ def create_company(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    _refuser_demo(current_user)
     oid = data_owner_id(current_user, db)
     existing = db.query(Company).filter(Company.user_id == oid).first()
     if existing:
@@ -43,6 +50,7 @@ def create_company(
     db.add(company)
     db.commit()
     db.refresh(company)
+    _sync_partner_profile(db, oid)
     return company
 
 
@@ -52,6 +60,7 @@ def update_company(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    _refuser_demo(current_user)
     oid = data_owner_id(current_user, db)
     company = db.query(Company).filter(Company.user_id == oid).first()
     if not company:
@@ -66,7 +75,16 @@ def update_company(
 
     db.commit()
     db.refresh(company)
+    _sync_partner_profile(db, oid)
     return company
+
+
+def _sync_partner_profile(db: Session, owner_id: int) -> None:
+    """Réseau de partenaires : un SIRET modifié retire la publication du profil partenaire et
+    exige une nouvelle validation de l'identité par Adjugo (sinon un compte validé pour une
+    entreprise pouvait ensuite publier sous le SIREN d'une autre). Ne lève jamais."""
+    from app.services.partner_network import on_company_saved
+    on_company_saved(db, owner_id)
 
 
 # NB : les critères Go/No-Go sont servis par criteria_v2 (MatchingCriteriaExt). L'ancien

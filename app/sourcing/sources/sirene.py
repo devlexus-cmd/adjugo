@@ -29,7 +29,30 @@ TRADES = [
     {"key": "metallerie", "label": "Serrurerie / Métallerie", "naf": "25.11Z"},
     {"key": "etancheite", "label": "Étanchéité", "naf": "43.99A"},
     {"key": "demolition", "label": "Démolition", "naf": "43.11Z"},
+    # Familles FOURNITURES & SERVICES (la moitié des achats publics) — NAF principal.
+    {"key": "nettoyage", "label": "Nettoyage / Propreté", "naf": "81.21Z"},
+    {"key": "espaces_verts", "label": "Espaces verts / Paysage", "naf": "81.30Z"},
+    {"key": "restauration", "label": "Restauration collective", "naf": "56.29A"},
+    {"key": "informatique", "label": "Informatique / Logiciel", "naf": "62.02A"},
+    {"key": "securite", "label": "Sécurité / Gardiennage", "naf": "80.10Z"},
+    {"key": "imprimerie", "label": "Imprimerie / Reprographie", "naf": "18.12Z"},
+    {"key": "formation", "label": "Formation professionnelle", "naf": "85.59A"},
 ]
+def local_etablissement(e: dict, departement: str):
+    """Établissement de l'entreprise situé DANS le département demandé (l'API filtre le
+    département sur les établissements : sans ça, un grand groupe qui y a une agence
+    s'affichait avec la ville de son siège, loin du marché). None si aucun ne correspond."""
+    dep = (departement or "").strip().upper()
+    if not dep:
+        return None
+    pref = "20" if dep in ("2A", "2B") else dep
+    for et in (e.get("matching_etablissements") or []):
+        cp = str((et or {}).get("code_postal") or "")
+        if cp.startswith(pref) and (et.get("etat_administratif") in (None, "", "A")):
+            return et
+    return None
+
+
 _EFFECTIF = {"NN": None, "00": 0, "01": 2, "02": 4, "03": 8, "11": 15, "12": 30,
              "21": 75, "22": 150, "31": 250, "32": 750, "41": 1500, "42": 3500,
              "51": 7500, "52": 12000}
@@ -38,14 +61,19 @@ _EFFECTIF = {"NN": None, "00": 0, "01": 2, "02": 4, "03": 8, "11": 15, "12": 30,
 class SireneSource(CompanySource):
     name = "SIRENE"
 
+    def __init__(self, timeout: float = 12):
+        # Délai HTTP par appel (12 s par défaut, inchangé). « Qui me complète ? » (réseau de
+        # partenaires) passe un délai court : process unique, jamais d'attente longue.
+        self.timeout = timeout
+
     def _get(self, params: dict) -> list[dict]:
-        with httpx.Client(timeout=12, headers={"User-Agent": "AdjugoBot/1.0"}) as c:
+        with httpx.Client(timeout=self.timeout, headers={"User-Agent": "AdjugoBot/1.0"}) as c:
             r = c.get(API, params=params)
             r.raise_for_status()
             return r.json().get("results", [])
 
     def search(self, activity: str = "", departement: str = "", query: str = "",
-               limit: int = 12) -> list[NormalizedCompany]:
+               limit: int = 12, pme_only: bool = False) -> list[NormalizedCompany]:
         # On accepte une ACTIVITÉ LIBRE : si elle correspond à un métier connu (par clé
         # OU par libellé), on gagne le filtre NAF ; sinon recherche par mots-clés libres.
         al = (activity or "").strip().lower()
@@ -54,17 +82,37 @@ class SireneSource(CompanySource):
         kw = trade["label"] if trade else activity
         if trade:
             params["activite_principale"] = trade["naf"]
-        q = (query or kw).strip()
+        # q (plein-texte) : NE PAS réimposer le libellé du métier quand on a déjà le filtre
+        # NAF — un libellé multi-mots (« Plomberie / CVC », « Plâtrerie / Isolation ») se
+        # combine en ET avec le NAF et ramène 0 résultat. On n'utilise q que pour une
+        # recherche explicite, ou comme mots-clés libres SANS filtre NAF (métier inconnu).
+        q = (query or "").strip() or ("" if trade else (kw or "").strip())
         if q:
             params["q"] = q
         if departement:
             params["departement"] = departement
+        if pme_only:
+            # Recherche de PARTENAIRES pour une TPE/PME : catégorie INSEE « PME » (micro-
+            # entreprises comprises) — sans ce filtre, les grands groupes passaient devant.
+            params["categorie_entreprise"] = "PME"
         try:
             rows = self._get(params)
         except Exception as e:
             logger.warning("SIRENE indisponible : %s", e)
             raise
-        out = [self._normalize(e) for e in rows]
+        out = []
+        for e in rows:
+            c = self._normalize(e)
+            et = local_etablissement(e, departement)
+            if et:
+                # Affiche l'établissement DU département (adresse, ville, SIRET de l'établissement).
+                c.adresse = et.get("adresse") or c.adresse
+                c.code_postal = et.get("code_postal") or c.code_postal
+                c.ville = et.get("libelle_commune") or c.ville
+                c.departement = (et.get("code_postal") or "")[:2] or c.departement
+                if et.get("siret"):
+                    c.siret = et.get("siret")
+            out.append(c)
         return [c for c in out if c.nom]
 
     def get_by_siret(self, siret: str) -> Optional[NormalizedCompany]:
@@ -103,6 +151,9 @@ class SireneSource(CompanySource):
             naf=e.get("activite_principale") or None,
             naf_label=_naf_label(e.get("activite_principale")),
             forme_juridique=None,
+            # nature_juridique "1000" = personne physique (entrepreneur individuel) : son nom
+            # EST une donnée nominative → on le masquera côté acheteur (minimisation RGPD).
+            est_personne_physique=(str(e.get("nature_juridique") or "") == "1000"),
             effectif=eff,
             adresse=siege.get("adresse") or None,
             code_postal=siege.get("code_postal") or None,

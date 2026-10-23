@@ -8,6 +8,8 @@ from functools import lru_cache
 from typing import Optional
 
 from app.core.config import get_settings
+from app.core.http import content_disposition
+from app.core.mime import download_name, is_inline_safe, storage_content_type
 
 settings = get_settings()
 UPLOAD_DIR = "uploads"
@@ -38,7 +40,7 @@ class LocalStorage:
         except FileNotFoundError:
             pass
 
-    def url(self, key: str, expires: int = 3600) -> Optional[str]:
+    def url(self, key: str, expires: int = 3600, filename: Optional[str] = None) -> Optional[str]:
         return None  # pas d'URL signée en local : on sert via l'API
 
     def list_keys(self, prefix: str = "") -> list:
@@ -67,8 +69,10 @@ class S3Storage:
         self.bucket = settings.S3_BUCKET
 
     def save(self, key: str, content: bytes, content_type: Optional[str] = None) -> str:
-        extra = {"ContentType": content_type} if content_type else {}
-        self.s3.put_object(Bucket=self.bucket, Key=key, Body=content, **extra)
+        # Type DÉRIVÉ de l'extension de la clé (jamais celui annoncé par le client) : l'URL
+        # signée sert l'objet avec ce type, un « text/html » ne doit jamais y être posé.
+        self.s3.put_object(Bucket=self.bucket, Key=key, Body=content,
+                           ContentType=storage_content_type(key, content_type))
         return key
 
     def load(self, key: str) -> bytes:
@@ -78,9 +82,16 @@ class S3Storage:
     def delete(self, key: str) -> None:
         self.s3.delete_object(Bucket=self.bucket, Key=key)
 
-    def url(self, key: str, expires: int = 3600) -> Optional[str]:
-        return self.s3.generate_presigned_url(
-            "get_object", Params={"Bucket": self.bucket, "Key": key}, ExpiresIn=expires)
+    def url(self, key: str, expires: int = 3600, filename: Optional[str] = None) -> Optional[str]:
+        # Le type servi est imposé dans l'URL signée (y compris pour les objets envoyés
+        # avant ce correctif avec un type fourni par le client) ; hors PDF/image, le
+        # navigateur télécharge au lieu d'afficher.
+        mime = storage_content_type(key)
+        params = {"Bucket": self.bucket, "Key": key, "ResponseContentType": mime}
+        if not is_inline_safe(mime):
+            params["ResponseContentDisposition"] = content_disposition(
+                download_name(filename or os.path.basename(key), key), "attachment")
+        return self.s3.generate_presigned_url("get_object", Params=params, ExpiresIn=expires)
 
     def list_keys(self, prefix: str = "") -> list:
         out, token = [], None

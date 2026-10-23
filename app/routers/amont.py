@@ -7,6 +7,7 @@ profil de l'entreprise. La valeur : être informé des MOIS avant l'appel d'offr
 """
 import logging
 
+from app.schemas import safe_link_url as _safe_link
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -14,9 +15,11 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.core.ratelimit import limiter
-from app.core.quota import consume_analysis, refund_analysis
+from app.core.quota import consume_analysis, exiger_ia, pause_ia, refund_analysis
 from app.models import User, Signal, Organization
 from app.services.analysis import extract_dce_text
+from app.core.uploads import aread_upload_limited
+from starlette.concurrency import run_in_threadpool
 from app.services.agents.amont import detect_projets, detect_from_deliberations, score_pertinence
 from app.sourcing.sources.deliberations import DeliberationSource
 from app.services.profile import criteria_dict as _criteria_dict
@@ -24,6 +27,20 @@ from app.core.countries import lang_name as _lang_name, country_config
 
 logger = logging.getLogger("adjugo")
 router = APIRouter(prefix="/api/amont", tags=["Veille amont (signaux d'investissement)"])
+
+
+FERMEE = "« Projets à venir » n'est pas encore ouvert : rien n'a été analysé ni décompté."
+FERMEE_AUTO = ("« Projets à venir » n'est pas encore ouvert : la veille automatique ne peut pas être activée "
+               "pour le moment.")
+
+
+def _exiger_ouverte() -> None:
+    """Lot 1, point 7 : tant que l'interrupteur PROJETS_A_VENIR est éteint (app/core/interrupteurs.py), les adresses
+    de la veille masquée refusent proprement (404 et une phrase claire), AVANT toute lecture de fichier, tout appel
+    à l'IA et tout débit d'analyse. Aucun écran n'y mène ; un appel direct ne coûte plus rien au client."""
+    from app.core.interrupteurs import projets_a_venir_actif
+    if not projets_a_venir_actif():
+        raise HTTPException(404, FERMEE)
 
 
 def _country(user, db) -> str:
@@ -44,7 +61,7 @@ def _out(s: Signal) -> dict:
         "budget": s.budget, "budget_texte": s.budget_texte, "localisation": s.localisation,
         "collectivite": s.collectivite, "calendrier": s.calendrier, "metiers": s.metiers or [],
         "extrait": s.extrait, "pertinence": s.pertinence, "pertinence_score": s.pertinence_score,
-        "source_name": s.source_name, "source_url": s.source_url, "source_date": s.source_date,
+        "source_name": s.source_name, "source_url": _safe_link(s.source_url, 700), "source_date": s.source_date,
         "domaine": s.domaine, "phase": s.phase, "echeance_ao": s.echeance_ao,
         "financement": s.financement, "maturite": s.maturite,
         "created_at": s.created_at.isoformat() if s.created_at else None,
@@ -78,7 +95,7 @@ def _persist(projets, default_coll, source_label, current_user, db, domaines=Non
             localisation=(p.get("localisation") or "")[:255], collectivite=coll[:255],
             calendrier=(p.get("calendrier") or "")[:255], metiers=p.get("metiers") or [],
             extrait=(p.get("extrait") or "")[:2000], pertinence=label, pertinence_score=score,
-            source_name=src[:255], source_url=(p.get("url") or "")[:700], source_date=(p.get("date") or "")[:40],
+            source_name=src[:255], source_url=(_safe_link(p.get("url"), 700) or ""), source_date=(p.get("date") or "")[:40],
             domaine=(p.get("domaine") or "")[:80], phase=(p.get("phase") or "")[:40],
             echeance_ao=(p.get("echeance_ao") or "")[:120], financement=(p.get("financement") or "")[:255],
             maturite=int(mat) if isinstance(mat, (int, float)) else None,
@@ -120,28 +137,31 @@ def _analyze_text(text: str, source_name: str, current_user: User, db: Session, 
 @limiter.limit("30/hour")
 async def analyze_upload(request: Request, file: UploadFile = File(...), domaines: str = Form(""),
                          current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    content = await file.read()
-    if not content:
-        raise HTTPException(400, "Fichier vide.")
-    if len(content) > 50 * 1024 * 1024:
-        raise HTTPException(413, "Fichier trop volumineux (50 Mo max).")
+    _exiger_ouverte()                            # veille masquée : 404, rien lu, rien débité
+    exiger_ia(current_user, db)                  # essai terminé sans forfait : 402 avant de lire le fichier
+    content = await aread_upload_limited(file)   # lecture bornée : 413 au-delà de 50 Mo
     try:
-        text = extract_dce_text(file.filename, content)
+        text = await run_in_threadpool(extract_dce_text, file.filename, content)
     except ValueError as e:
         raise HTTPException(422, str(e))
-    consume_analysis(current_user, db)
+    consume_analysis(current_user, db, "deliberation")
     doms = [d.strip() for d in (domaines or "").split(",") if d.strip()]
-    return _analyze_text(text, file.filename or "Délibération importée", current_user, db, domaines=doms)
+    # Hors de la boucle d'événements : l'appel IA (et l'attente d'une place) ne fige pas le serveur.
+    return await run_in_threadpool(_analyze_text, text, file.filename or "Délibération importée",
+                                   current_user, db, domaines=doms)
 
 
 @router.post("/analyze-text")
 @limiter.limit("30/hour")
 def analyze_text(request: Request, payload: dict,
                  current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    _exiger_ouverte()                            # veille masquée : 404, rien lu, rien débité
     text = (payload or {}).get("text", "")
+    if not isinstance(text, str):   # payload {"text": null} ou nombre → 422 propre, pas un 500
+        text = ""
     if len(text.strip()) < 60:
         raise HTTPException(422, "Texte trop court pour une détection fiable.")
-    consume_analysis(current_user, db)
+    consume_analysis(current_user, db, "deliberation")
     doms = (payload or {}).get("domaines") or []
     return _analyze_text(text, (payload.get("source") or "Texte collé")[:255], current_user, db, domaines=doms)
 
@@ -158,6 +178,8 @@ def scan(request: Request, req: ScanRequest = ScanRequest(),
     """Adjugo VA CHERCHER les délibérations récentes des collectivités (open data),
     pré-filtre l'investissement, puis l'IA détecte les projets futurs.
     Si des départements sont ciblés, on ne garde que ces zones."""
+    _exiger_ouverte()                            # veille masquée : 404, aucune lecture, aucun débit
+    exiger_ia(current_user, db)                  # essai terminé sans forfait : 402 avant toute recherche
     country = _country(current_user, db)
     deps = {d.strip()[:3] for d in (req.departements or []) if d.strip()}
     doms = [d.strip() for d in (req.domaines or []) if d.strip()]
@@ -168,7 +190,7 @@ def scan(request: Request, req: ScanRequest = ScanRequest(),
     if not records:
         return {"scanned": 0, "count": 0, "signals": [], "country": country,
                 "errors": ["Aucune délibération sur ce périmètre (élargissez les régions ou réessayez)."]}
-    consume_analysis(current_user, db)
+    consume_analysis(current_user, db, "veille")
     from app.services.llm import tenant_scope
     try:
         with tenant_scope(current_user.id):
@@ -188,14 +210,26 @@ class AutoRequest(BaseModel):
 
 
 @router.get("/auto")
-def auto_status(current_user: User = Depends(get_current_user)):
-    return {"enabled": bool(getattr(current_user, "amont_alerts_enabled", False))}
+def auto_status(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """État de la veille automatique. `en_pause` : activée, mais la veille planifiée ne sert plus ce
+    compte (essai terminé sans forfait, alerts.run_amont_alerts). Le choix est gardé tel quel : la
+    veille reprend seule dès qu'un forfait est choisi. `motif` : 'essai' | 'forfait' | None."""
+    motif = pause_ia(current_user, db)
+    return {"enabled": bool(getattr(current_user, "amont_alerts_enabled", False)),
+            "en_pause": bool(motif), "motif": motif}
 
 
 @router.post("/auto")
 def set_auto(req: AutoRequest, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Active/désactive la veille amont automatique : un scan régulier détecte les
-    nouveaux projets et envoie un email des nouveautés pertinentes."""
+    nouveaux projets et envoie un email des nouveautés pertinentes.
+    Veille masquée (PROJETS_A_VENIR éteint) : l'activation est refusée (404) ; la désactivation reste
+    toujours possible (retirer son accord aux courriels ne coûte rien et ne doit jamais être bloqué)."""
+    if req.enabled:
+        from app.core.interrupteurs import projets_a_venir_actif
+        if not projets_a_venir_actif():
+            raise HTTPException(404, FERMEE_AUTO)
+        exiger_ia(current_user, db)              # essai terminé sans forfait : la veille par l'IA est en pause
     current_user.amont_alerts_enabled = bool(req.enabled)
     db.commit()
     return {"enabled": current_user.amont_alerts_enabled}

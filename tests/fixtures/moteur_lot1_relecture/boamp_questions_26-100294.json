@@ -1,0 +1,45 @@
+{
+ "lu_le": "2026-10-21",
+ "avis": {
+  "idweb": "26-100294",
+  "objet": "Mission d'étude de réalisation d'un plan de référence sur la Commune de Montech",
+  "nomacheteur": "Mairie De Montech",
+  "code_departement": [
+   "82"
+  ],
+  "dateparution": "2026-10-15",
+  "datelimitereponse": "2026-10-23T12:00:00+00:00",
+  "descripteur_libelle": [
+   "Etude"
+  ],
+  "descripteur_code": [
+   "118"
+  ],
+  "nature_libelle": "Avis de marché",
+  "famille_libelle": "Marchés entre 90 k€ et seuils européens",
+  "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-100294",
+  "type_marche": [
+   "SERVICES"
+  ],
+  "procedure_libelle": "Procédure Restreinte",
+  "annonce_lie": null,
+  "nature": "APPEL_OFFRE",
+  "etat": "INITIAL",
+  "contractfolderid": null
+ },
+ "rectificatif": {
+  "idweb": "26-100865",
+  "annonce_lie": [
+   "26-100294"
+  ],
+  "nature": "RECTIFICATIF",
+  "etat": "RECTIFICATIF",
+  "famille": "FNS",
+  "dateparution": "2026-10-16",
+  "datelimitereponse": null,
+  "contractfolderid": null,
+  "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-100865",
+  "donnees": "{\"FNSimple\": {\"suite\": {\"infosRectif\": \"Rubrique : Article 2 règlement de la consultation , Au lieu de Les renseignements complémentaires sur les documents de la consultation seront envoyés aux opérateurs économiques 6 jours calendaires au plus tard avant la date limite fixée pour la réception des offres, pour autant qu'ils en aient fait la demande 10 jours calendaires avant la date limite fixée pour la réception des offres., lire Les renseignements complémentaires sur les documents de la consultation seront envoyés aux opérateurs économiques 6 jours calendaires au plus tard avant la date limite fixée pour la réception des offres, pour autant qu'ils en aient fait la demande 7 jours calendaires avant la date limite fixée pour la réception des offres\"}}}",
+  "objet": "Mission d'étude de réalisation d'un plan de référence sur la Commune de Montech"
+ }
+}

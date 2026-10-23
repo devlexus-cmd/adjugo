@@ -7,29 +7,35 @@ partagées). Chaque consultation/téléchargement est tracé dans le journal d'a
 (RGPD). La portée est TOUJOURS contrainte côté serveur à `invite.project_id` :
 aucune route invité ne lit jamais une autre donnée du tenant.
 """
+import base64
 import io
 import mimetypes
 import os
 import re
 import secrets
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import RedirectResponse, Response, StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.org import data_owner_id, member_ids
 from app.core.ratelimit import limiter
 from app.core.security import get_current_user
-from app.models import (AuditLog, Company, ContributionPiece, Document, Project,
+from app.models import (AuditLog, Company, ContributionPiece, Document, Organization, Project,
                         ProjectContribution, ProjectInvite, User, utcnow)
+from app.schemas import safe_link_url
 from app.services import audit
+from app.services.groupement_members import (active_invite_filter, active_invites, avec_part,
+                                             groupement_state, submitted_contributions,
+                                             total_offre_ht, visible_contributions)
 from app.services.storage import get_storage
 
 router = APIRouter(tags=["Co-traitance"])
@@ -48,12 +54,37 @@ def _is_email(s) -> bool:
 
 def _binding_required(inv) -> bool:
     """Le binding d'identité OTP s'applique UNIQUEMENT si l'email est configuré ET le
-    destinataire est une adresse. Sinon : flux inchangé, zéro friction (l'ADN CaaS)."""
+    destinataire est une adresse. Sinon : flux inchangé, zéro friction (l'ADN CaaS).
+    Jamais pour une invitation de la démo publique : aucun code n'y est envoyé."""
     try:
         from app.services import email as _email
-        return _email.is_enabled() and _is_email(getattr(inv, "recipient", ""))
+        if not (_email.is_enabled() and _is_email(getattr(inv, "recipient", ""))):
+            return False
+        from sqlalchemy.orm import object_session
+        sess = object_session(inv)
+        return not (sess is not None and _invite_is_demo(inv, sess))
     except Exception:
         return False
+
+
+_DEMO_INVITE_MSG = ("La démo est en lecture guidée : commencez votre essai gratuit de 30 jours pour "
+                    "co-construire une réponse avec vos partenaires.")
+
+
+def _invite_is_demo(inv, db: Session) -> bool:
+    """Vrai si l'invitation appartient au compte démo public (vitrine) : aucun email ne doit
+    partir de ses liens invités, et ses pièces ne sont pas modifiables (vitrine partagée)."""
+    try:
+        from app.services.demo_search import is_demo
+        owner = db.query(User).filter(User.id == inv.owner_id).first()
+        return bool(owner and is_demo(owner))
+    except Exception:
+        return False
+
+
+def _refuse_if_demo_invite(inv, db: Session) -> None:
+    if _invite_is_demo(inv, db):
+        raise HTTPException(403, _DEMO_INVITE_MSG)
 
 
 def _mask_email(e: str) -> str:
@@ -64,37 +95,188 @@ def _mask_email(e: str) -> str:
     return ((user[0] + "***") if user else "***") + "@" + dom
 
 
+def _audit_email_detail(inv) -> str:
+    """Détail d'audit des codes de vérification. Le journal complet est lisible par le chef de
+    file : pour une invitation RÉSEAU (adresse remplie par Adjugo et masquée), on n'y écrit
+    même pas l'adresse masquée (le domaine suffirait à identifier l'entreprise)."""
+    if (getattr(inv, "source", "") or "") == "reseau_adjugo":
+        return ""
+    return _mask_email(inv.recipient)
+
+
+def _send_mails_async(mails: list) -> None:
+    """Envoie une liste de (destinataire, sujet, texte) dans un thread démon : les
+    notifications de groupement sont best-effort et ne doivent JAMAIS retenir la réponse
+    HTTP (un SMTP lent bloquait 45 s le figement de l'offre). Les valeurs sont capturées
+    AVANT le thread : aucune session DB n'y est utilisée."""
+    if not mails:
+        return
+    import threading
+
+    def _run():
+        try:
+            from app.services import email as _email
+            for to, subj, text in mails:
+                try:
+                    _email.send_email(to, subj, text)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+    threading.Thread(target=_run, daemon=True).start()
+
+
 def _hash_otp(code: str) -> str:
     return hashlib.sha256(("adjugo-otp:" + (code or "")).encode("utf-8")).hexdigest()
 
 
-def _send_invite_email(inv, project, base_url: str) -> bool:
-    """Envoie le lien d'invitation au co-traitant. No-op gracieux si email désactivé."""
+def chef_de_file_nom(inv, db: Optional[Session] = None) -> str:
+    """Nom de l'entreprise du chef de file d'une invitation (profil entreprise du propriétaire de
+    l'organisation, comme la vue du partenaire) ; "" s'il n'est pas renseigné."""
+    try:
+        if db is None:
+            from sqlalchemy.orm import object_session
+            db = object_session(inv)
+        c = db.query(Company).filter(Company.user_id == inv.owner_id).first() if db is not None else None
+        return ((c.name if c else "") or "").strip()
+    except Exception:
+        return ""
+
+
+def _partie_invitee(inv, db: Optional[Session] = None) -> str:
+    """Partie du marché que porte l'invitation (rattachement au marché), "" sinon."""
+    try:
+        if db is None:
+            from sqlalchemy.orm import object_session
+            db = object_session(inv)
+        from app.routers.cotraitants import ProjectCotraitant
+        lk = (db.query(ProjectCotraitant).filter(ProjectCotraitant.invite_id == inv.id).first()
+              if db is not None else None)
+        return ((lk.lot if lk else "") or "").strip()
+    except Exception:
+        return ""
+
+
+def _send_invite_email(inv, project, base_url: str, relance: bool = False) -> bool:
+    """Envoie le lien d'invitation au partenaire (ou le renvoie, `relance`). No-op gracieux si email désactivé.
+    Horodate l'envoi réussi (emailed_at) → le chef de file voit si le mail est parti. Courriel en HTML avec sa
+    version texte (vague 2b, B4 : app/services/email_invitation.py) ; le lien `/invite/<jeton>` ne change pas."""
     if not _is_email(inv.recipient):
         return False
     try:
         from app.services import email as _email
+        from app.services.email_invitation import invitation
         url = base_url.rstrip("/") + f"/invite/{inv.token}"
-        who = inv.company_name or "votre entreprise"
-        subj = f"Invitation à co-traiter sur un marché — {project.name[:60]}"
-        text = (f"Bonjour,\n\nVous êtes invité(e) à rejoindre le groupement pour répondre au "
-                f"marché « {project.name} » sur Adjugo, en tant que {who}.\n\n"
-                f"Accédez à votre espace dédié (cloisonné à ce seul dossier) :\n{url}\n\n"
-                f"Vous n'y voyez que ce dossier et votre propre contribution — jamais les "
-                f"données des autres partenaires.\n\n— Adjugo, le réseau des PME")
-        return _email.send_email(inv.recipient, subj, text)
+        c = invitation(chef=chef_de_file_nom(inv), marche=project.name, url=url, date_limite=project.deadline,
+                       role=inv.role or "cotraitant", peut_contribuer=bool(getattr(inv, "can_contribute", True)),
+                       voit_pieces=bool(inv.can_view_docs), partie=_partie_invitee(inv),
+                       entreprise=inv.company_name or "", relance=relance, expire_le=inv.expires_at)
+        sent = _email.send_email(inv.recipient, c["objet"], c["texte"], html=c["html"])
+        if sent:
+            inv.emailed_at = utcnow()
+        return sent
     except Exception:
         return False
+
+
+def _mandataire_email(owner_id: int, db: Session) -> Optional[str]:
+    """Email du mandataire (propriétaire du tenant) pour les notifications de groupement.
+    Aucun pour le compte démo public (la démo n'envoie jamais d'email)."""
+    u = db.query(User).filter(User.id == owner_id).first()
+    if u:
+        from app.services.demo_search import is_demo
+        if is_demo(u):
+            return None
+        # Adresse non prouvée = jamais de notification : sinon on posait l'adresse d'un
+        # tiers sur son compte puis on faisait soumettre une part en boucle (spam Adjugo).
+        if not getattr(u, "email_verified", False):
+            return None
+    return (u.email if u and _is_email(u.email or "") else None)
+
+
+# Anti-rafale des notifications par invitation (process unique : en mémoire suffit).
+_NOTIFY_LAST: dict = {}
+_NOTIFY_LOCK = __import__("threading").Lock()
+NOTIFY_MIN_INTERVAL_S = 30 * 60
+
+
+def _notify_allowed(key) -> bool:
+    import time
+    now = time.time()
+    with _NOTIFY_LOCK:
+        last = _NOTIFY_LAST.get(key)
+        if last is not None and now - last < NOTIFY_MIN_INTERVAL_S:
+            return False
+        _NOTIFY_LAST[key] = now
+        if len(_NOTIFY_LAST) > 20000:      # borne mémoire
+            _NOTIFY_LAST.clear()
+        return True
+
+
+def _notify_part_submitted(inv, contribution, db: Session) -> None:
+    """Prévient le mandataire par email qu'une part vient d'être soumise (best-effort).
+    Un dirigeant ne rafraîchit pas Adjugo toute la journée : sans ça, il peut rater une
+    part reçue à la veille du dépôt."""
+    try:
+        to = _mandataire_email(inv.owner_id, db)
+        if not to or not _notify_allowed(("part_submitted", inv.id)):
+            return
+        from app.services import email as _email
+        project = db.query(Project).filter(Project.id == inv.project_id).first()
+        pname = (project.name if project else "votre marché")
+        who = contribution.company_name or inv.company_name or "Un partenaire"
+        # X/Y partenaires prêts (parts soumises / invitations actives du projet qui apportent une part : un lien en
+        # lecture seule n'en a aucune à soumettre).
+        total = len(avec_part(active_invites(db, inv.project_id)))
+        done = len(submitted_contributions(db, inv.project_id))
+        base = (_settings.APP_BASE_URL or "").rstrip("/")
+        subj = f"{who} a soumis sa part — {pname[:60]}"
+        text = (f"Bonjour,\n\n{who} vient de soumettre sa part sur le marché « {pname} ».\n"
+                f"Partenaires prêts : {done} sur {total}.\n\n"
+                f"Ouvrez ce marché dans Adjugo pour assembler la réponse commune :\n{base}/app/marches/{inv.project_id}\n\n"
+                f"— Adjugo")
+        _email.send_email(to, subj, text)
+    except Exception:
+        pass
+
+
+def _notify_partner_received(inv, db: Session) -> None:
+    """Accusé de réception au partenaire après soumission (best-effort) : une trace écrite
+    rassure un dirigeant qui vient d'envoyer une pièce engageante à un marché public."""
+    try:
+        if not _is_email(inv.recipient) or _invite_is_demo(inv, db):
+            return
+        if not _notify_allowed(("part_received", inv.id)):
+            return
+        from app.services import email as _email
+        project = db.query(Project).filter(Project.id == inv.project_id).first()
+        pname = (project.name if project else "le marché")
+        owner_company = db.query(Company).filter(Company.user_id == inv.owner_id).first()
+        # « transmise à Breizh Couverture » / « au chef de file » (jamais « à le chef de file »).
+        a_chef = (f"à {owner_company.name}" if owner_company and owner_company.name
+                  else "au chef de file")
+        subj = f"Votre part a bien été transmise — {pname[:60]}"
+        text = (f"Bonjour,\n\nVotre part sur le marché « {pname} » a bien été transmise "
+                f"{a_chef}.\n\nVous pouvez encore l'ajuster (texte et pièces) jusqu'à la date "
+                f"limite via votre lien. Toute modification après envoi repasse votre part en "
+                f"brouillon : pensez à la re-soumettre.\n\n— Adjugo, le réseau des PME")
+        _email.send_email(inv.recipient, subj, text)
+    except Exception:
+        pass
 _ALLOWED_EXT = {e.strip().lower() for e in _settings.ALLOWED_UPLOAD_EXT.split(",") if e.strip()}
 _MAX_BYTES = _settings.MAX_UPLOAD_MB * 1024 * 1024
 
 
-def _read_upload(file: UploadFile) -> tuple:
-    """Valide extension + taille d'un fichier téléversé par un invité ; (contenu, ext)."""
+def _read_upload(file: UploadFile, allowed: Optional[set] = None) -> tuple:
+    """Valide extension + taille d'un fichier téléversé par un invité ; (contenu, ext).
+    `allowed` remplace la liste blanche générale (DPGF de lot : PDF, tableurs, CSV)."""
     ext = os.path.splitext(file.filename or "")[1].lower()
-    if _ALLOWED_EXT and ext not in _ALLOWED_EXT:
+    exts = _ALLOWED_EXT if allowed is None else allowed
+    if exts and ext not in exts:
         raise HTTPException(400, f"Type de fichier non autorisé ({ext or 'inconnu'}).")
-    content = file.file.read()
+    # Lecture BORNÉE : on ne charge jamais plus de la limite +1 octet en mémoire (l'upload
+    # vient d'un invité non authentifié → un fichier géant ne doit pas gonfler le process).
+    content = file.file.read(_MAX_BYTES + 1)
     if not content:
         raise HTTPException(400, "Fichier vide")
     if len(content) > _MAX_BYTES:
@@ -105,8 +287,10 @@ def _read_upload(file: UploadFile) -> tuple:
 def _safe_mime(filename: str) -> str:
     """Type MIME DÉRIVÉ de l'extension (jamais le Content-Type fourni par le client) :
     l'extension étant en liste blanche (pdf/png/doc…), on ne peut jamais servir du
-    text/html → pas de XSS au téléchargement. Repli neutre forçant le download."""
-    return mimetypes.guess_type(filename or "")[0] or "application/octet-stream"
+    text/html → pas de XSS au téléchargement. Repli neutre forçant le download.
+    Table FIXE (app.core.mime), pas `mimetypes` qui dépend de la machine."""
+    from app.core.mime import mime_for
+    return mime_for(filename)
 
 
 def _attachment_headers(name: str) -> dict:
@@ -115,7 +299,8 @@ def _attachment_headers(name: str) -> dict:
     base = os.path.basename(name or "fichier")
     ascii_name = re.sub(r'[^A-Za-z0-9._ -]', "_", base) or "fichier"
     return {"Content-Disposition":
-            f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{quote(base, safe='')}"}
+            f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{quote(base, safe='')}",
+            "X-Content-Type-Options": "nosniff"}
 
 # Sous-ensemble SÛR de l'analyse exposé au co-traitant : FAITS PUBLICS du marché (déjà
 # dans l'avis publié), de quoi comprendre et préparer sa part — SANS la stratégie interne
@@ -134,7 +319,9 @@ _SAFE_KEY_MAP = {
     "type_marche": "type_marche",
     "nature_marche": "procedure", "procedure": "procedure",
     "allotissement": "allotissement",
-    "criteres_attribution": "criteres_attribution",
+    # PAS « criteres_attribution » : les critères n'arrivent au partenaire que par la grille
+    # « Comment vous serez noté » (phrase retrouvée, poids tel qu'écrit). La liste brute proposée
+    # par l'IA, aux poids jamais contrôlés, ne sort plus (une seule façon d'afficher la grille).
     "date_limite": "date_limite",
 }
 
@@ -153,12 +340,167 @@ def _safe_analysis(ai_analysis) -> dict:
         v = details.get(real_key)
         if v not in (None, "", [], {}):
             out[front_key] = v
+    # « Comment vous serez noté » : la grille de l'acheteur, en LECTURE, projetée champ par
+    # champ (critères tels qu'écrits, phrase publique du règlement, ce que le dossier impose).
+    # Jamais la grille brute : ni noms de fichiers, ni dates des choix du chef de file.
+    try:
+        from app.services.grille_notation import public_grille
+        g = public_grille(details.get("grille_notation"))
+        if g:
+            out["grille_notation"] = g
+    except Exception:
+        pass
     return out
 
 
-def _invite_public(inv: ProjectInvite, project: Project, owner_company: Optional[Company],
-                   docs: list) -> dict:
+def _plan_breakdown_ok(breakdown, key: str) -> bool:
+    """Lit le statut EN GROUPEMENT d'un critère du plan (dict {clé: {...}} ou liste
+    [{key|critere, status_groupement}]) → booléen. Tolérant : le plan vient d'un autre
+    service (groupement_scoring) et peut être absent ou partiel."""
+    try:
+        if isinstance(breakdown, dict):
+            item = breakdown.get(key)
+            return isinstance(item, dict) and item.get("status_groupement") == "ok"
+        if isinstance(breakdown, list):
+            for item in breakdown:
+                if isinstance(item, dict) and (item.get("key") == key or item.get("critere") == key):
+                    return item.get("status_groupement") == "ok"
+    except Exception:
+        pass
+    return False
+
+
+def _label_of(x) -> str:
+    """Un apport/manque du plan est soit une chaîne, soit {key,label} → libellé lisible."""
+    if isinstance(x, dict):
+        return str(x.get("label") or x.get("key") or "")
+    return str(x or "")
+
+
+# « Ce que le groupement comble », lu par le PARTENAIRE : les libellés du plan sont écrits pour le chef de file
+# (groupement_scoring._LABELS : « … non couvert par votre activité », « … hors de votre zone d'intervention »,
+# « … — à confirmer auprès du partenaire ») et deviennent faux sous les yeux du partenaire, que « votre » désigne. Il
+# lit le même manque sans phrase qui le vise (contrôle des bugs, deuxième passe ; démo de Kerhel comprise).
+_MANQUE_POUR_LE_PARTENAIRE = {
+    "metier": "Métier du marché",
+    "zone": "Lieu d'exécution",
+    "capacite": "Chiffre d'affaires minimum exigé",
+    "qualifs": "Qualifications exigées",
+    "references": "Références de travaux similaires exigées",
+    "effectif": "Effectif minimum exigé",
+}
+
+
+def _manque_pour_le_partenaire(g) -> str:
+    """Libellé d'un manque comblé pour le partenaire : celui de sa clé ; une ancienne entrée sans clé (texte seul) est
+    reconnue à son libellé du chef de file ; sinon le libellé tel quel."""
+    key = g.get("key") if isinstance(g, dict) else None
+    if key in _MANQUE_POUR_LE_PARTENAIRE:
+        return _MANQUE_POUR_LE_PARTENAIRE[key]
+    label = _label_of(g)
+    from app.services.groupement_scoring import _LABELS
+    for k, chef in _LABELS.items():
+        if label.startswith(chef) and k in _MANQUE_POUR_LE_PARTENAIRE:
+            return _MANQUE_POUR_LE_PARTENAIRE[k]
+    return label
+
+
+def _for_member(inv: ProjectInvite, project: Project, db: Session) -> dict:
+    """Vue co-traitant « Pourquoi vous dans ce groupement » : le % COMMUN (jamais le score
+    seul du mandataire), SON apport, les seuils en booléens (jamais les chiffres des
+    autres), l'étape du groupement SANS has_price des autres, et le total SEULEMENT une
+    fois l'offre figée."""
+    st = groupement_state(project, db)
+    plan = project.groupement_plan if isinstance(project.groupement_plan, dict) else {}
+    c = db.query(ProjectContribution).filter(ProjectContribution.invite_id == inv.id).first()
+
+    # Rapprochement de MON entrée dans plan.members : invite_id, sinon siret, sinon nom.
+    my_siret = (c.siret if c and c.siret else "").strip()
+    my_name = ((c.company_name if c and c.company_name else inv.company_name) or "").strip().lower()
+    mine = None
+    for m in (plan.get("members") or []):
+        if not isinstance(m, dict):
+            continue
+        if m.get("invite_id") and m.get("invite_id") == inv.id:
+            mine = m
+            break
+    if mine is None and my_siret:
+        mine = next((m for m in (plan.get("members") or []) if isinstance(m, dict)
+                     and str(m.get("siret") or "").strip() == my_siret), None)
+    if mine is None and my_name:
+        mine = next((m for m in (plan.get("members") or []) if isinstance(m, dict)
+                     and str(m.get("name") or "").strip().lower() == my_name), None)
+    # Apports = clés de critères ('metier', 'capacite'…) → libellés lisibles via le breakdown.
+    breakdown = plan.get("breakdown")
+    label_by_key = {}
+    try:
+        items = breakdown.values() if isinstance(breakdown, dict) else (breakdown or [])
+        for it in items:
+            if isinstance(it, dict) and (it.get("key") or it.get("critere")):
+                label_by_key[it.get("key") or it.get("critere")] = it.get("label") or ""
+        if isinstance(breakdown, dict):
+            for k, it in breakdown.items():
+                if isinstance(it, dict):
+                    label_by_key.setdefault(k, it.get("label") or "")
+    except Exception:
+        label_by_key = {}
+    my_apport = []
+    for a in ((mine or {}).get("apporte") or []):
+        key = a.get("key") if isinstance(a, dict) else str(a or "")
+        if not key:
+            continue
+        label = (a.get("label") if isinstance(a, dict) else None) or label_by_key.get(key) or key
+        my_apport.append({"key": key, "label": label})
+
+    n_members = int(st.get("n_members") or 0)
+    # Total de l'offre : membres du groupement seulement. Jamais un sous-traitant ni un lien en lecture seule (il
+    # n'apporte aucune part et ne signe jamais : groupement_members.apporte_une_part), même avec l'ancienne route
+    # « figer » ; et, une fois la convention générée, seulement un signataire (un lien ajouté après la génération ne
+    # l'a pas). Même règle que son journal (journal_membre.voit_le_total).
+    from app.services.journal_membre import voit_le_total
+    sees_total = bool(st.get("offer_frozen")) and voit_le_total(inv)
+    if sees_total:
+        try:
+            from app.services import groupement_convention as _gc
+            _conv = _gc.get_convention(db, project.id)
+            if _conv is not None and _conv.status in ("a_signer", "signee", "perimee"):
+                sees_total = any(s.invite_id == inv.id for s in _gc.signatures_of(db, _conv))
+        except Exception:
+            sees_total = False
     return {
+        "state": {
+            "state": st.get("state"), "label": st.get("label"), "index": st.get("index"),
+            "steps": st.get("steps"), "n_members": n_members, "n_submitted": st.get("n_submitted"),
+            "offer_frozen": bool(st.get("offer_frozen")),
+            "total_offre_ht": st.get("total_offre_ht") if sees_total else None,
+            "frozen_at": st.get("frozen_at") if sees_total else None,
+            # Liste des membres RÉDUITE : jamais has_price / prix d'un autre.
+            "members": [{"company": m.get("company"), "role": m.get("role"), "status": m.get("status")}
+                        for m in (st.get("members") or [])],
+            # Vague 2 : stepper 1→5 + résumé de la convention (statuts et compteurs seulement).
+            "etape": st.get("etape"), "etapes": st.get("etapes"),
+            "convention": st.get("convention"),
+        },
+        "my_apport": my_apport,
+        "score_groupement": project.groupement_score,     # le % COMMUN, jamais match_score
+        "gaps_combles": [_manque_pour_le_partenaire(g) for g in (plan.get("gaps_combles") or []) if _label_of(g)],
+        "seuils": {"ca_cumule_ok": _plan_breakdown_ok(breakdown, "capacite"),
+                   "qualifs_ok": _plan_breakdown_ok(breakdown, "qualifs")},
+        # À 2 membres (mandataire + 1 partenaire), le total révèle la part de l'autre : compté sur les membres du
+        # groupement (comme la convention), jamais sur les liens (sous-traitant, lecture seule).
+        "warning_two_members": _deux_membres(db, project),
+        "my_capacites": (c.capacites if c and isinstance(c.capacites, dict) else None),
+    }
+
+
+def _deux_membres(db: Session, project: Project) -> bool:
+    from app.services.groupement_convention import deux_membres
+    return deux_membres(db, project)
+
+
+def _invite_public(inv: ProjectInvite, project: Project, owner_company: Optional[Company],
+                   docs: list, db: Session = None) -> dict:
+    out = {
         "project": {
             "name": project.name,
             "client": project.client,
@@ -166,7 +508,9 @@ def _invite_public(inv: ProjectInvite, project: Project, owner_company: Optional
             # décision interne du mandataire (Go/No-Go, faiblesses). On ne donne que des
             # FAITS sur le marché (objet, lots, critères, échéance).
             "deadline": project.deadline.isoformat() if project.deadline else None,
-            "source_url": project.source_url,
+            # Assaini à la LECTURE : une valeur ancienne (antérieure à la validation) ne
+            # ressort jamais en « javascript: » dans l'espace cloisonné du partenaire.
+            "source_url": safe_link_url(project.source_url),
             "analysis": _safe_analysis(project.ai_analysis),
         },
         "mandataire": (owner_company.name if owner_company else "") or "",
@@ -177,6 +521,31 @@ def _invite_public(inv: ProjectInvite, project: Project, owner_company: Optional
         "documents": docs,
         "shared_at": inv.created_at.isoformat() if inv.created_at else None,
     }
+    if db is not None:
+        try:
+            out["for_member"] = _for_member(inv, project, db)
+        except Exception:
+            out["for_member"] = None
+    # Invitation RÉSEAU pas encore acceptée : APERÇU MINIMAL (objet, lots, lieu, échéance,
+    # chef de file) — ni acheteur, ni lien de l'avis, ni pièces. Protège le chef de file d'un
+    # concurrent déguisé tant que le partenaire n'a pas accepté depuis son compte.
+    if _network_pending(inv, db):
+        out["project"]["client"] = None
+        out["project"]["source_url"] = None
+        # Ni acheteur, ni grille de notation (ses phrases recopiées du règlement nomment souvent
+        # l'acheteur) tant que l'invitation n'est pas acceptée.
+        out["project"]["analysis"] = {k: v for k, v in (out["project"].get("analysis") or {}).items()
+                                      if k not in ("acheteur", "grille_notation")}
+        out["documents"] = []
+        out["can_view_docs"] = False
+        # Ni composition du groupement, ni score commun avant acceptation (stratégie du chef de file).
+        out["for_member"] = None
+        out["apercu_minimal"] = True
+        out["apercu_message"] = ("Aperçu limité : acceptez l'invitation depuis votre compte Adjugo pour voir "
+                                 "le dossier complet (acheteur, pièces du marché).")
+    else:
+        out["apercu_minimal"] = False
+    return out
 
 
 # ── Côté MANDATAIRE (authentifié) ────────────────────────────────────────────
@@ -187,6 +556,10 @@ class InviteCreate(BaseModel):
     can_view_docs: bool = True
     can_contribute: bool = True     # autorise la co-construction (apport de sa part)
     expires_days: int = 30          # 0 = sans expiration
+    # Rattachement au marché (candidat retenu, sans invitation active) que cette invitation concerne :
+    # il porte désormais l'invitation, et n'entre dans les formulaires qu'une fois celle-ci acceptée.
+    # Absent : le rattachement de même nom d'entreprise, s'il est seul.
+    link_id: Optional[int] = None
 
 
 def _owned_project(pid: int, user: User, db: Session) -> Project:
@@ -201,28 +574,160 @@ def _owned_project(pid: int, user: User, db: Session) -> Project:
     return p
 
 
-def _serialize_invite(inv: ProjectInvite, contribution: "ProjectContribution" = None) -> dict:
+def _invite_state(inv: ProjectInvite, contribution: "ProjectContribution" = None) -> str:
+    """État CALCULÉ d'une invitation, du plus définitif au plus initial :
+    revoked | declined | expired | submitted | draft | viewed | sent."""
+    if inv.revoked:
+        return "revoked"
+    if getattr(inv, "declined_at", None):
+        return "declined"
+    if _is_expired(inv.expires_at):
+        return "expired"
+    if contribution and contribution.status == "submitted":
+        return "submitted"
+    if contribution:
+        return "draft"
+    if inv.view_count:
+        return "viewed"
+    return "sent"
+
+
+def _is_network_invite(inv) -> bool:
+    return (getattr(inv, "source", "") or "") == "reseau_adjugo"
+
+
+def _network_responded(inv, contribution=None) -> bool:
+    """Invitation RÉSEAU « répondue » : acceptée depuis le compte du partenaire (claim),
+    adresse prouvée par code, ou part soumise. Décliner n'est pas accepter.
+    DURABLE : une fois répondue (network_accepted_at), elle le reste, même si le compte qui l'avait
+    acceptée est effacé ou si la part repasse en brouillon — l'aperçu minimal et la projection du
+    journal du membre ne reviennent jamais en arrière (un export conservé reste prolongeable)."""
+    if not _is_network_invite(inv):
+        return True
+    return bool(getattr(inv, "network_accepted_at", None)
+                or getattr(inv, "accepted_by_user_id", None) or getattr(inv, "verified_at", None)
+                or (contribution is not None and contribution.status == "submitted"))
+
+
+def _owner_hides_part(inv, contribution=None) -> bool:
+    """Part d'une invitation du RÉSEAU déclinée ou pas encore répondue : le chef de file ne la
+    voit pas (ni contact, ni prix, ni note — un brouillon saisi pendant l'aperçu minimal, ou
+    gardé après un refus). Même seuil de divulgation que l'adresse : acceptée depuis le compte,
+    adresse prouvée par code ou part soumise. Décliner n'est pas répondre."""
+    if inv is None or not _is_network_invite(inv):
+        return False
+    return bool(getattr(inv, "declined_at", None)) or not _network_responded(inv, contribution)
+
+
+def _mark_network_accepted(inv) -> None:
+    """Pose la date de PREMIÈRE réponse positive d'une invitation réseau (jamais remise à zéro).
+    À appeler avant le commit de l'acceptation (claim, code vérifié, part soumise)."""
+    if _is_network_invite(inv) and not getattr(inv, "network_accepted_at", None):
+        inv.network_accepted_at = utcnow()
+
+
+def _network_pending(inv, db: Session = None) -> bool:
+    """Invitation réseau pas encore acceptée → aperçu minimal côté partenaire."""
+    if not _is_network_invite(inv):
+        return False
+    c = None
+    if db is not None:
+        c = db.query(ProjectContribution).filter(ProjectContribution.invite_id == inv.id).first()
+    return not _network_responded(inv, c)
+
+
+def _serialize_invite(inv: ProjectInvite, contribution: "ProjectContribution" = None, db: Session = None) -> dict:
+    declined_at = getattr(inv, "declined_at", None)
+    # Invitation RÉSEAU (vague 3) : l'adresse a été remplie CÔTÉ SERVEUR et reste MASQUÉE au
+    # chef de file tant que le partenaire n'a pas répondu ; le lien n'est jamais remis au chef
+    # de file (Adjugo l'envoie au partenaire, qui le retrouve aussi dans son espace).
+    network = _is_network_invite(inv)
+    if network and contribution is None and db is not None:
+        contribution = db.query(ProjectContribution).filter(ProjectContribution.invite_id == inv.id).first()
+    masked = network and not _network_responded(inv, contribution)
+    # Part d'une invitation du réseau sans réponse (ou déclinée) : invisible du chef de file, ici comme dans le
+    # cockpit et la liste des parts (_owner_hides_part) — ni son état « brouillon », ni « prix renseigné ».
+    if contribution is not None and _owner_hides_part(inv, contribution):
+        contribution = None
     return {
-        "id": inv.id, "token": inv.token, "path": f"/invite/{inv.token}",
-        "recipient": inv.recipient, "company_name": inv.company_name,
+        "id": inv.id,
+        "token": None if network else inv.token,
+        "path": None if network else f"/invite/{inv.token}",
+        "recipient": "" if masked else inv.recipient,
+        "recipient_masque": bool(masked),
+        "company_name": inv.company_name,
         "role": inv.role or "cotraitant",
         "can_view_docs": bool(inv.can_view_docs),
         "can_contribute": bool(getattr(inv, "can_contribute", True)),
         "revoked": bool(inv.revoked),
+        "declined_at": declined_at.isoformat() if declined_at else None,
+        "source": getattr(inv, "source", None) or "manuel",
+        "state": _invite_state(inv, contribution),
         "expires_at": inv.expires_at.isoformat() if inv.expires_at else None,
         "view_count": inv.view_count or 0,
         "last_viewed_at": inv.last_viewed_at.isoformat() if inv.last_viewed_at else None,
         "created_at": inv.created_at.isoformat() if inv.created_at else None,
+        # emailed_at = le lien a réellement été envoyé par email (sinon : à transmettre à la main).
+        "emailed_at": inv.emailed_at.isoformat() if getattr(inv, "emailed_at", None) else None,
         "contribution_status": (contribution.status if contribution else None),
+        # Prix de lot renseigné sur sa part ? (booléen seulement ici ; le montant est dans
+        # /contributions et le cockpit, vue mandataire.)
+        "has_price": bool(contribution and contribution.prix_lot_ht is not None),
     }
 
 
-@router.post("/api/projects/{project_id}/invites")
-def create_invite(project_id: int, body: InviteCreate, request: Request,
-                  current_user: User = Depends(get_current_user),
-                  db: Session = Depends(get_db)):
-    """Génère un lien d'invitation co-traitant pour ce projet (mandataire only)."""
-    project = _owned_project(project_id, current_user, db)
+DAILY_INVITE_CAP = 30
+
+
+def _refuse_demo_sender(user: User) -> None:
+    """Défense en profondeur (en plus du garde central) : la démo n'envoie JAMAIS d'email."""
+    from app.services.demo_search import is_demo
+    if is_demo(user):
+        raise HTTPException(403, "La démo est en lecture guidée : commencez votre essai gratuit de 30 jours "
+                                 "pour inviter un partenaire.")
+
+
+# Emails envoyés à des tiers sous le nom d'Adjugo, comptés dans le MÊME plafond quotidien que les
+# invitations : les renvois d'invitation, et « Demander les parts » du dossier de présentation
+# (rédaction, vague 4 — une entrée de journal par partenaire sollicité).
+_DAILY_CAP_ACTIONS = ("invite.resent", "redaction.parts_demandees")
+
+
+def _daily_invite_count(user: User, db: Session) -> int:
+    """Invitations créées + emails de relance envoyés par l'organisation sur 24 h glissantes."""
+    if getattr(user, "org_id", None):
+        # Verrou de ligne : deux créations simultanées ne contournent pas le plafond.
+        db.query(Organization).filter(Organization.id == user.org_id).with_for_update().first()
+    since = utcnow() - timedelta(hours=24)
+    owners = list(set(member_ids(user, db)) | {data_owner_id(user, db)})
+    n = db.query(ProjectInvite).filter(ProjectInvite.owner_id.in_(owners),
+                                       ProjectInvite.created_at >= since).count()
+    # Les RENVOIS comptent aussi : sinon une seule invitation renvoyée en boucle permettait
+    # d'envoyer des emails sans limite depuis l'adresse d'Adjugo.
+    n += db.query(AuditLog).filter(AuditLog.owner_id.in_(owners), AuditLog.action.in_(_DAILY_CAP_ACTIONS),
+                                   AuditLog.created_at >= since).count()
+    return n
+
+
+def _check_daily_invite_cap(user: User, db: Session) -> None:
+    """Anti-spam : au plus DAILY_INVITE_CAP invitations créées par organisation sur 24 h
+    glissantes (toutes les invitations du tenant, quel que soit le membre qui les crée)."""
+    n = _daily_invite_count(user, db)
+    if n >= DAILY_INVITE_CAP:
+        raise HTTPException(429, f"Vous avez atteint la limite de {DAILY_INVITE_CAP} invitations "
+                                 f"par jour. Réessayez demain.")
+
+
+def _create_invite(db: Session, project: Project, current_user: User, request: Request, *,
+                   recipient: str = "", company_name: str = "", role: str = "cotraitant",
+                   can_view_docs: bool = True, can_contribute: bool = True, expires_days: int = 30,
+                   source: str = "manuel", partner_profile_id: Optional[int] = None,
+                   mailer=None) -> tuple:
+    """Crée l'invitation (lien secret), la journalise, envoie l'email si l'expéditeur a
+    confirmé son adresse, et défige l'offre si besoin. Renvoie (invitation, email_parti).
+    Factorisé (vague 3) SANS changer le comportement de POST /invites : les contrôles d'accès,
+    de démo et de plafond restent à la charge de l'appelant. `mailer(inv, project, base_url)`
+    remplace l'email standard (invitation réseau : texte dédié, adresse jamais montrée)."""
     # owner_id = propriétaire CANONIQUE de l'organisation (porteur du profil entreprise).
     # Toute la co-traitance d'un même tenant converge ainsi sur un seul owner_id : la vue
     # invité (nom du mandataire = Company.user_id == owner_id) et la chaîne d'audit
@@ -231,25 +736,71 @@ def create_invite(project_id: int, body: InviteCreate, request: Request,
     inv = ProjectInvite(
         token=secrets.token_urlsafe(32),
         project_id=project.id, owner_id=owner,
-        recipient=(body.recipient or "").strip()[:255],
-        company_name=(body.company_name or "").strip()[:255],
-        role=(body.role if body.role in ("cotraitant", "sous_traitant") else "cotraitant"),
-        can_view_docs=bool(body.can_view_docs),
-        can_contribute=bool(body.can_contribute),
-        expires_at=(utcnow() + timedelta(days=body.expires_days)) if body.expires_days and body.expires_days > 0 else None,
+        recipient=(recipient or "").strip()[:255],
+        company_name=(company_name or "").strip()[:255],
+        role=(role if role in ("cotraitant", "sous_traitant") else "cotraitant"),
+        can_view_docs=bool(can_view_docs),
+        can_contribute=bool(can_contribute),
+        # Borné à [1, 365] j : days=0 → lien permanent (voulu) ; une valeur énorme faisait
+        # planter timedelta (OverflowError 500), une valeur négative créait un lien déjà expiré.
+        expires_at=(utcnow() + timedelta(days=min(int(expires_days), 365)))
+                   if expires_days and expires_days > 0 else None,
+        source=(source or "manuel")[:20],
+        partner_profile_id=partner_profile_id,
     )
     db.add(inv)
     db.commit()
     db.refresh(inv)
+    # detail = nom d'entreprise seulement (jamais l'email : l'entrée est projetée dans le
+    # journal des AUTRES membres comme « un partenaire a été invité »).
     audit.record(db, action="invite.created", owner_id=owner, project_id=project.id,
                  actor=f"user:{current_user.id}", actor_kind="owner",
-                 target_type="invite", target_id=inv.id,
-                 detail=(inv.company_name or inv.recipient or "")[:255],
+                 target_type="invite", target_id=inv.id, invite_id=inv.id,
+                 detail=(inv.company_name or "")[:255],
                  ip=audit.client_ip(request))
+    # Envoi du lien par email au destinataire (si adresse + SMTP configuré). Renseigne
+    # emailed_at → on commit APRÈS l'envoi pour le persister.
+    # Lien toujours créé ; l'EMAIL ne part que si l'expéditeur a confirmé sa propre adresse
+    # (anti-spam via comptes jetables). Sinon : lien à copier, comme sans adresse.
+    send = mailer or _send_invite_email
+    emailed = (send(inv, project, _settings.APP_BASE_URL or str(request.base_url))
+               if getattr(current_user, "email_verified", False) else False)
+    db.commit()
+    db.refresh(inv)
+    # Un nouveau membre rend caduc un total figé (il ne couvre plus tout le groupement).
+    _unfreeze_offer_if_needed(db, project.id, f"nouveau partenaire invité ({inv.company_name or 'sans nom'})",
+                              actor=f"user:{current_user.id}", actor_kind="owner",
+                              ip=audit.client_ip(request), invite_id=inv.id)
+    return inv, emailed
+
+
+@router.post("/api/projects/{project_id}/invites")
+def create_invite(project_id: int, body: InviteCreate, request: Request,
+                  current_user: User = Depends(get_current_user),
+                  db: Session = Depends(get_db)):
+    """Génère un lien d'invitation co-traitant pour ce projet (mandataire only)."""
+    _refuse_demo_sender(current_user)
+    project = _owned_project(project_id, current_user, db)
+    _check_daily_invite_cap(current_user, db)
+    inv, emailed = _create_invite(db, project, current_user, request,
+                                  recipient=body.recipient, company_name=body.company_name,
+                                  role=body.role, can_view_docs=body.can_view_docs,
+                                  can_contribute=body.can_contribute, expires_days=body.expires_days)
+    # Candidat déjà rattaché au marché (hors sous-traitant, sans invitation encore active) : il porte
+    # l'invitation et entrera dans les formulaires officiels quand elle sera acceptée. Désigné par
+    # `link_id` (carte du marché), sinon retrouvé par le nom d'entreprise (composition retenue, liste
+    # des candidats) ; après un refus ou un retrait, la nouvelle invitation remplace l'ancienne.
+    # Un lien en lecture seule ne porte pas le rattachement : il n'est pas membre du groupement, le partenaire
+    # rattaché reste un candidat hors ligne de la convention (sinon il en disparaissait sans un mot).
+    if (inv.role or "") != "sous_traitant" and inv.can_contribute:
+        from app.services.groupement_members import lien_a_inviter
+        lk = lien_a_inviter(db, project.id, inv.company_name, link_id=body.link_id)
+        if lk is not None:
+            lk.invite_id = inv.id
+            db.commit()
     out = _serialize_invite(inv)
     out["url"] = str(request.base_url).rstrip("/") + out["path"]
-    # Envoi du lien par email au destinataire (si adresse + SMTP configuré).
-    out["emailed"] = _send_invite_email(inv, project, _settings.APP_BASE_URL or str(request.base_url))
+    out["emailed"] = emailed
     return out
 
 
@@ -264,7 +815,104 @@ def list_invites(project_id: int, current_user: User = Depends(get_current_user)
     ).order_by(ProjectInvite.created_at.desc()).all()
     contribs = {c.invite_id: c for c in db.query(ProjectContribution).filter(
         ProjectContribution.project_id == project_id).all()}
-    return [_serialize_invite(r, contribs.get(r.id)) for r in rows]
+    return [_serialize_invite(r, contribs.get(r.id), db=db) for r in rows]
+
+
+RESEND_MIN_INTERVAL = timedelta(minutes=15)
+
+
+def _require_verified_sender(user: User) -> None:
+    """Un email d'invitation part sous le nom d'Adjugo vers un tiers : l'expéditeur doit
+    avoir prouvé sa propre adresse (sinon un compte jetable devient un canal de spam)."""
+    if not getattr(user, "email_verified", False):
+        raise HTTPException(403, "Confirmez d'abord votre adresse email (lien reçu à l'inscription) "
+                                 "pour envoyer des invitations par email. En attendant, copiez le lien.")
+
+
+NETWORK_RESEND_REFUSED = ("Ce partenaire ne peut plus être relancé par le réseau Adjugo. Il retrouve toujours "
+                          "l'invitation dans son espace Adjugo.")
+
+
+NETWORK_RESEND_NOT_PUBLISHED = ("Votre profil partenaire n'est plus publié : seul un profil publié peut relancer "
+                                "un partenaire par le réseau Adjugo. Il retrouve toujours l'invitation dans son "
+                                "espace Adjugo.")
+
+
+def _check_network_resend(inv, current_user: User, db: Session) -> None:
+    """Relance d'une invitation RÉSEAU : mêmes conditions qu'à l'envoi — le chef de file est
+    toujours publié, le profil du partenaire aussi, la paire n'est pas masquée (dans un sens ou
+    dans l'autre ; le motif n'est jamais dit au chef de file), et le plafond quotidien de
+    sollicitations du profil (invitations + relances, même compteur qu'à l'envoi) n'est pas
+    atteint. Sinon l'email affirmerait à tort « votre profil est publié »."""
+    from app.models import PartnerProfile
+    from app.routers.reseau import (NETWORK_INVITES_PER_PROFILE_DAY, _TOO_MANY_FOR_PROFILE,
+                                    network_solicitations_24h)
+    from app.services import partner_network as pn
+    ctx = pn.searcher_context(db, current_user)
+    if not ctx["published"]:
+        # Motif propre au chef de file (son profil) : rien n'est dit du partenaire.
+        raise HTTPException(409, {"code": "profil_non_publie", "message": NETWORK_RESEND_NOT_PUBLISHED})
+    p = db.get(PartnerProfile, inv.partner_profile_id) if inv.partner_profile_id else None
+    if p is None or not p.visible or p.is_demo or pn.hidden_pair(ctx, p):
+        raise HTTPException(409, {"code": "plus_sollicitable", "message": NETWORK_RESEND_REFUSED})
+    if network_solicitations_24h(db, p.id) >= NETWORK_INVITES_PER_PROFILE_DAY:
+        raise HTTPException(429, _TOO_MANY_FOR_PROFILE)
+
+
+@router.post("/api/projects/{project_id}/invites/{invite_id}/resend")
+@limiter.limit("20/hour")
+def resend_invite(project_id: int, invite_id: int, request: Request,
+                  current_user: User = Depends(get_current_user),
+                  db: Session = Depends(get_db)):
+    """Renvoie le mail d'invitation SUR LE MÊME lien (sans changer le token) : relance un
+    partenaire silencieux ou rattrape un mail tombé en spam, sans casser l'URL déjà partagée.
+    Bornes anti-spam : adresse de l'expéditeur confirmée, 1 renvoi par lien toutes les 15 min,
+    renvois comptés dans le plafond quotidien de l'organisation, 20 renvois/h par IP."""
+    _refuse_demo_sender(current_user)
+    _require_verified_sender(current_user)
+    project = _owned_project(project_id, current_user, db)
+    inv = db.query(ProjectInvite).filter(
+        ProjectInvite.id == invite_id, ProjectInvite.project_id == project_id).first()
+    if not inv:
+        raise HTTPException(404, "Invitation introuvable")
+    if inv.revoked:
+        raise HTTPException(400, "Ce lien a été révoqué — créez une nouvelle invitation.")
+    if getattr(inv, "declined_at", None):
+        raise HTTPException(400, "Ce partenaire a décliné l'invitation — créez une nouvelle invitation.")
+    if not _is_email(inv.recipient):
+        raise HTTPException(400, "Aucune adresse email sur ce lien — copiez-le et transmettez-le à la main.")
+    if _is_expired(inv.expires_at):
+        # Le lien ne s'ouvre plus (410 côté partenaire) et aucune route ne le prolonge : le renvoyer
+        # enverrait un lien mort et dirait « Invitation renvoyée » au chef de file.
+        raise HTTPException(400, "Ce lien a expiré — créez une nouvelle invitation.")
+    last = inv.emailed_at
+    if last is not None:
+        last = last if last.tzinfo else last.replace(tzinfo=timezone.utc)
+        if datetime.now(timezone.utc) - last < RESEND_MIN_INTERVAL:
+            raise HTTPException(429, "Invitation déjà envoyée il y a moins de 15 minutes. "
+                                     "Laissez un peu de temps au partenaire avant de relancer.")
+    if _is_network_invite(inv):
+        _check_network_resend(inv, current_user, db)
+    _check_daily_invite_cap(current_user, db)
+    # Vague 2b (B4) : le renvoi se dit « Rappel » (objet) et « … vous renvoie son invitation » ; même lien.
+    from functools import partial
+    sender = partial(_send_invite_email, relance=True)
+    if _is_network_invite(inv):
+        # Relance d'une invitation RÉSEAU : même courriel que l'envoi initial (adresse jamais
+        # montrée au chef de file, rappel « comment ne plus être sollicité »).
+        from app.routers.cotraitants import ProjectCotraitant
+        from app.routers.reseau import _network_mailer
+        lk = db.query(ProjectCotraitant).filter(ProjectCotraitant.invite_id == inv.id).first()
+        chef = db.query(Company).filter(Company.user_id == inv.owner_id).first()
+        sender = _network_mailer((lk.lot if lk else "") or "", (chef.name if chef else "") or "", relance=True)
+    sent = sender(inv, project, _settings.APP_BASE_URL or str(request.base_url))
+    db.commit()
+    if sent:
+        audit.record(db, action="invite.resent", owner_id=inv.owner_id, project_id=project_id,
+                     actor=f"user:{current_user.id}", actor_kind="owner",
+                     target_type="invite", target_id=inv.id, invite_id=inv.id,
+                     detail=(inv.company_name or "")[:255], ip=audit.client_ip(request))
+    return {"sent": sent, "emailed_at": inv.emailed_at.isoformat() if inv.emailed_at else None}
 
 
 @router.delete("/api/projects/{project_id}/invites/{invite_id}")
@@ -272,6 +920,8 @@ def revoke_invite(project_id: int, invite_id: int, request: Request,
                   current_user: User = Depends(get_current_user),
                   db: Session = Depends(get_db)):
     """Révoque un lien : le co-traitant perd l'accès immédiatement."""
+    from app.core.demo_guard import refuser_demo
+    refuser_demo(current_user, "retirer un partenaire")   # défense en profondeur : mail « accès retiré »
     # Contrôle d'accès = appartenance de l'AO à l'organisation (l'ancien filtre owner_id
     # servait de garde ; on le remplace par la vérification de périmètre explicite).
     _owned_project(project_id, current_user, db)
@@ -280,6 +930,7 @@ def revoke_invite(project_id: int, invite_id: int, request: Request,
     ).first()
     if not inv:
         raise HTTPException(404, "Invitation introuvable")
+    already_out = bool(inv.revoked or getattr(inv, "declined_at", None))
     inv.revoked = True
     # On éjecte AUSSI la contribution liée : sinon elle reste « submitted » et continue d'être
     # injectée dans le dossier final (mémoire fusionné, CERFA DC1/DC2, ZIP) → un partenaire
@@ -289,21 +940,31 @@ def revoke_invite(project_id: int, invite_id: int, request: Request,
         c.status = "draft"
         c.submitted_at = None
     db.commit()
+    # invite_id : retirer un sous-traitant ou un lien en lecture seule (ni membres ni signataires) ne défige rien et
+    # ne rend pas la convention caduque (concerns_convention), comme quand il décline lui-même.
+    _unfreeze_offer_if_needed(db, inv.project_id, f"{inv.company_name or 'un partenaire'} retiré",
+                              actor=f"user:{current_user.id}", actor_kind="owner",
+                              ip=audit.client_ip(request), invite_id=inv.id)
     audit.record(db, action="invite.revoked", owner_id=inv.owner_id, project_id=project_id,
                  actor=f"user:{current_user.id}", actor_kind="owner",
-                 target_type="invite", target_id=inv.id,
-                 detail=(inv.company_name or inv.recipient or "")[:255],
+                 target_type="invite", target_id=inv.id, invite_id=inv.id,
+                 detail=(inv.company_name or "")[:255],
                  ip=audit.client_ip(request))
+    # Rédaction, vague 4 : ses brouillons privés sont effacés, ses parties reviennent au chef de file.
+    from app.services.atelier_groupement import retirer_invitation
+    retirer_invitation(db, inv, "retiré du groupement", actor=f"user:{current_user.id}", actor_kind="owner",
+                       ip=audit.client_ip(request))
     # Notifie le partenaire que son accès est coupé (s'il a une adresse + SMTP configuré).
+    # Inutile s'il avait déjà décliné / était déjà révoqué.
     emailed = False
-    if _is_email(inv.recipient):
+    if _is_email(inv.recipient) and not already_out and getattr(current_user, "email_verified", False):
         try:
             from app.services import email as _email
             proj = db.query(Project).filter(Project.id == project_id).first()
             emailed = _email.send_email(
                 inv.recipient, "Accès à un dossier Adjugo retiré",
                 f"Bonjour,\n\nVotre accès au dossier « {proj.name if proj else 'partagé'} » sur "
-                f"Adjugo a été retiré par le mandataire. Vous n'y avez plus accès.\n\n— Adjugo")
+                f"Adjugo a été retiré par le chef de file. Vous n'y avez plus accès.\n\n— Adjugo")
         except Exception:
             emailed = False
     return {"ok": True, "notified": emailed}
@@ -317,20 +978,102 @@ def project_audit(project_id: int, current_user: User = Depends(get_current_user
     rows = db.query(AuditLog).filter(
         AuditLog.project_id == project_id
     ).order_by(AuditLog.created_at.desc()).limit(min(max(limit, 1), 500)).all()
+    noms = _noms_de_l_equipe(rows, current_user, db)
     return [{
         "id": r.id, "at": r.created_at.isoformat() if r.created_at else None,
         "actor": r.actor, "actor_kind": r.actor_kind, "action": r.action,
+        "actor_label": _auteur_lisible(r, noms),
         "target_type": r.target_type, "target_id": r.target_id,
         "detail": r.detail, "ip": r.ip,
     } for r in rows]
+
+
+_ACTEUR_COMPTE = re.compile(r"^user:(\d+)$")
+
+
+def _noms_de_l_equipe(rows: list, current_user: User, db: Session) -> dict:
+    """{id: nom ou adresse} des comptes de l'organisation cités « user:N » dans ces entrées."""
+    ids = {int(m.group(1)) for r in rows for m in [_ACTEUR_COMPTE.match(r.actor or "")] if m}
+    if not ids:
+        return {}
+    equipe = set(member_ids(current_user, db))
+    return {u.id: ((u.full_name or "").strip() or u.email or "") for u in
+            db.query(User).filter(User.id.in_(ids & equipe)).all()}
+
+
+def _auteur_lisible(r, noms: dict) -> str:
+    """L'auteur d'une entrée du journal d'accès, lisible : Adjugo pour une action d'Adjugo, le nom (à défaut l'adresse)
+    d'un compte de l'équipe, jamais un identifiant « user:N » (contrôle des bugs, deuxième passe) ; un partenaire
+    garde le nom enregistré."""
+    if (r.actor_kind or "") == "system":
+        return "Adjugo"
+    m = _ACTEUR_COMPTE.match(r.actor or "")
+    if m:
+        return noms.get(int(m.group(1))) or "Un ancien membre de votre équipe"
+    return r.actor or ""
 
 
 @router.get("/api/audit/integrity")
 def audit_integrity(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Vérifie l'intégrité du journal d'audit du tenant (chaîne de hash). Preuve RGPD
     que la traçabilité n'a pas été altérée."""
-    # La chaîne d'audit du tenant est portée par le propriétaire canonique de l'org.
-    return audit.verify_chain(db, data_owner_id(current_user, db))
+    # La chaîne d'audit du tenant est portée par le propriétaire canonique de l'org ; on
+    # vérifie AUSSI les chaînes héritées encore référencées (anciens propriétaires après un
+    # transfert, comptes effacés) : owner_id étant haché, elles ne sont jamais fusionnées.
+    return audit.verify_org_chains(db, _org_chain_owner_ids(current_user, db))
+
+
+def _org_chain_owner_ids(current_user: User, db: Session) -> list:
+    """Propriétaire actuel d'abord, puis les porteurs de chaînes de l'historique de l'org :
+    (a) anciens propriétaires, remontés de proche en proche par les entrées
+        « team.ownership_transferred » (actor = « user:<ancien> ») ;
+    (b) membres actuels, ou comptes effacés-anonymisés, ayant des entrées sur les marchés
+        de l'organisation. Jamais la chaîne d'une autre entreprise active."""
+    current = data_owner_id(current_user, db)
+    ids, frontier = [current], [current]
+    members_now = set(member_ids(current_user, db))
+    out = [current]
+    for _ in range(50):   # borne de sécurité (transferts en chaîne)
+        if not frontier:
+            break
+        rows = db.query(AuditLog.id, AuditLog.actor).filter(
+            AuditLog.action == "team.ownership_transferred",
+            AuditLog.owner_id.in_(frontier)).all()
+        nxt = []
+        # Borne = DERNIER transfert sortant de cet ancien propriétaire (aller-retour K→L→K→L :
+        # le premier transfert laissait sa dernière période dans l'org sans vérification).
+        last = {}
+        for (tid, actor) in rows:
+            m = re.fullmatch(r"user:(\d+)", (actor or "").strip())
+            if m:
+                last[int(m.group(1))] = max(tid, last.get(int(m.group(1)), 0))
+        for old, tid in sorted(last.items(), key=lambda kv: kv[1]):
+            if old not in ids:
+                ids.append(old)
+                nxt.append(old)
+                u = db.query(User).filter(User.id == old).first()
+                erased = bool(u) and (not u.is_active) and u.org_id is None
+                # Ancien propriétaire toujours membre (ou effacé) : toute sa chaîne. S'il dirige
+                # désormais une AUTRE entreprise : seul le préfixe d'avant le transfert (jamais
+                # le journal de sa nouvelle entreprise).
+                out.append(old if (old in members_now or erased or not u) else (old, tid))
+        frontier = nxt
+    try:
+        members = set(member_ids(current_user, db))
+        pids = [r[0] for r in db.query(Project.id).filter(Project.user_id.in_(list(members))).all()]
+        if pids:
+            others = {r[0] for r in db.query(AuditLog.owner_id).filter(
+                AuditLog.project_id.in_(pids), AuditLog.owner_id.isnot(None)).distinct().all()}
+            others -= set(ids)
+            if others:
+                for u in db.query(User).filter(User.id.in_(list(others))).all():
+                    erased = (not u.is_active) and u.org_id is None
+                    if u.id in members or erased:
+                        ids.append(u.id)
+                        out.append(u.id)
+    except Exception:
+        pass
+    return out
 
 
 # ── Côté CO-TRAITANT INVITÉ (NON authentifié — jeton dans l'URL) ─────────────
@@ -347,9 +1090,99 @@ def _valid_invite(token: str, db: Session) -> ProjectInvite:
     inv = db.query(ProjectInvite).filter(ProjectInvite.token == token).first()
     if not inv or inv.revoked:
         raise HTTPException(404, "Lien invalide ou révoqué")
+    if getattr(inv, "declined_at", None):
+        raise HTTPException(410, "Vous avez décliné cette invitation. Contactez le chef de file pour la rouvrir.")
     if _is_expired(inv.expires_at):
         raise HTTPException(410, "Ce lien de partage a expiré")
+    if _invite_is_demo(inv, db):
+        # Le lien partenaire de la vitrine montré pendant une présentation : la démo est active.
+        from app.services.demo_remise import noter_activite
+        noter_activite()
     return inv
+
+
+def _guest_actor(inv) -> str:
+    """Acteur journalisé pour un invité : TOUJOURS le nom d'entreprise, JAMAIS l'email
+    (le journal est projeté vers les autres membres)."""
+    return (inv.company_name or "invité")[:160]
+
+
+def tenant_owner_id(project: Project, db: Session) -> int:
+    """Propriétaire CANONIQUE du tenant d'un projet (= propriétaire de l'organisation du
+    créateur), celui sous lequel est chaînée toute la traçabilité du dossier (invitations,
+    parts, offre figée…). Jamais `project.user_id` brut : si un MEMBRE a créé le marché, ses
+    entrées sortiraient de la chaîne d'intégrité de l'entreprise et disparaîtraient avec son
+    compte. Repli sur le créateur s'il n'a pas (encore) d'organisation."""
+    try:
+        creator = db.query(User).filter(User.id == project.user_id).first()
+        oid = getattr(creator, "org_id", None)
+        if oid:
+            owner = db.query(Organization.owner_id).filter(Organization.id == oid).scalar()
+            if owner:
+                return owner
+    except Exception:
+        pass
+    return project.user_id
+
+
+def _unfreeze_offer_if_needed(db: Session, project_id: int, reason: str, *, actor: str = "",
+                              actor_kind: str = "guest", ip: str = "", invite_id=None) -> bool:
+    """Si l'offre commune est figée et qu'une part change (prix, retour en brouillon,
+    membre retiré), on la DÉFIGE : le total révélé aux membres ne doit jamais être faux.
+    Réassigne un NOUVEAU dict (colonne JSON : la mutation en place n'est pas détectée)."""
+    project = db.query(Project).filter(Project.id == project_id).first()
+    # Vague 2 : la même cause (part, prix, composition, part du mandataire) rend la convention
+    # de groupement CADUQUE (status 'perimee', tracé convention.perimee) — même si l'offre
+    # n'était plus figée. Best-effort, ne lève jamais.
+    if project is not None:
+        try:
+            from app.services.groupement_convention import concerns_convention, perimer as _perimer_convention
+            # Un sous-traitant (hors groupement) n'est ni dans la convention ni dans l'offre
+            # qu'elle fige : sa part ne défige rien et ne rend rien caduc.
+            if not concerns_convention(db, project, invite_id):
+                return False
+            _perimer_convention(db, project, (f"part de {reason} modifiée" if actor_kind == "guest" else reason),
+                                actor=actor, actor_kind=actor_kind, ip=ip, invite_id=invite_id)
+        except Exception:
+            pass
+    plan = project.groupement_plan if project and isinstance(project.groupement_plan, dict) else None
+    if not plan or not isinstance(plan.get("offre"), dict) or not plan["offre"].get("frozen_at"):
+        return False
+    new_plan = {k: v for k, v in plan.items() if k != "offre"}
+    project.groupement_plan = new_plan
+    db.commit()
+    audit.record(db, action="offer.unfrozen", owner_id=tenant_owner_id(project, db), project_id=project.id,
+                 actor=actor, actor_kind=actor_kind, target_type="project", target_id=project.id,
+                 detail=(f"part de {reason}" if actor_kind == "guest" else reason)[:255],
+                 ip=ip, invite_id=invite_id)
+    return True
+
+
+# Les pièces du marché que voit un partenaire : SEULEMENT le dossier de l'acheteur (dossier « DCE » du marché, affiché
+# « Dossier du marché »). Relecture de la vague 2b (cloisonnement, défaut antérieur à la vague) : le filtre ne portait
+# que sur le marché, et le partenaire téléchargeait aussi les pièces que le chef de file range dans les autres dossiers
+# du même marché — formulaires officiels (« CERFA » : l'acte d'engagement ATTRI1 porte le prix de vente de chaque
+# membre, le DC2 le chiffre d'affaires du chef de file), dossier de présentation assemblé (« Mémoire technique » : le
+# savoir-faire du chef de file et les parties des autres membres), tableau de prix. Un sous-traitant y lisait ainsi le
+# prix d'un partenaire que la convention lui cache. Une seule règle pour la liste (vue du partenaire, aperçu du chef de
+# file) et le téléchargement.
+DOSSIER_PARTAGE = "DCE"
+
+
+def _documents_partages(inv, db: Session) -> list:
+    """Les pièces du marché que le lien laisse télécharger : le dossier de l'acheteur (dossier « DCE »), rien d'autre ;
+    rien si le partage des pièces est coupé."""
+    if not inv.can_view_docs:
+        return []
+    # Versions remplacées (parent_id posé) EXCLUES : ce que le mandataire a remplacé
+    # disparaît aussi pour le partenaire (même règle que le coffre-fort et l'export).
+    rows = db.query(Document).filter(
+        Document.project_id == inv.project_id, Document.folder == DOSSIER_PARTAGE,
+        Document.deleted_at.is_(None), Document.parent_id.is_(None)
+    ).order_by(Document.created_at.desc()).all()
+    return [{"id": d.id, "name": d.name,
+             "category": d.category.value if hasattr(d.category, "value") else str(d.category or ""),
+             "folder": d.folder or "", "size": d.file_size or 0} for d in rows]
 
 
 @router.get("/api/invite/{token}")
@@ -363,46 +1196,163 @@ def guest_view(token: str, request: Request, db: Session = Depends(get_db)):
     if not project:
         raise HTTPException(404, "Projet introuvable ou retiré")
     owner_company = db.query(Company).filter(Company.user_id == inv.owner_id).first()
-
-    docs = []
-    if inv.can_view_docs:
-        rows = db.query(Document).filter(
-            Document.project_id == inv.project_id, Document.deleted_at.is_(None)
-        ).order_by(Document.created_at.desc()).all()
-        docs = [{"id": d.id, "name": d.name,
-                 "category": d.category.value if hasattr(d.category, "value") else str(d.category or ""),
-                 "folder": d.folder or "", "size": d.file_size or 0} for d in rows]
+    docs = _documents_partages(inv, db)
 
     # Compteur de vues + trace d'accès
     inv.view_count = (inv.view_count or 0) + 1
     inv.last_viewed_at = utcnow()
     db.commit()
     audit.record(db, action="guest.view_project", owner_id=inv.owner_id, project_id=inv.project_id,
-                 actor=(inv.recipient or inv.company_name or "invité")[:160], actor_kind="guest",
-                 target_type="project", target_id=inv.project_id,
+                 actor=_guest_actor(inv), actor_kind="guest",
+                 target_type="project", target_id=inv.project_id, invite_id=inv.id,
                  detail=(inv.company_name or "")[:255], ip=audit.client_ip(request))
-    return _invite_public(inv, project, owner_company, docs)
+    return _invite_public(inv, project, owner_company, docs, db=db)
+
+
+# ── « Voir ce que verra [partenaire] » (réorganisation, vague 2b, B3 ; docs/REORGANISATION_V2B.md) ──────────────
+# Le chef de file voit, avant et après l'invitation, l'écran de son partenaire en lecture. L'aperçu est TIRÉ de la
+# vue que le partenaire reçoit (la même fonction, _invite_public, sans compteur de vues ni journal), champ par champ :
+# le marché, le chef de file, la date limite, ce qui est attendu de lui et le total de l'offre commune quand le
+# partenaire le voit. Jamais la décomposition du prix du chef de file (le partenaire ne la reçoit pas), jamais la
+# matière d'un autre membre (ni la liste des membres, ni leurs parts), jamais une donnée du partenaire que le chef de
+# file ne voit pas déjà : ni son adresse (masquée pour une invitation du réseau), ni ses capacités, ni son brouillon
+# pendant l'aperçu minimal, ni aucun jeton. Prouvé par tests/test_reorganisation_v2b_espace_partenaire.py : ce que
+# reçoit l'aperçu est inclus, valeur pour valeur, dans ce que reçoit le partenaire.
+_APERCU_PROJET = ("name", "client", "deadline", "source_url", "analysis")
+
+
+def _apercu_de(vue: dict) -> dict:
+    """La part de la vue du partenaire que montre l'aperçu (toujours un sous-ensemble, mêmes clés, mêmes valeurs)."""
+    p = vue.get("project") or {}
+    who = vue.get("invited") or {}
+    out = {
+        "project": {k: p.get(k) for k in _APERCU_PROJET},
+        "mandataire": vue.get("mandataire") or "",
+        "invited": {"company": who.get("company") or "", "role": who.get("role") or "cotraitant"},
+        "can_view_docs": bool(vue.get("can_view_docs")),
+        "can_contribute": bool(vue.get("can_contribute")),
+        # Les pièces du marché, nommées (le chef de file les a déposées) : ni identifiant ni lien de téléchargement.
+        "documents": [{"name": d.get("name"), "folder": d.get("folder")} for d in (vue.get("documents") or [])],
+        "apercu_minimal": bool(vue.get("apercu_minimal")),
+    }
+    if vue.get("apercu_message"):
+        out["apercu_message"] = vue["apercu_message"]
+    fm = vue.get("for_member")
+    if isinstance(fm, dict):
+        st = fm.get("state") or {}
+        out["for_member"] = {
+            # L'étape du groupement (« depose » : déposé par le chef de file) et le total de l'offre commune, seulement
+            # quand le partenaire le voit (offre figée, membre du groupement, signataire de la convention générée).
+            "state": {k: st.get(k) for k in ("state", "offer_frozen", "total_offre_ht", "frozen_at")},
+            "warning_two_members": fm.get("warning_two_members"),
+        }
+    return out
+
+
+def _pieces_attendues(project) -> list:
+    """Les pièces administratives attendues de chaque membre (en-tête du coffre-fort croisé) : clé et libellé."""
+    keys = list(_EXPECTED_BASE) + (["qualification"] if _dce_requires_qualification(project) else [])
+    return [{"key": k, "label": _PIECE_LABELS.get(k, k)} for k in keys]
+
+
+def _pieces_attendues_de(vue: dict, project):
+    """Les pièces administratives attendues DE CE partenaire, pour « Ce qui est attendu de vous » de l'aperçu : aucune
+    pendant l'aperçu limité du réseau, ni pour un lien en lecture seule, qui ne peut rien déposer (relecture de la
+    vague 2b : l'aperçu ne lui annonce jamais une tâche qu'il ne peut pas faire)."""
+    if vue.get("apercu_minimal") or not vue.get("can_contribute"):
+        return None
+    return _pieces_attendues(project)
+
+
+def _raison_sans_acces(inv) -> str:
+    if inv.revoked:
+        return "revoquee"
+    if getattr(inv, "declined_at", None):
+        return "declinee"
+    if _is_expired(inv.expires_at):
+        return "expiree"
+    return ""
+
+
+@router.get("/api/projects/{project_id}/apercu-partenaire")
+def apercu_partenaire(project_id: int, invite_id: Optional[int] = None, role: str = "cotraitant",
+                      reseau: bool = False, can_view_docs: bool = True, can_contribute: bool = True,
+                      nom: str = "", current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Ce que verra (ou voit) un partenaire de ce marché, pour le chef de file : une invitation existante
+    (`invite_id`), ou une invitation pas encore envoyée, décrite par les choix de la fenêtre d'invitation (rôle,
+    réseau Adjugo, pièces du marché, part). Lecture seule : rien n'est créé, compté ni journalisé."""
+    project = _owned_project(project_id, current_user, db)
+    if invite_id is not None:
+        inv = db.query(ProjectInvite).filter(ProjectInvite.id == invite_id,
+                                             ProjectInvite.project_id == project.id).first()
+        if not inv:
+            raise HTTPException(404, "Invitation introuvable sur ce marché")
+        raison = _raison_sans_acces(inv)
+        if raison:
+            # Le partenaire ne voit plus rien (son lien répond 404 ou 410) : l'aperçu le dit, sans rien montrer.
+            return {"acces": False, "raison": raison, "invite_id": inv.id, "pour": "invitation",
+                    "company": inv.company_name or "", "role": inv.role or "cotraitant"}
+        # Même calcul que GET /api/invite/{token} (chef de file = entreprise du propriétaire de l'invitation).
+        owner_company = db.query(Company).filter(Company.user_id == inv.owner_id).first()
+        vue = _apercu_de(_invite_public(inv, project, owner_company, _documents_partages(inv, db), db=db))
+        c = db.query(ProjectContribution).filter(ProjectContribution.invite_id == inv.id).first()
+        conv_status, signature = None, None
+        if not vue["apercu_minimal"]:
+            try:
+                from app.services import groupement_convention as _gc
+                conv = _gc.get_convention(db, project.id)
+                if conv is not None:
+                    conv_status = conv.status
+                    mine = next((s for s in _gc.signatures_of(db, conv) if s.invite_id == inv.id), None)
+                    signature = mine.status if mine else None
+            except Exception:
+                conv_status, signature = None, None
+        etat = {
+            # L'état de SA part tel que le chef de file le voit déjà (une part du réseau sans réponse lui reste cachée).
+            "part": None if (c is None or _owner_hides_part(inv, c)) else c.status,
+            "convention": conv_status, "signature": signature,
+        }
+        return {"acces": True, "invite_id": inv.id, "pour": "invitation", "vue": vue, "etat": etat,
+                "pieces_attendues": _pieces_attendues_de(vue, project)}
+    # Pas encore invité : la vue d'une invitation neuve, calculée sur une invitation qui n'existe pas en base (jamais
+    # ajoutée à la session). Une invitation neuve n'a ni part ni accord ; elle rend caduque une offre figée et une
+    # convention générée (_create_invite) : le partenaire n'y verra donc aucun total à son arrivée.
+    owner = data_owner_id(current_user, db)
+    tmp = ProjectInvite(project_id=project.id, owner_id=owner, token="", recipient="",
+                        company_name=(nom or "").strip()[:255],
+                        role=(role if role in ("cotraitant", "sous_traitant") else "cotraitant"),
+                        can_view_docs=bool(can_view_docs), can_contribute=bool(can_contribute),
+                        source=("reseau_adjugo" if reseau else "manuel"))
+    owner_company = db.query(Company).filter(Company.user_id == owner).first()
+    vue = _apercu_de(_invite_public(tmp, project, owner_company, _documents_partages(tmp, db), db=None))
+    return {"acces": True, "invite_id": None, "pour": "nouveau", "vue": vue,
+            "etat": {"part": None, "convention": None, "signature": None},
+            "pieces_attendues": _pieces_attendues_de(vue, project)}
 
 
 @router.get("/api/invite/{token}/doc/{doc_id}")
 @limiter.limit("60/minute")
 def guest_download(token: str, doc_id: int, request: Request, db: Session = Depends(get_db)):
-    """Télécharge une pièce partagée — STRICTEMENT limitée au projet de l'invitation."""
+    """Télécharge une pièce partagée — STRICTEMENT limitée au dossier de l'acheteur (« DCE ») du projet de
+    l'invitation, la même règle que la liste (_documents_partages)."""
     inv = _valid_invite(token, db)
     if not inv.can_view_docs:
         raise HTTPException(403, "Le partage des pièces n'est pas autorisé pour ce lien")
+    if _network_pending(inv, db):
+        raise HTTPException(403, "Acceptez d'abord l'invitation depuis votre compte Adjugo pour télécharger "
+                                 "les pièces du marché.")
     doc = db.query(Document).filter(
-        Document.id == doc_id, Document.project_id == inv.project_id,
-        Document.deleted_at.is_(None)
+        Document.id == doc_id, Document.project_id == inv.project_id, Document.folder == DOSSIER_PARTAGE,
+        Document.deleted_at.is_(None), Document.parent_id.is_(None)
     ).first()
     if not doc or not doc.file_key:
         raise HTTPException(404, "Pièce introuvable")
     audit.record(db, action="guest.download_doc", owner_id=inv.owner_id, project_id=inv.project_id,
-                 actor=(inv.recipient or inv.company_name or "invité")[:160], actor_kind="guest",
+                 actor=_guest_actor(inv), actor_kind="guest", invite_id=inv.id,
                  target_type="document", target_id=doc.id, detail=(doc.name or "")[:255],
                  ip=audit.client_ip(request))
     storage = get_storage()
-    signed = storage.url(doc.file_key)
+    signed = storage.url(doc.file_key, filename=doc.name)
     if signed:
         return RedirectResponse(signed)
     try:
@@ -411,7 +1361,7 @@ def guest_download(token: str, doc_id: int, request: Request, db: Session = Depe
         raise HTTPException(410, "Fichier absent du stockage")
     return StreamingResponse(
         io.BytesIO(content),
-        media_type=doc.mime_type or "application/octet-stream",
+        media_type=_safe_mime(doc.file_key),     # jamais doc.mime_type (type annoncé par le client)
         headers=_attachment_headers(doc.name),
     )
 
@@ -420,28 +1370,56 @@ def guest_download(token: str, doc_id: int, request: Request, db: Session = Depe
 # Cœur du réseau Adjugo : chaque PME contribue à un dossier commun sans jamais
 # voir les données des autres. La contribution est liée à l'invitation (1-1) ;
 # l'invité ne lit/écrit JAMAIS que la sienne.
-def _piece_dict(pc: ContributionPiece) -> dict:
-    return {"id": pc.id, "name": pc.name, "size": pc.file_size or 0,
-            "created_at": pc.created_at.isoformat() if pc.created_at else None}
+def _piece_dict(pc: ContributionPiece, viewer: str = "member") -> dict:
+    out = {"id": pc.id, "name": pc.name, "size": pc.file_size or 0,
+           "created_at": pc.created_at.isoformat() if pc.created_at else None,
+           "piece_type": getattr(pc, "piece_type", "") or "",
+           "expiration_date": pc.expiration_date.isoformat() if getattr(pc, "expiration_date", None) else None}
+    if viewer == "member":
+        # L'id du Document d'origine (coffre-fort PERSONNEL du partenaire) n'est jamais
+        # révélé au mandataire : seule la copie jointe existe pour lui.
+        out["source_document_id"] = getattr(pc, "source_document_id", None)
+    return out
 
 
-def _serialize_contribution(c: ProjectContribution, db: Session = None) -> dict:
+def _serialize_contribution(c: ProjectContribution, db: Session = None, viewer: str = "member") -> dict:
+    """Sérialise une part. DOCTRINE DE VISIBILITÉ :
+    - `prix_lot_ht` (prix de VENTE du lot) : visible du membre ET du mandataire ;
+    - `detail_chiffre` (enveloppe chiffrée : décomposition/coûts/marges) : UNIQUEMENT pour
+      viewer == 'member' (routes /api/invite/{token}/…). Pour le mandataire (viewer ==
+      'owner'), la clé est ABSENTE (pas null) et remplacée par `has_detail_chiffre`.
+    - `chiffrage_note` (ancienne approche prix en clair) n'est plus JAMAIS sérialisé."""
     pieces = []
     if db is not None:
-        pieces = [_piece_dict(p) for p in db.query(ContributionPiece).filter(
+        pieces = [_piece_dict(p, viewer) for p in db.query(ContributionPiece).filter(
             ContributionPiece.contribution_id == c.id).order_by(ContributionPiece.created_at.asc()).all()]
-    return {
+    out = {
         "id": c.id, "company_name": c.company_name, "role": c.role, "lot": c.lot,
         "siret": c.siret or "", "forme_juridique": c.forme_juridique or "",
         "address": c.address or "", "postal_code": c.postal_code or "", "city": c.city or "",
         "references": c.references or [], "qualifications": c.qualifications or [],
-        "chiffrage_note": c.chiffrage_note or "", "memoire_paragraph": c.memoire_paragraph or "",
+        "memoire_paragraph": c.memoire_paragraph or "",
         "contact": c.contact or {}, "status": c.status,
+        "note_au_mandataire": getattr(c, "note_au_mandataire", "") or "",
+        "prix_lot_ht": c.prix_lot_ht,
+        "representant_legal": getattr(c, "representant_legal", "") or "",
+        "signataire_qualite": getattr(c, "signataire_qualite", "") or "",
+        "capacites": c.capacites if isinstance(c.capacites, dict) else None,
         "version": c.version or 0,
         "submitted_at": c.submitted_at.isoformat() if c.submitted_at else None,
         "updated_at": c.updated_at.isoformat() if c.updated_at else None,
         "pieces": pieces,
+        "has_dpgf_lot": any(p.get("piece_type") == "dpgf_lot" for p in pieces),
+        # Checklist des pièces administratives : le partenaire voit en direct ce qu'il a
+        # fourni et ce qu'il lui reste à déposer (même logique que la vue mandataire).
+        "pieces_checklist": _classify_partner_pieces([p["name"] for p in pieces],
+                                                     [p["piece_type"] for p in pieces]),
     }
+    if viewer == "member":
+        out["detail_chiffre"] = c.detail_chiffre if isinstance(c.detail_chiffre, dict) and c.detail_chiffre else None
+    else:
+        out["has_detail_chiffre"] = bool(isinstance(c.detail_chiffre, dict) and c.detail_chiffre)
+    return out
 
 
 def _get_or_create_contribution(inv: ProjectInvite, db: Session) -> ProjectContribution:
@@ -452,9 +1430,68 @@ def _get_or_create_contribution(inv: ProjectInvite, db: Session) -> ProjectContr
             company_name=inv.company_name or "", role=inv.role or "cotraitant",
         )
         db.add(c)
-        db.commit()
-        db.refresh(c)
+        try:
+            db.commit()
+            db.refresh(c)
+        except IntegrityError:
+            # invite_id est UNIQUE : deux requêtes concurrentes (2 onglets, GET /contribution
+            # + /otp/status en parallèle) peuvent tenter l'INSERT ensemble → on récupère la
+            # contribution créée par l'autre au lieu de renvoyer un 500.
+            db.rollback()
+            c = db.query(ProjectContribution).filter(ProjectContribution.invite_id == inv.id).first()
+            if c is None:
+                raise
     return c
+
+
+# ── Enveloppe chiffrée (detail_chiffre) : le serveur n'en vérifie que la FORME ──────────
+# {ciphertext (base64 ≤ 200 000 car.), iv (base64 de 12 octets → 16 car.), alg 'A256GCM',
+#  kdf 'PBKDF2-SHA256', kdf_salt (base64), kdf_iter ≥ 100 000, key_fingerprint ≤ 64,
+#  updated_at ISO}. Clés EXACTES, rien de plus, rien de moins. Jamais déchiffrée ici.
+_ENVELOPE_KEYS = {"ciphertext", "iv", "alg", "kdf", "kdf_salt", "kdf_iter", "key_fingerprint", "updated_at"}
+_ENVELOPE_ERR = "Enveloppe chiffrée invalide"
+_B64_RE = re.compile(r"^[A-Za-z0-9+/]*={0,2}$")
+
+
+def _is_b64(s, max_len: int = None) -> bool:
+    if not isinstance(s, str) or not s or (max_len and len(s) > max_len) or not _B64_RE.match(s):
+        return False
+    try:
+        base64.b64decode(s, validate=True)
+        return True
+    except Exception:
+        return False
+
+
+def _validate_envelope(v):
+    """None / {} → None (efface). Sinon : enveloppe STRICTE, sinon ValueError (→ 422)."""
+    if v is None:
+        return None
+    if not isinstance(v, dict):
+        raise ValueError(_ENVELOPE_ERR)
+    if not v:
+        return None
+    if set(v.keys()) != _ENVELOPE_KEYS:
+        raise ValueError(_ENVELOPE_ERR)
+    if not _is_b64(v["ciphertext"], 200_000):
+        raise ValueError(_ENVELOPE_ERR)
+    if not (_is_b64(v["iv"]) and len(v["iv"]) == 16 and len(base64.b64decode(v["iv"])) == 12):
+        raise ValueError(_ENVELOPE_ERR)
+    if v["alg"] != "A256GCM" or v["kdf"] != "PBKDF2-SHA256":
+        raise ValueError(_ENVELOPE_ERR)
+    if not _is_b64(v["kdf_salt"], 256):
+        raise ValueError(_ENVELOPE_ERR)
+    if not isinstance(v["kdf_iter"], int) or isinstance(v["kdf_iter"], bool) or v["kdf_iter"] < 100_000:
+        raise ValueError(_ENVELOPE_ERR)
+    if not isinstance(v["key_fingerprint"], str) or not v["key_fingerprint"] or len(v["key_fingerprint"]) > 64:
+        raise ValueError(_ENVELOPE_ERR)
+    if not isinstance(v["updated_at"], str) or not v["updated_at"]:
+        raise ValueError(_ENVELOPE_ERR)
+    try:
+        datetime.fromisoformat(v["updated_at"].replace("Z", "+00:00"))
+    except Exception:
+        raise ValueError(_ENVELOPE_ERR)
+    return dict(v)
 
 
 class ContributionSave(BaseModel):
@@ -467,10 +1504,125 @@ class ContributionSave(BaseModel):
     city: Optional[str] = None
     references: Optional[list] = None
     qualifications: Optional[list] = None
-    chiffrage_note: Optional[str] = None
+    # chiffrage_note (approche prix en clair) n'est PLUS accepté : un client qui l'envoie
+    # encore est ignoré silencieusement (pydantic ignore les champs inconnus).
     memoire_paragraph: Optional[str] = None
     contact: Optional[dict] = None
+    note_au_mandataire: Optional[str] = None   # mot libre du partenaire au chef de file
+    # ── Doctrine de visibilité ──
+    prix_lot_ht: Optional[float] = None        # prix de VENTE du lot (clair, vu du mandataire)
+    detail_chiffre: Optional[dict] = None      # enveloppe chiffrée (jamais lue côté serveur)
+    representant_legal: Optional[str] = None
+    signataire_qualite: Optional[str] = None
+    capacites: Optional[dict] = None           # {ca_n1: float|None, effectif: int|None}
     version: Optional[int] = None     # verrou optimiste : la version chargée par le client
+
+    @field_validator("prix_lot_ht")
+    @classmethod
+    def _prix(cls, v):
+        if v is None:
+            return None
+        v = float(v)
+        if v != v or v < 0 or v > 1e10:   # NaN, négatif, absurde
+            raise ValueError("Le prix de votre partie doit être compris entre 0 et 10 milliards d'euros HT.")
+        return v
+
+    @field_validator("detail_chiffre")
+    @classmethod
+    def _env(cls, v):
+        return _validate_envelope(v)
+
+    @field_validator("capacites")
+    @classmethod
+    def _cap(cls, v):
+        if v is None:
+            return None
+        if not isinstance(v, dict):
+            raise ValueError("Capacités invalides")
+        out = {}
+        ca = v.get("ca_n1")
+        eff = v.get("effectif")
+        if ca is not None:
+            try:
+                ca = float(ca)
+            except (TypeError, ValueError):
+                raise ValueError("Chiffre d'affaires invalide")
+            if ca != ca or ca < 0 or ca > 1e11:
+                raise ValueError("Chiffre d'affaires invalide")
+        if eff is not None:
+            if isinstance(eff, bool):
+                raise ValueError("Effectif invalide")
+            try:
+                eff = int(eff)
+            except (TypeError, ValueError):
+                raise ValueError("Effectif invalide")
+            if eff < 0 or eff > 1_000_000:
+                raise ValueError("Effectif invalide")
+        out["ca_n1"] = ca
+        out["effectif"] = eff
+        return out
+
+
+def _sync_a_la_reponse(inv: ProjectInvite, db: Session) -> None:
+    """Invitation du RÉSEAU acceptée depuis le compte du partenaire ou dont la part est soumise : ses capacités et
+    qualifications déclarées pendant l'aperçu limité, que le chef de file ne voyait pas (`_owner_hides_part`),
+    rejoignent sa fiche « Mes partenaires », comme celles d'une invitation ordinaire. Pas au code vérifié : le
+    partenaire le saisit aussi pour décliner, et son brouillon resterait chez le chef de file après le refus (contrôle
+    des bugs, deuxième passe). Best-effort."""
+    if not _is_network_invite(inv):
+        return
+    try:
+        c = db.query(ProjectContribution).filter(ProjectContribution.invite_id == inv.id).first()
+        if c is not None and not _owner_hides_part(inv, c) and (c.capacites or c.qualifications):
+            _sync_annuaire_capacites(inv, c, db)
+    except Exception:
+        db.rollback()
+
+
+def _sync_annuaire_capacites(inv: ProjectInvite, c: ProjectContribution, db: Session) -> None:
+    """Si le mandataire a ce partenaire dans « Mes partenaires » (même SIRET, à défaut même
+    nom), ses capacités DÉCLARÉES PAR LE PARTENAIRE LUI-MÊME remplacent celles saisies par
+    le mandataire (capacites_source='contribution' : plus fiable). Best-effort."""
+    try:
+        from app.routers.cotraitants import Cotraitant
+        owner = db.query(User).filter(User.id == inv.owner_id).first()
+        if not owner:
+            return
+        from app.routers.cotraitants import ProjectCotraitant
+        ids = member_ids(owner, db)
+        q = db.query(Cotraitant).filter(Cotraitant.user_id.in_(ids))
+        # JAMAIS par nom (un invité pourrait, avec un jeton seul, réécrire les capacités
+        # « vérifiées » d'un AUTRE partenaire de l'annuaire = fausse provenance). Seulement :
+        # (1) le rattachement de CE projet lié à CETTE invitation, (2) à défaut le SIRET exact
+        # d'un partenaire RATTACHÉ à ce projet.
+        row = None
+        link = db.query(ProjectCotraitant).filter(ProjectCotraitant.project_id == inv.project_id,
+                                                  ProjectCotraitant.invite_id == inv.id).first()
+        if link:
+            row = q.filter(Cotraitant.id == link.cotraitant_id).first()
+        siret = (c.siret or "").strip()
+        if row is None and siret:
+            linked_ids = [lk.cotraitant_id for lk in db.query(ProjectCotraitant).filter(
+                ProjectCotraitant.project_id == inv.project_id).all()]
+            if linked_ids:
+                row = q.filter(Cotraitant.siret == siret, Cotraitant.id.in_(linked_ids)).first()
+        if row is None:
+            return
+        cap = c.capacites or {}
+        if cap.get("ca_n1") is not None:
+            row.ca_n1 = float(cap["ca_n1"])
+        if cap.get("effectif") is not None:
+            row.effectif = int(cap["effectif"])
+        if c.qualifications:
+            row.qualifications = ", ".join(str(q) for q in c.qualifications if q)[:2000]
+        row.capacites_source = "contribution"
+        row.capacites_updated_at = utcnow()
+        db.commit()
+    except Exception:
+        try:
+            db.rollback()
+        except Exception:
+            pass
 
 
 @router.get("/api/invite/{token}/contribution")
@@ -488,6 +1640,9 @@ def guest_get_contribution(token: str, request: Request, db: Session = Depends(g
 def guest_save_contribution(token: str, body: ContributionSave, request: Request, db: Session = Depends(get_db)):
     """Enregistre le brouillon de la contribution de cet invité (ses champs uniquement)."""
     inv = _valid_invite(token, db)
+    # Vitrine partagée : la part de la démo figure dans la convention générée et validée par tous ;
+    # la modifier la rendrait caduque pour les visiteurs suivants.
+    _refuse_if_demo_invite(inv, db)
     if not getattr(inv, "can_contribute", True):
         raise HTTPException(403, "La co-construction n'est pas activée pour ce lien")
     c = _get_or_create_contribution(inv, db)
@@ -523,21 +1678,101 @@ def guest_save_contribution(token: str, body: ContributionSave, request: Request
     if body.city is not None:
         c.city = body.city.strip()[:120]
     if body.references is not None:
-        c.references = body.references[:50]
+        # Vague 5 (E2) : la provenance « marché attribué, source publique DECP » n'est jamais prise du navigateur.
+        from app.services.preuves_publiques import references_relues
+        c.references = references_relues(c.references, body.references[:50])
     if body.qualifications is not None:
         c.qualifications = body.qualifications[:50]
-    if body.chiffrage_note is not None:
-        c.chiffrage_note = body.chiffrage_note[:8000]
     if body.memoire_paragraph is not None:
         c.memoire_paragraph = body.memoire_paragraph[:12000]
     if body.contact is not None:
         c.contact = {k: str(v)[:255] for k, v in (body.contact or {}).items()
                      if k in ("nom", "email", "telephone")}
+    if body.note_au_mandataire is not None:
+        c.note_au_mandataire = body.note_au_mandataire[:2000]
+    # ── Doctrine de visibilité ──
+    fields = body.model_fields_set
+    was_submitted = (c.status == "submitted")
+    price_changed = False
+    if "prix_lot_ht" in fields:                  # None explicite = effacer
+        price_changed = (c.prix_lot_ht != body.prix_lot_ht)
+        c.prix_lot_ht = body.prix_lot_ht
+    if "detail_chiffre" in fields:               # None / {} = effacer ; sinon enveloppe validée
+        c.detail_chiffre = body.detail_chiffre
+    if body.representant_legal is not None:
+        c.representant_legal = body.representant_legal.strip()[:255]
+    if body.signataire_qualite is not None:
+        c.signataire_qualite = body.signataire_qualite.strip()[:120]
+    capacites_changed = False
+    if body.capacites is not None:
+        old = c.capacites if isinstance(c.capacites, dict) else {}
+        if (old.get("ca_n1"), old.get("effectif")) != (body.capacites.get("ca_n1"), body.capacites.get("effectif")):
+            capacites_changed = True
+            c.capacites = {"ca_n1": body.capacites.get("ca_n1"), "effectif": body.capacites.get("effectif"),
+                           "declared_at": utcnow().isoformat()}
     if c.status == "submitted":            # toute modif après soumission repasse en brouillon
         c.status = "draft"
         c.submitted_at = None
     # La version a déjà été incrémentée atomiquement par le claim ci-dessus (→ expected+1).
     db.commit()
+    # Offre figée + prix modifié ou part repassée en brouillon → on défige (total obsolète).
+    if price_changed or was_submitted:
+        _unfreeze_offer_if_needed(db, inv.project_id, c.company_name or inv.company_name or "un partenaire",
+                                  actor=_guest_actor(inv), actor_kind="guest",
+                                  ip=audit.client_ip(request), invite_id=inv.id)
+    if capacites_changed:
+        audit.record(db, action="guest.capacites_updated", owner_id=inv.owner_id,
+                     project_id=inv.project_id, actor=_guest_actor(inv), actor_kind="guest",
+                     target_type="contribution", target_id=c.id, invite_id=inv.id,
+                     detail=(c.company_name or inv.company_name or "")[:255], ip=audit.client_ip(request))
+        if not _owner_hides_part(inv, c):
+            _sync_annuaire_capacites(inv, c, db)
+    return _serialize_contribution(c, db)
+
+
+# ── Détail chiffré SEUL (vague 4, écran « Ma DPGF de lot ») ────────────────────────────
+# Le partenaire enregistre les lignes de sa DPGF (prix de vente, ligne par ligne) DANS son
+# détail chiffré, sans toucher au reste de sa part. Le détail n'est lu par personne d'autre
+# que lui (ni le chef de file, ni Adjugo, ni l'IA) et n'est imprimé nulle part : le modifier
+# ne repasse PAS une part soumise en brouillon, ne défige pas l'offre et ne rend pas la
+# convention caduque (contrairement au PUT complet, où toute modification après soumission
+# repasse la part en brouillon). Verrou optimiste identique au PUT (la version avance).
+class DetailSave(BaseModel):
+    detail_chiffre: Optional[dict] = None
+    version: Optional[int] = None
+
+    @field_validator("detail_chiffre")
+    @classmethod
+    def _env(cls, v):
+        return _validate_envelope(v)
+
+
+@router.put("/api/invite/{token}/contribution/detail")
+@limiter.limit("60/minute")
+def guest_save_detail(token: str, body: DetailSave, request: Request, db: Session = Depends(get_db)):
+    """Remplace UNIQUEMENT l'enveloppe chiffrée `detail_chiffre` de la part de cet invité.
+    Statut, prix de vente, offre figée et convention inchangés. Jamais déchiffrée ici."""
+    inv = _valid_invite(token, db)
+    _refuse_if_demo_invite(inv, db)
+    if not getattr(inv, "can_contribute", True):
+        raise HTTPException(403, "La co-construction n'est pas activée pour ce lien")
+    if "detail_chiffre" not in body.model_fields_set:
+        raise HTTPException(422, "Détail chiffré manquant.")
+    c = _get_or_create_contribution(inv, db)
+    if body.version is None:
+        raise HTTPException(428, "Version requise (verrou optimiste). Rechargez la contribution.")
+    expected = int(body.version)
+    claimed = db.query(ProjectContribution).filter(
+        ProjectContribution.id == c.id,
+        ProjectContribution.version == expected,
+    ).update({ProjectContribution.version: expected + 1}, synchronize_session="fetch")
+    if not claimed:
+        db.rollback()
+        raise HTTPException(409, "Cette contribution a été modifiée ailleurs entre-temps. "
+                                 "Rechargez pour récupérer la dernière version avant de réenregistrer.")
+    c.detail_chiffre = body.detail_chiffre       # même écriture que le PUT complet (None = effacer)
+    db.commit()
+    db.refresh(c)
     return _serialize_contribution(c, db)
 
 
@@ -554,11 +1789,29 @@ def guest_otp_status(token: str, request: Request, db: Session = Depends(get_db)
     inv = _valid_invite(token, db)
     # `pending` = un code valide a déjà été envoyé et n'est pas expiré → le front le réutilise
     # au lieu de rappeler /otp/request (qui consomme la limite 6/h et bloquerait le partenaire).
-    pending = bool(inv.otp_hash and inv.otp_expires_at and inv.otp_expires_at > utcnow())
+    # _is_expired et non `> utcnow()` : relu en base, otp_expires_at est NAÏF alors
+    # qu'utcnow() est aware → TypeError (500) dès la 2e requête sans cette précaution.
+    pending = bool(inv.otp_hash and inv.otp_expires_at and not _is_expired(inv.otp_expires_at))
     return {"required": _binding_required(inv),
             "verified": bool(inv.verified_at),
             "pending": pending,
             "email_masked": _mask_email(inv.recipient) if _is_email(inv.recipient) else ""}
+
+
+OTP_DAILY_CAP_VERIFIED = 40     # codes envoyés / 24 h / organisation mandataire
+OTP_DAILY_CAP_UNVERIFIED = 8    # mandataire qui n'a pas prouvé son adresse : très bas
+
+
+def _otp_cap_reached(inv, db: Session) -> bool:
+    """Plafond quotidien des codes envoyés par organisation : la limite par lien (6/h) ne
+    suffisait pas, un compte jetable multipliait les liens vers autant d'adresses."""
+    owner = db.query(User).filter(User.id == inv.owner_id).first()
+    cap = OTP_DAILY_CAP_VERIFIED if (owner and owner.email_verified) else OTP_DAILY_CAP_UNVERIFIED
+    since = utcnow() - timedelta(hours=24)
+    n = db.query(AuditLog).filter(AuditLog.owner_id == inv.owner_id,
+                                  AuditLog.action == "guest.otp_request",
+                                  AuditLog.created_at >= since).count()
+    return n >= cap
 
 
 @router.post("/api/invite/{token}/otp/request")
@@ -567,13 +1820,18 @@ def guest_otp_request(token: str, request: Request, db: Session = Depends(get_db
     """Envoie un code à 6 chiffres à l'adresse destinataire de l'invitation, pour prouver
     que l'invité la contrôle avant de soumettre sa part."""
     inv = _valid_invite(token, db)
-    if not _binding_required(inv):
+    if not _binding_required(inv):   # (dont : invitation de la démo → jamais d'envoi)
         return {"sent": False, "reason": "Vérification non requise pour ce lien."}
     # Idempotence : si un code valide est DÉJÀ en attente, on ne le régénère pas (sinon le code
     # déjà reçu par le partenaire serait invalidé à chaque clic « Soumettre », et le plafond
     # 6/h finirait par le verrouiller). Il réutilise le code reçu.
-    if inv.otp_hash and inv.otp_expires_at and inv.otp_expires_at > utcnow():
+    if inv.otp_hash and inv.otp_expires_at and not _is_expired(inv.otp_expires_at):
         return {"sent": True, "already": True,
+                "email_masked": _mask_email(inv.recipient) if _is_email(inv.recipient) else ""}
+    if _otp_cap_reached(inv, db):
+        return {"sent": False,
+                "reason": "Trop de codes envoyés aujourd'hui pour ce groupement. Réessayez demain "
+                          "ou demandez au chef de file de vous renvoyer l'invitation.",
                 "email_masked": _mask_email(inv.recipient) if _is_email(inv.recipient) else ""}
     code = f"{secrets.randbelow(1_000_000):06d}"
     inv.otp_hash = _hash_otp(code)
@@ -581,15 +1839,25 @@ def guest_otp_request(token: str, request: Request, db: Session = Depends(get_db
     inv.otp_attempts = 0
     db.commit()
     from app.services import email as _email
-    _email.send_email(
+    sent = _email.send_email(
         inv.recipient,
         "Votre code de vérification Adjugo",
         f"Votre code pour valider votre contribution au groupement : {code}\n\n"
         f"Il expire dans {_OTP_TTL_MIN} minutes. Si vous n'êtes pas à l'origine de cette "
         f"demande, ignorez ce message.")
+    if not sent:
+        # L'email n'est pas parti : on EFFACE le code en attente, sinon l'invité restait
+        # bloqué (état « pending » 15 min) avec un code qu'il n'a jamais reçu.
+        inv.otp_hash = None
+        inv.otp_expires_at = None
+        db.commit()
+        return {"sent": False,
+                "reason": "L'envoi du code a échoué. Réessayez dans un instant.",
+                "email_masked": _mask_email(inv.recipient) if _is_email(inv.recipient) else ""}
     audit.record(db, action="guest.otp_request", owner_id=inv.owner_id, project_id=inv.project_id,
-                 actor=(inv.recipient or "")[:160], actor_kind="guest", target_type="invite",
-                 target_id=inv.id, ip=audit.client_ip(request))
+                 actor=_guest_actor(inv), actor_kind="guest", target_type="invite",
+                 target_id=inv.id, invite_id=inv.id, detail=_audit_email_detail(inv),
+                 ip=audit.client_ip(request))
     return {"sent": True, "email_masked": _mask_email(inv.recipient), "ttl_min": _OTP_TTL_MIN}
 
 
@@ -614,10 +1882,12 @@ def guest_otp_verify(token: str, body: OtpVerify, request: Request, db: Session 
     inv.verified_email = inv.recipient
     inv.otp_hash = ""
     inv.otp_expires_at = None
+    _mark_network_accepted(inv)
     db.commit()
     audit.record(db, action="guest.otp_verified", owner_id=inv.owner_id, project_id=inv.project_id,
-                 actor=(inv.recipient or "")[:160], actor_kind="guest", target_type="invite",
-                 target_id=inv.id, detail=_mask_email(inv.recipient), ip=audit.client_ip(request))
+                 actor=_guest_actor(inv), actor_kind="guest", target_type="invite",
+                 target_id=inv.id, invite_id=inv.id, detail=_audit_email_detail(inv),
+                 ip=audit.client_ip(request))
     return {"verified": True}
 
 
@@ -637,12 +1907,106 @@ def guest_submit_contribution(token: str, request: Request, db: Session = Depend
     c = _get_or_create_contribution(inv, db)
     c.status = "submitted"
     c.submitted_at = utcnow()
+    _mark_network_accepted(inv)
     db.commit()
+    _sync_a_la_reponse(inv, db)
     audit.record(db, action="guest.submit_contribution", owner_id=inv.owner_id, project_id=inv.project_id,
-                 actor=(inv.recipient or inv.company_name or "invité")[:160], actor_kind="guest",
-                 target_type="contribution", target_id=c.id,
+                 actor=_guest_actor(inv), actor_kind="guest",
+                 target_type="contribution", target_id=c.id, invite_id=inv.id,
                  detail=(c.company_name or inv.company_name or "")[:255], ip=audit.client_ip(request))
+    # Notifications best-effort (aucune ne doit casser la soumission) : le mandataire est
+    # prévenu qu'une part est arrivée, le partenaire reçoit un accusé de réception.
+    _notify_part_submitted(inv, c, db)
+    _notify_partner_received(inv, db)
     return _serialize_contribution(c, db)
+
+
+# ── Déclin : le partenaire sort du groupement de lui-même ─────────────────────
+_DECLIN_RESERVE = ("Seul le compte propriétaire de votre organisation, à qui Adjugo a envoyé l'invitation, peut la "
+                   "décliner.")
+
+
+def _refuse_declin_reseau(inv: ProjectInvite, request: Request, db: Session) -> None:
+    """Invitation du RÉSEAU : seul le compte destinataire la décline, comme il est seul à l'accepter (écran « Réservée
+    au compte propriétaire », contrat COTRAITANCE_V2_VAGUE3_API.md § 6.3). Avant (contrôle des bugs, deuxième
+    passe), un collègue de son organisation, qui reçoit le jeton dans ses invitations, la déclinait : refus définitif,
+    part, brouillons et documents effacés, au nom du partenaire.
+    - Avec une session : le compte qui l'a acceptée, ou, tant que personne ne l'a acceptée, le compte de l'adresse à
+      laquelle Adjugo l'a envoyée. Tout autre compte : 403.
+    - Sans session (le lien reçu par courriel) : comme pour soumettre sa part, l'adresse doit être prouvée par code
+      quand les codes peuvent être envoyés (`_binding_required`), sinon 403 « identity_unverified » (l'écran du lien
+      demande alors le code, envoyé à l'adresse du destinataire).
+    Une invitation manuelle ne change pas (décision laissée à Eliot, docs/REORGANISATION_V2A.md, section R)."""
+    if not _is_network_invite(inv):
+        return
+    auth = request.headers.get("authorization") or ""
+    user = None
+    if auth.lower().startswith("bearer "):
+        try:
+            user = get_current_user(token=auth[7:].strip(), db=db)
+        except HTTPException:
+            user = None
+    if user is not None:
+        rcpt = (inv.recipient or "").strip().lower()
+        if inv.accepted_by_user_id:
+            ok = inv.accepted_by_user_id == user.id
+        else:      # même règle que « peut_accepter » de ses invitations reçues (reseau.invitations_recues)
+            ok = not rcpt or rcpt == (user.email or "").strip().lower()
+        if not ok:
+            raise HTTPException(403, _DECLIN_RESERVE)
+        return
+    if _binding_required(inv) and not inv.verified_at:
+        raise HTTPException(403, {"code": "identity_unverified",
+                                  "message": "Vérifiez votre adresse email avant de décliner l'invitation."})
+@router.post("/api/invite/{token}/decline")
+@limiter.limit("10/hour")
+def guest_decline(token: str, request: Request, db: Session = Depends(get_db)):
+    """Le partenaire DÉCLINE l'invitation : il sort du groupement (checklist, cockpit,
+    CERFA, dossier) sans que le mandataire ait à révoquer. Le lien devient inutilisable
+    (410) ; le mandataire peut créer une nouvelle invitation s'il veut le rouvrir."""
+    inv = _valid_invite(token, db)           # déjà décliné → 410, révoqué → 404
+    _refuse_if_demo_invite(inv, db)          # vitrine partagée : on ne la ferme pas aux suivants
+    _refuse_declin_reseau(inv, request, db)  # invitation du réseau : le compte destinataire seulement
+    inv.declined_at = utcnow()
+    c = db.query(ProjectContribution).filter(ProjectContribution.invite_id == inv.id).first()
+    if c and c.status == "submitted":
+        c.status = "draft"
+        c.submitted_at = None
+    db.commit()
+    _unfreeze_offer_if_needed(db, inv.project_id, inv.company_name or "un partenaire",
+                              actor=_guest_actor(inv), actor_kind="guest",
+                              ip=audit.client_ip(request), invite_id=inv.id)
+    audit.record(db, action="invite.declined", owner_id=inv.owner_id, project_id=inv.project_id,
+                 actor=_guest_actor(inv), actor_kind="guest", target_type="invite",
+                 target_id=inv.id, invite_id=inv.id, detail=(inv.company_name or "")[:255],
+                 ip=audit.client_ip(request))
+    # Rédaction, vague 4 : ses brouillons privés sont effacés, ses parties reviennent au chef de file.
+    from app.services.atelier_groupement import retirer_invitation
+    retirer_invitation(db, inv, "a décliné l'invitation", actor=_guest_actor(inv), actor_kind="guest",
+                       ip=audit.client_ip(request))
+    # Email best-effort au mandataire.
+    try:
+        to = _mandataire_email(inv.owner_id, db)
+        if to:
+            from app.services import email as _email
+            project = db.query(Project).filter(Project.id == inv.project_id).first()
+            pname = (project.name if project else "votre marché")
+            who = inv.company_name or "Un partenaire"
+            if (inv.role or "") == "sous_traitant":
+                # Un sous-traitant n'est pas invité à rejoindre le groupement (il n'en est pas membre) : la phrase de
+                # son invitation (contrôle des bugs, deuxième passe).
+                corps = (f"{who} a décliné votre invitation à intervenir comme sous-traitant sur le marché "
+                         f"« {pname} ». Il ne figurera pas dans votre réponse.\n\n"
+                         f"Vous pouvez inviter une autre entreprise depuis la page de ce marché, dans Adjugo.")
+            else:
+                corps = (f"{who} a décliné l'invitation à rejoindre le groupement sur le marché "
+                         f"« {pname} ». Sa part ne figurera pas dans la réponse commune.\n\n"
+                         f"Vous pouvez inviter un autre partenaire depuis la page de ce marché, dans Adjugo.")
+            _send_mails_async([(to, f"{who} a décliné l'invitation — {pname[:60]}",
+                                f"Bonjour,\n\n{corps}\n\n— Adjugo")])
+    except Exception:
+        pass
+    return {"ok": True}
 
 
 # ── Découverte d'appels d'offres pour l'invité (NON facturée, lecture seule) ──
@@ -695,31 +2059,453 @@ def _guest_piece(token: str, piece_id: int, db: Session):
     return inv, c, pc
 
 
+_PIECE_TYPE_VALUES = ("kbis", "fiscale", "sociale", "assurance", "rib", "qualification", "dpgf_lot", "autre")
+
+# ── DPGF de lot (vague 4) ─────────────────────────────────────────────────────────────
+# Produite DANS LE NAVIGATEUR du membre à partir de son détail chiffré déchiffré localement :
+# prix unitaires au niveau du PRIX DE VENTE, sans coûts ni marges. Le serveur ne reçoit que le
+# fichier final (jamais detail_chiffre en clair) ; rien ne part vers le LLM. Visible du chef
+# de file comme toute pièce (téléchargement audité), jamais des autres membres ; absente du
+# coffre croisé (ce n'est pas une attestation). Déposer/retirer une DPGF ne repasse pas la
+# part en brouillon et ne rend pas la convention caduque : le prix de vente du lot, seul
+# imprimé dans la convention, ne change pas.
+_DPGF_EXT = {".pdf", ".xlsx", ".xls", ".ods", ".csv"}
+_DPGF_EXT_MSG = "Un tableau de prix se dépose en PDF, en tableur (xlsx, xls, ods) ou en CSV."
+_DPGF_MAX_ROWS = 20000
+_DPGF_MAX_CELLS = 1_000_000      # par lecture : borne le travail fait en Python (fichier de 20 Mo compris)
+# Taille d'un CSV de DPGF : 20 000 lignes de 200 caractères. Au-delà, le contrôle (en Python, sous
+# le GIL de l'unique process) prendrait plusieurs secondes : tableur ou PDF.
+_DPGF_CSV_MAX_BYTES = 4 * 1024 * 1024
+# Signature des formats binaires : un texte (CSV avec formules, page HTML) renommé en .xls ou en
+# .xlsx échapperait au contrôle du CSV → refusé, au lieu d'être accepté sans aucun contrôle.
+# Le PDF fait exception sur la position : les lecteurs PDF acceptent l'en-tête « %PDF- » n'importe
+# où dans les 1024 premiers octets (quelques octets parasites avant, fréquents à l'export).
+_DPGF_MAGIC = {".pdf": (b"%PDF-",), ".xlsx": (b"PK\x03\x04",), ".ods": (b"PK\x03\x04",),
+               ".xls": (b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1",)}
+_PDF_HEADER_WINDOW = 1024
+# Garde-fou de la doctrine (CSV seulement, seul format lisible sans dépendance) : une colonne
+# de coûts ou de marges serait visible du chef de file → refus explicite. Le motif s'applique à
+# un texte NORMALISÉ (_dpgf_norm : sans accents, minuscules, tout ce qui n'est ni lettre ni
+# chiffre devient une espace) : « Marge_HT », « coût-unitaire », « PRIX D'ACHAT » sont reconnus.
+# MÊME liste et MÊME normalisation que AdjugoCrypto.dpgf.forbiddenWord (cotraitance-crypto.js) :
+# un fichier produit par le navigateur n'est jamais refusé ici. Alternative de littéraux, sans
+# quantificateur imbriqué : temps linéaire.
+_DPGF_FORBIDDEN = re.compile(
+    r"\b(marges?|couts?|debourses?|prix d achat|prix achat|pu achat|prix de revient|frais generaux"
+    r"|coefficients?|coef|taux de marque)\b")
+_DPGF_WORD_LABEL = {"cout": "coût", "couts": "coûts", "debourse": "déboursé", "debourses": "déboursés",
+                    "prix d achat": "prix d'achat", "frais generaux": "frais généraux"}
+_DIGITS = "0123456789"
+_NUM_SEPS = " .,\u00a0\u202f"     # séparateurs de milliers / décimale admis ENTRE deux chiffres
+_NUM_MAX_LEN = 64                 # au-delà, une cellule n'est jamais lue comme un nombre
+
+
+def _dpgf_norm(s: str) -> str:
+    """Normalisation des en-têtes (identique à cotraitance-crypto.js) : NFKD, diacritiques
+    U+0300 à U+036F retirés, minuscules, tout caractère hors a-z et 0-9 → une espace."""
+    import unicodedata
+    s = "".join(ch for ch in unicodedata.normalize("NFKD", s or "") if not ("\u0300" <= ch <= "\u036f"))
+    return " ".join("".join(ch if ("a" <= ch <= "z" or ch in _DIGITS) else " " for ch in s.lower()).split())
+
+
+def _is_num_cell(v: str) -> bool:
+    """Valeur numérique de tableur (« 1 250,50 », « -150,00 », « 12 % », « 1e+21 ») : parseur
+    LINÉAIRE et borné, sans expression régulière. (L'ancienne regex, ambiguë sur les espaces,
+    faisait un retour arrière quadratique : une cellule de 100 000 espaces gelait tout le process.)"""
+    s = (v or "").strip()
+    if not s or len(s) > _NUM_MAX_LEN:
+        return False
+    if s[-1] in "€%":
+        s = s[:-1].rstrip()
+    if s[:1] == "-":
+        s = s[1:]
+    mant, exp = s, None
+    for i, ch in enumerate(s):
+        if ch in "eE":
+            mant, exp = s[:i], s[i + 1:]
+            break
+    if exp is not None:
+        if exp[:1] in ("+", "-"):
+            exp = exp[1:]
+        if not exp or any(ch not in _DIGITS for ch in exp):
+            return False
+    if not mant or mant[0] not in _DIGITS or mant[-1] not in _DIGITS:
+        return False
+    prev_sep = False
+    for ch in mant:
+        if ch in _DIGITS:
+            prev_sep = False
+        elif ch in _NUM_SEPS and not prev_sep:
+            prev_sep = True
+        else:
+            return False
+    return True
+
+
+def _dpgf_directive(text: str) -> str:
+    """Séparateur d'une directive « sep=X » en première ligne (Excel l'applique, quel que soit le
+    reste du fichier), sinon "". La tabulation compte (« sep=<tab> »)."""
+    first = text[:16]
+    for ch in "\r\n":
+        first = first.split(ch, 1)[0]
+    first = first.strip(" ")
+    if len(first) == 5 and first[:4].lower() == "sep=" and first[4] != '"':
+        return first[4]
+    return ""
+
+
+def _dpgf_separators(text: str) -> list:
+    """Séparateurs qu'un tableur peut appliquer à ce fichier : « ; », « , », tabulation, plus celui
+    d'une directive « sep=X » en première ligne (Excel l'applique, quel que soit le reste)."""
+    seps = [";", ",", "\t"]
+    d = _dpgf_directive(text)
+    if d and d not in seps:
+        seps.append(d)
+    return seps
+
+
+_DPGF_SEP_NAMES = {";": "un point-virgule", ",": "une virgule", "\t": "une tabulation"}
+
+
+def _dpgf_file_separators(text: str, counts: dict) -> tuple:
+    """(séparateurs que le tableur du chef de file peut appliquer, séparateur du fichier), d'après
+    `counts` : nombre de cellules de l'en-tête sous « ; », « , » et la tabulation.
+
+    - « ; » toujours : Excel en français découpe au point-virgule un CSV ouvert d'un double-clic ;
+    - celui d'une directive « sep=X » (Excel l'applique) ;
+    - la virgule ou la tabulation quand l'en-tête du fichier est découpé ainsi (au moins 2 cellules,
+      et plus qu'au « ; ») : fichier exporté avec ce séparateur, qu'un tableur réglé de même lira ainsi.
+    Hors de ces cas, une virgule ou une tabulation est du texte (« Fourniture, - y compris
+    accessoires », « Pose, +/- 2 mm ») : un tableur ne la prend pour un séparateur que réglé pour."""
+    directive = _dpgf_directive(text)
+    n = {d: counts.get(d, 0) for d in (";", ",", "\t")}
+    plausible = [";"]
+    for d in (",", "\t"):
+        if d == directive or (n[d] >= 2 and n[d] > n[";"]):
+            plausible.append(d)
+    if directive and directive not in plausible:
+        plausible.append(directive)
+    main = directive or max((";", ",", "\t"), key=lambda d: (n[d], d == ";"))
+    return plausible, main
+
+
+def _dpgf_formula_msg(delim: str, main: str, sign: str, line_no: int) -> str:
+    """Message EXACT : formule dans une cellule du fichier, ou signe placé juste après un séparateur
+    que le fichier n'utilise pas (le tableur du chef de file pourrait, lui, couper là)."""
+    if delim == main:
+        return (f"Le tableau de prix contient une formule ligne {line_no} (cellule commençant par « {sign} ») : "
+                "déposez des valeurs, pas des formules.")
+    after = _DPGF_SEP_NAMES.get(delim, f"le signe « {delim} »")
+    return (f"Le tableau de prix contient, ligne {line_no}, un « {sign} » juste après {after} : le tableur du chef de "
+            "file pourrait y lire le début d'une formule. Retirez ce signe ou placez un mot devant.")
+
+
+def _dpgf_is_data_row(cells: list) -> bool:
+    """Ligne de valeurs : au moins deux cellules numériques, et pas moins que de cellules texte."""
+    n_num = n_txt = 0
+    for v in cells:
+        v = v.strip()
+        if not v:
+            continue
+        if _is_num_cell(v):
+            n_num += 1
+        else:
+            n_txt += 1
+    return n_num >= 2 and n_num >= n_txt
+
+
+def _check_dpgf_csv(content: bytes) -> None:
+    """CSV de DPGF : UTF-8, aucune formule (injection à l'ouverture dans un tableur), aucune
+    colonne de coûts ou de marges dans les lignes d'en-tête. 422 explicite sinon.
+
+    En-tête : toutes les lignes non vides situées avant la première ligne de valeurs, quel que soit
+    leur nombre et qu'elles contiennent un nombre ou non.
+    Formules : chaque cellule est contrôlée sous chaque séparateur (« ; », « , », tabulation,
+    directive « sep= »). Sous un séparateur que le tableur du chef de file peut appliquer
+    (_dpgf_file_separators), une cellule ne commence ni par « = », « + », « @ », ni par « - » hors
+    nombre négatif. Sous un autre (virgule dans un fichier au « ; » par exemple), seuls « = » et
+    « @ » sont refusés : « , - y compris » ou « , +/- 2 mm » sont du texte courant.
+    Garde-fou d'aide contre une erreur du déposant, pas une protection contre un fichier piégé :
+    le contenu des PDF et des tableurs n'est pas inspecté."""
+    import csv
+    if len(content) > _DPGF_CSV_MAX_BYTES:
+        raise HTTPException(422, "Tableau de prix trop volumineux pour un CSV (plus de 4 Mo) : déposez-le en tableur ou en PDF.")
+    try:
+        text = content.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        raise HTTPException(422, "Le tableau de prix (CSV) doit être encodé en UTF-8.")
+    seps = _dpgf_separators(text)
+    try:
+        # En-tête : lignes non vides avant la première ligne de valeurs (sous l'un des séparateurs).
+        # Bornes AVANT tout travail en Python sur les cellules (lignes, cellules par séparateur) :
+        # un fichier pathologique ne coûte que le découpage, fait en C.
+        header, n_lines = [], 0
+        seen = dict.fromkeys(seps, 0)
+        head_counts, data_counts = dict.fromkeys(seps, 0), None
+        for line in io.StringIO(text, newline=""):
+            if not line.strip():
+                continue
+            n_lines += 1
+            if n_lines > _DPGF_MAX_ROWS:
+                raise HTTPException(422, f"Tableau de prix trop long (plus de {_DPGF_MAX_ROWS} lignes).")
+            rows = {d: [r for r in csv.reader([line], delimiter=d)] for d in seps}
+            line_counts = {d: sum(len(r) for r in rows[d]) for d in seps}
+            for d in seps:
+                seen[d] += line_counts[d]
+                if seen[d] > _DPGF_MAX_CELLS:
+                    raise HTTPException(422, "Tableau de prix trop volumineux pour un CSV : déposez-le en tableur ou en PDF.")
+            if any(_dpgf_is_data_row(r) for d in seps for r in rows[d]):
+                data_counts = line_counts
+                break
+            header.append(line)
+            for d in seps:
+                head_counts[d] += line_counts[d]
+        plausible, main = _dpgf_file_separators(text, head_counts if header else (data_counts or {}))
+        for delim in seps:
+            strict = delim in plausible
+            n_cells = 0
+            # newline="" : fins de ligne \r, \n et \r\n reconnues comme un tableur (une ligne terminée par
+            # un \r seul est une nouvelle ligne pour Excel) ; rien d'autre (pas \x85, \u2028…).
+            rd = csv.reader(io.StringIO(text, newline=""), delimiter=delim)
+            for i, row in enumerate(rd):
+                if i >= _DPGF_MAX_ROWS:
+                    raise HTTPException(422, f"Tableau de prix trop long (plus de {_DPGF_MAX_ROWS} lignes).")
+                n_cells += len(row)
+                if n_cells > _DPGF_MAX_CELLS:
+                    raise HTTPException(422, "Tableau de prix trop volumineux pour un CSV : déposez-le en tableur ou en PDF.")
+                for cell in row:
+                    v = cell.strip()
+                    if not v:
+                        continue
+                    c0 = v[0]
+                    if c0 in "=@" or (strict and (c0 == "+" or (c0 == "-" and not _is_num_cell(v)))):
+                        raise HTTPException(422, _dpgf_formula_msg(delim, main, c0, rd.line_num))
+        for line in header:
+            m = _DPGF_FORBIDDEN.search(_dpgf_norm(line))
+            if m:
+                raise HTTPException(422, f"Un tableau de prix ne contient que des prix de vente : retirez la "
+                                         f"colonne « {_DPGF_WORD_LABEL.get(m.group(1), m.group(1))} » "
+                                         "(elle serait visible du chef de file).")
+    except csv.Error:
+        raise HTTPException(422, "Tableau de prix (CSV) illisible.")
+
+
+def _check_dpgf_signature(content: bytes, ext: str) -> None:
+    """DPGF en PDF ou en tableur : le contenu correspond bien à l'extension. Un « .xls » qui est en
+    réalité une page web ou un XML Excel 2003 (exports de certaines plateformes) reste refusé : ce
+    texte n'est pas contrôlé comme un CSV ; le message dit comment le réenregistrer."""
+    magic = _DPGF_MAGIC.get(ext)
+    if not magic:
+        return
+    if ext == ".pdf":
+        if b"%PDF-" in content[:_PDF_HEADER_WINDOW]:
+            return
+    elif any(content.startswith(m) for m in magic):
+        return
+    if ext == ".pdf":
+        raise HTTPException(422, "Ce fichier n'est pas un vrai PDF : enregistrez le tableau de prix en PDF depuis votre "
+                                 "logiciel, ou déposez-le en tableur (.xlsx, .ods) ou en CSV.")
+    head = content[:512].lstrip(b"\xef\xbb\xbf \t\r\n").lower()
+    if head.startswith((b"<", b"\xff\xfe<", b"\xfe\xff\x00<")):
+        quoi = "une page web ou un fichier XML renommé"
+    else:
+        quoi = "un fichier texte renommé"
+    raise HTTPException(422, f"Ce fichier n'est pas un vrai {ext[1:].upper()} (c'est {quoi}) : ouvrez-le dans "
+                             "votre tableur et enregistrez-le au format .xlsx ou .ods, ou déposez le tableau de prix en PDF.")
+
+
+def _check_dpgf_content(content: bytes, ext: str) -> None:
+    """Contrôles d'une DPGF, quel que soit le chemin (dépôt, coffre-fort, changement de type)."""
+    if ext == ".csv":
+        _check_dpgf_csv(content)
+    else:
+        _check_dpgf_signature(content, ext)
+
+
+def _parse_expiration(s) -> Optional[date]:
+    """ISO 'AAAA-MM-JJ' → date ; '' / None → None ; autre → 422."""
+    if s is None or str(s).strip() == "":
+        return None
+    try:
+        return date.fromisoformat(str(s).strip()[:10])
+    except ValueError:
+        raise HTTPException(422, "Date d'expiration invalide (format attendu : AAAA-MM-JJ).")
+
+
+def _check_piece_type(t) -> str:
+    t = (t or "").strip().lower()
+    if t and t not in _PIECE_TYPE_VALUES:
+        raise HTTPException(422, "Type de pièce inconnu (kbis, fiscale, sociale, assurance, rib, qualification, "
+                                 "dpgf_lot, autre).")
+    return t
+
+
+def _after_piece_change(inv, c, db: Session, request: Request) -> None:
+    """Ajout/retrait d'une pièce après soumission → part en brouillon (+ offre défigée)."""
+    was_submitted = (c.status == "submitted")
+    if was_submitted:
+        c.status = "draft"
+        c.submitted_at = None
+    db.commit()
+    if was_submitted:
+        _unfreeze_offer_if_needed(db, inv.project_id, c.company_name or inv.company_name or "un partenaire",
+                                  actor=_guest_actor(inv), actor_kind="guest",
+                                  ip=audit.client_ip(request), invite_id=inv.id)
+
+
 @router.post("/api/invite/{token}/contribution/piece")
 @limiter.limit("30/minute")
 def guest_upload_piece(token: str, request: Request, file: UploadFile = File(...),
+                       piece_type: str = Form(None), expiration_date: str = Form(None),
                        db: Session = Depends(get_db)):
-    """Le co-traitant téléverse UNE de ses pièces administratives (scopée à sa part)."""
+    """Le co-traitant téléverse UNE de ses pièces administratives (scopée à sa part).
+    Classée automatiquement (kbis / fiscale / sociale / assurance / rib / qualification)
+    d'après son nom si `piece_type` n'est pas fourni ; `expiration_date` ISO optionnelle."""
     inv = _valid_invite(token, db)
+    _refuse_if_demo_invite(inv, db)
     if not getattr(inv, "can_contribute", True):
         raise HTTPException(403, "La co-construction n'est pas activée pour ce lien")
     c = _get_or_create_contribution(inv, db)
     if db.query(ContributionPiece).filter(ContributionPiece.contribution_id == c.id).count() >= _MAX_PIECES_PER_CONTRIB:
         raise HTTPException(400, f"Maximum {_MAX_PIECES_PER_CONTRIB} pièces par partenaire.")
-    content, ext = _read_upload(file)
+    ptype = _check_piece_type(piece_type)
+    exp = _parse_expiration(expiration_date)
+    # DPGF de lot (vague 4) : type explicite, ou reconnu par le nom (« DPGF_lot2.csv »).
+    ext0 = os.path.splitext(file.filename or "")[1].lower()
+    final_type = ptype or _classify_piece_type(file.filename or "")
+    if final_type == "dpgf_lot" and ext0 not in _DPGF_EXT:
+        if ptype == "dpgf_lot":
+            raise HTTPException(422, _DPGF_EXT_MSG)
+        final_type = "autre"
+    is_dpgf = final_type == "dpgf_lot"
+    content, ext = _read_upload(file, allowed=(_DPGF_EXT if is_dpgf else None))
+    if is_dpgf:
+        exp = None                                  # une DPGF n'expire pas
+        _check_dpgf_content(content, ext)
     safe_mime = _safe_mime(file.filename)        # type dérivé de l'extension, pas du client
     file_key = f"{inv.owner_id}/cotraitant/{uuid.uuid4().hex}{ext}"
     get_storage().save(file_key, content, safe_mime)
+    name = os.path.basename(file.filename or "piece")[:500]
     pc = ContributionPiece(
         contribution_id=c.id, project_id=inv.project_id, owner_id=inv.owner_id,
-        name=os.path.basename(file.filename or "piece")[:500], file_key=file_key,
-        file_size=len(content), mime_type=safe_mime[:100])
+        name=name, file_key=file_key, file_size=len(content), mime_type=safe_mime[:100],
+        piece_type=final_type, expiration_date=exp)
     db.add(pc)
-    db.commit()
+    if is_dpgf:
+        db.commit()       # le prix de vente du lot ne change pas : part et convention intactes
+    else:
+        # Cohérence avec le PUT : ajouter une pièce après soumission repasse la part en
+        # brouillon, sinon le pli « soumis » que le mandataire croit figé change en douce.
+        _after_piece_change(inv, c, db, request)
     db.refresh(pc)
     audit.record(db, action="guest.upload_piece", owner_id=inv.owner_id, project_id=inv.project_id,
-                 actor=(inv.recipient or inv.company_name or "invité")[:160], actor_kind="guest",
+                 actor=_guest_actor(inv), actor_kind="guest", invite_id=inv.id,
                  target_type="piece", target_id=pc.id, detail=(pc.name or "")[:255],
+                 ip=audit.client_ip(request))
+    return _piece_dict(pc)
+
+
+class PiecePatch(BaseModel):
+    piece_type: Optional[str] = None
+    expiration_date: Optional[str] = None   # ISO AAAA-MM-JJ ; '' = effacer
+
+
+@router.patch("/api/invite/{token}/contribution/piece/{piece_id}")
+@limiter.limit("60/minute")
+def guest_patch_piece(token: str, piece_id: int, body: PiecePatch, request: Request,
+                      db: Session = Depends(get_db)):
+    """Le co-traitant corrige le TYPE et/ou la DATE D'EXPIRATION de SA pièce (coffre croisé)."""
+    inv, c, pc = _guest_piece(token, piece_id, db)
+    _refuse_if_demo_invite(inv, db)
+    fields = body.model_fields_set
+    if "piece_type" in fields:
+        new_type = _check_piece_type(body.piece_type) or "autre"
+        ext = os.path.splitext(pc.file_key or pc.name or "")[1].lower()
+        if new_type == "dpgf_lot" and ext not in _DPGF_EXT:
+            raise HTTPException(422, _DPGF_EXT_MSG)
+        if new_type == "dpgf_lot" and (pc.piece_type or "") != "dpgf_lot":
+            # Devenir une DPGF = mêmes contrôles qu'au dépôt (signature du fichier, CSV sans formule).
+            try:
+                content = get_storage().load(pc.file_key)
+            except FileNotFoundError:
+                raise HTTPException(410, "Fichier absent du stockage")
+            _check_dpgf_content(content or b"", ext)
+        pc.piece_type = new_type
+    if "expiration_date" in fields:
+        pc.expiration_date = _parse_expiration(body.expiration_date)
+    if (pc.piece_type or "") == "dpgf_lot":
+        pc.expiration_date = None                 # une DPGF n'expire pas
+    db.commit()
+    db.refresh(pc)
+    # Journalisé : une date d'expiration corrigée change le statut du coffre croisé vu par
+    # tous les membres — le journal du membre doit le refléter.
+    audit.record(db, action="guest.update_piece", owner_id=inv.owner_id, project_id=inv.project_id,
+                 actor=(inv.company_name or "invité")[:160], actor_kind="guest",
+                 target_type="piece", target_id=pc.id, invite_id=inv.id,
+                 detail=(pc.name or "")[:255], ip=audit.client_ip(request))
+    return _piece_dict(pc)
+
+
+class FromVault(BaseModel):
+    document_id: int
+
+
+@router.post("/api/invite/{token}/contribution/piece/from-vault")
+@limiter.limit("30/minute")
+def guest_piece_from_vault(token: str, body: FromVault, request: Request,
+                           current_user: User = Depends(get_current_user),
+                           db: Session = Depends(get_db)):
+    """« Joindre depuis mon coffre-fort » : le partenaire AVEC COMPTE (lien réclamé) joint
+    un Document de SON coffre-fort personnel. Le fichier est COPIÉ dans le tenant du
+    mandataire (clé {owner}/cotraitant/…) : le Document d'origine n'est jamais exposé."""
+    inv = _valid_invite(token, db)
+    _refuse_if_demo_invite(inv, db)
+    if not getattr(inv, "can_contribute", True):
+        raise HTTPException(403, "La co-construction n'est pas activée pour ce lien")
+    if not inv.accepted_by_user_id or inv.accepted_by_user_id != current_user.id:
+        raise HTTPException(403, "Réclamez d'abord ce lien avec votre compte pour joindre une pièce "
+                                 "depuis votre coffre-fort.")
+    doc = db.query(Document).filter(
+        Document.id == body.document_id,
+        Document.user_id.in_(member_ids(current_user, db)),
+        Document.deleted_at.is_(None)).first()
+    if not doc or not doc.file_key:
+        raise HTTPException(404, "Document introuvable dans votre coffre-fort")
+    c = _get_or_create_contribution(inv, db)
+    if db.query(ContributionPiece).filter(ContributionPiece.contribution_id == c.id).count() >= _MAX_PIECES_PER_CONTRIB:
+        raise HTTPException(400, f"Maximum {_MAX_PIECES_PER_CONTRIB} pièces par partenaire.")
+    storage = get_storage()
+    try:
+        content = storage.load(doc.file_key)
+    except FileNotFoundError:
+        raise HTTPException(410, "Fichier absent du stockage")
+    if not content:
+        raise HTTPException(410, "Fichier vide")
+    ext = os.path.splitext(doc.file_key or doc.name or "")[1].lower() or os.path.splitext(doc.name or "")[1].lower()
+    file_key = f"{inv.owner_id}/cotraitant/{uuid.uuid4().hex}{ext}"
+    safe_mime = _safe_mime(file_key)     # extension réelle du fichier, pas le nom (renommable)
+    ptype = vault_doc_type(doc)
+    if ptype == "dpgf_lot" and ext not in _DPGF_EXT:
+        ptype = "autre"
+    if ptype == "dpgf_lot":
+        _check_dpgf_content(content, ext)      # mêmes contrôles qu'un dépôt direct (avant l'écriture)
+    storage.save(file_key, content, safe_mime)
+    pc = ContributionPiece(
+        contribution_id=c.id, project_id=inv.project_id, owner_id=inv.owner_id,
+        name=os.path.basename(doc.name or "piece")[:500], file_key=file_key,
+        file_size=len(content), mime_type=safe_mime[:100],
+        piece_type=ptype, expiration_date=(None if ptype == "dpgf_lot" else doc.expiration_date),
+        source_document_id=doc.id)
+    db.add(pc)
+    if ptype == "dpgf_lot":
+        db.commit()       # DPGF : le prix de vente du lot ne change pas (part et convention intactes)
+    else:
+        _after_piece_change(inv, c, db, request)
+    db.refresh(pc)
+    audit.record(db, action="guest.upload_piece", owner_id=inv.owner_id, project_id=inv.project_id,
+                 actor=_guest_actor(inv), actor_kind="guest", invite_id=inv.id,
+                 target_type="piece", target_id=pc.id,
+                 detail=f"{(pc.name or '')[:200]} (depuis mon coffre-fort)"[:255],
                  ip=audit.client_ip(request))
     return _piece_dict(pc)
 
@@ -737,18 +2523,25 @@ def guest_download_piece(token: str, piece_id: int, request: Request, db: Sessio
 def guest_delete_piece(token: str, piece_id: int, request: Request, db: Session = Depends(get_db)):
     """Le co-traitant retire SA pièce."""
     inv, c, pc = _guest_piece(token, piece_id, db)
+    _refuse_if_demo_invite(inv, db)
+    was_dpgf = (getattr(pc, "piece_type", "") or "") == "dpgf_lot"
     try:
         get_storage().delete(pc.file_key)
     except Exception:
         pass
     db.delete(pc)
-    db.commit()
+    if was_dpgf:
+        db.commit()       # DPGF : le prix de vente du lot ne change pas
+    else:
+        # Comme le PUT : retirer une pièce après soumission repasse la part en brouillon
+        # (le pli déposé ne doit pas perdre une pièce en silence après « soumission »).
+        _after_piece_change(inv, c, db, request)
     return {"ok": True}
 
 
 def _stream_piece(pc: ContributionPiece):
     storage = get_storage()
-    signed = storage.url(pc.file_key)
+    signed = storage.url(pc.file_key, filename=pc.name)
     if signed:
         return RedirectResponse(signed)
     try:
@@ -756,7 +2549,7 @@ def _stream_piece(pc: ContributionPiece):
     except FileNotFoundError:
         raise HTTPException(410, "Fichier absent du stockage")
     return StreamingResponse(io.BytesIO(content),
-                             media_type=pc.mime_type or "application/octet-stream",
+                             media_type=_safe_mime(pc.file_key),
                              headers=_attachment_headers(pc.name))
 
 
@@ -770,22 +2563,58 @@ def owner_download_piece(project_id: int, piece_id: int, request: Request,
         ContributionPiece.id == piece_id, ContributionPiece.project_id == project_id).first()
     if not pc:
         raise HTTPException(404, "Pièce introuvable")
+    cb = db.query(ProjectContribution).filter(ProjectContribution.id == pc.contribution_id).first()
+    if cb is not None and _owner_hides_part(db.get(ProjectInvite, cb.invite_id), cb):
+        raise HTTPException(404, "Pièce introuvable")     # part d'une invitation réseau sans réponse
+    # invite_id → l'entrée apparaît dans le JOURNAL DU MEMBRE concerné (« le mandataire a
+    # téléchargé votre pièce « … » ») : la confiance est vérifiable, pas déclarée.
     audit.record(db, action="owner.download_piece", owner_id=pc.owner_id, project_id=project_id,
                  actor=f"user:{current_user.id}", actor_kind="owner",
                  target_type="piece", target_id=pc.id, detail=(pc.name or "")[:255],
-                 ip=audit.client_ip(request))
+                 invite_id=(cb.invite_id if cb else None), ip=audit.client_ip(request))
     return _stream_piece(pc)
+
+
+def _record_owner_views(db: Session, project_id: int, owner_id: int, actor: str, ip: str,
+                        contribs: list) -> None:
+    """`owner.view_contribution` : UNE entrée par part et par heure au plus (dédoublonnée
+    sur la dernière entrée même action / même part / même tenant). Le journal du membre
+    dit « le mandataire a consulté votre part » sans devenir du bruit à chaque rafraîchissement."""
+    try:
+        since = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=1)
+        for c in contribs:
+            if not c or not c.invite_id:
+                continue
+            recent = db.query(AuditLog).filter(
+                AuditLog.owner_id == owner_id, AuditLog.action == "owner.view_contribution",
+                AuditLog.target_id == c.id, AuditLog.created_at >= since).first()
+            if recent:
+                continue
+            audit.record(db, action="owner.view_contribution", owner_id=owner_id, project_id=project_id,
+                         actor=actor, actor_kind="owner", target_type="contribution",
+                         target_id=c.id, invite_id=c.invite_id,
+                         detail=(c.company_name or "")[:255], ip=ip)
+    except Exception:
+        pass
 
 
 @router.get("/api/projects/{project_id}/contributions")
 def list_contributions(project_id: int, current_user: User = Depends(get_current_user),
                        db: Session = Depends(get_db)):
-    """Toutes les contributions des co-traitants de CE projet (toute l'organisation)."""
+    """Toutes les contributions des co-traitants de CE projet (toute l'organisation).
+    Vue MANDATAIRE : prix de lot en clair, enveloppe chiffrée ABSENTE (has_detail_chiffre),
+    et chaque consultation est journalisée vers le membre (owner.view_contribution)."""
     _owned_project(project_id, current_user, db)
     rows = db.query(ProjectContribution).filter(
         ProjectContribution.project_id == project_id
     ).order_by(ProjectContribution.updated_at.desc()).all()
-    return [_serialize_contribution(c, db) for c in rows]
+    # Invitation du réseau déclinée ou sans réponse : sa part n'est pas montrée (_owner_hides_part).
+    invs = {i.id: i for i in db.query(ProjectInvite).filter(ProjectInvite.project_id == project_id).all()}
+    rows = [c for c in rows if not _owner_hides_part(invs.get(c.invite_id), c)]
+    active_ids = {i.id for i in active_invites(db, project_id)}
+    _record_owner_views(db, project_id, data_owner_id(current_user, db), f"user:{current_user.id}", "",
+                        [c for c in rows if c.invite_id in active_ids])
+    return [_serialize_contribution(c, db, viewer="owner") for c in rows]
 
 
 # Pondération de complétude d'UNE part de partenaire (somme = 1.0). Déterministe et
@@ -820,15 +2649,227 @@ _PARTNER_PIECE_TYPES = [
 ]
 
 
-def _classify_partner_pieces(names: list) -> dict:
-    """À partir des noms de pièces déposées par un partenaire, déduit quels types
-    administratifs attendus sont présents/absents (rapprochement par mots-clés)."""
+# Types reconnus par NOM (classification à l'upload) : les 5 attendus + la qualification
+# (exigée seulement si le DCE demande des qualifications — cf. coffre_croise).
+_PIECE_TYPE_KEYWORDS = [
+    ("dpgf_lot", "Tableau de prix de la partie (prix de vente)",
+     ("dpgf", "decomposition du prix global", "décomposition du prix global")),
+] + _PARTNER_PIECE_TYPES + [
+    ("qualification", "Qualification / certificat",
+     ("qualibat", "qualif", "certificat", "rge", "opqibi", "qualifelec", "iso")),
+]
+_PIECE_LABELS = {key: label for key, label, _kw in _PIECE_TYPE_KEYWORDS}
+_PIECE_LABELS["autre"] = "Autre pièce"
+
+
+def _classify_piece_type(name: str) -> str:
+    """Clé de type ('kbis', 'sociale', 'qualification'…) déduite du nom, '' si inconnu."""
+    n = (name or "").lower()
+    for key, _label, kw in _PIECE_TYPE_KEYWORDS:
+        if any(k in n for k in kw):
+            return key
+    return ""
+
+
+def vault_doc_type(doc) -> str:
+    """Type de pièce d'un document du coffre-fort (catégorie, puis nom) — source unique : copie
+    d'une pièce depuis le coffre-fort (partenaire) et contrôle des attestations du chef de file."""
+    cat = doc.category.value if hasattr(doc.category, "value") else str(doc.category or "")
+    ptype = {"fiscal": "", "assurances": "assurance", "qualifications": "qualification"}.get(cat, "")
+    ptype = ptype or _classify_piece_type(doc.name or "")
+    if cat == "fiscal" and ptype not in ("fiscale", "sociale"):
+        ptype = "fiscale"
+    return ptype
+
+
+def _classify_partner_pieces(names: list, piece_types: list = None) -> dict:
+    """À partir des noms (et, si connus, des types posés par le déposant) des pièces d'un
+    partenaire, déduit quels types administratifs attendus sont présents/absents.
+    Renvoie aussi `types` : {nom: clé} pour chaque pièce reconnue."""
     low = [(n or "").lower() for n in names]
-    have, missing = [], []
+    types = list(piece_types or [])
+    types += [""] * (len(low) - len(types))
+    have, missing, by_name = [], [], {}
     for key, label, kw in _PARTNER_PIECE_TYPES:
-        present = any(any(k in n for k in kw) for n in low)
+        present = False
+        for i, n in enumerate(low):
+            t = (types[i] or "").strip().lower()
+            if (t == key) or (t in ("", "autre") and any(k in n for k in kw)):
+                present = True
+                by_name[names[i]] = key
         (have if present else missing).append(label)
-    return {"have": have, "missing": missing}
+    for i, n in enumerate(names):
+        if n not in by_name:
+            k = (types[i] or "").strip().lower() or _classify_piece_type(n)
+            if k:
+                by_name[n] = k
+    return {"have": have, "missing": missing, "types": by_name}
+
+
+def _ligne_a_fournir(name: str, labels: list) -> str:
+    """Cockpit : UNE ligne par membre, accordée au nombre (« X : pièce à fournir — Kbis »,
+    « X : pièces à fournir — Kbis, RIB ») ; au-delà de 3, « et N autre(s) » (rien ne disparaît
+    sans le dire)."""
+    n, rest = len(labels), len(labels) - 3
+    return (f"{name} : {'pièce' if n == 1 else 'pièces'} à fournir — {', '.join(labels[:3])}"
+            + (f" et {rest} autre{'s' if rest > 1 else ''}" if rest > 0 else ""))
+
+
+# ── Coffre-fort croisé (E) : statut des attestations de chaque membre ─────────
+_EXPECTED_BASE = ["kbis", "fiscale", "sociale", "assurance", "rib"]
+
+
+def _dce_requires_qualification(project) -> bool:
+    try:
+        a = project.ai_analysis if isinstance(project.ai_analysis, dict) else {}
+        details = a.get("details") if isinstance(a.get("details"), dict) else a
+        reqs = details.get("qualifications_requises") if isinstance(details, dict) else None
+        return bool(reqs)
+    except Exception:
+        return False
+
+
+def _piece_status(pc, deadline) -> str:
+    """present | valide_jusquau | expire_avant_limite | expire (manquant = pas de pièce). « Expire » au jour de Paris,
+    comme Mes documents (app.services.pieces_fin, contrat A3.3) : avec le jour du serveur (UTC), une attestation
+    finissant la veille restait valable entre minuit et 2 h (contrôle des bugs, 22/10/2026)."""
+    from app.services.pieces_fin import jour_paris
+    exp = getattr(pc, "expiration_date", None)
+    if not exp:
+        return "present"
+    today = jour_paris()
+    if exp < today:
+        return "expire"
+    if deadline and exp < deadline:
+        return "expire_avant_limite"
+    return "valide_jusquau"
+
+
+def _a_fournir_resume(total: int, moi: int) -> str:
+    """Une seule ligne de synthèse pour les pièces encore à fournir (le tableau montre le détail)."""
+    if total <= 0:
+        return ""
+    t = f"Il reste {total} pièce{'s' if total > 1 else ''} à fournir"
+    if moi and moi >= total:
+        t += ", toutes de votre côté" if total > 1 else ", de votre côté"
+    elif moi:
+        t += f", dont {moi} de votre côté"
+    return t + "."
+
+
+def coffre_croise(db: Session, project, invites: list, viewer_invite_id: Optional[int],
+                  for_owner: bool) -> dict:
+    """Grille membres × pièces en STATUT seulement. Chaque membre voit le statut des
+    attestations de TOUS (c'est le point du coffre croisé : savoir avant la date limite
+    que l'URSSAF d'un partenaire expire), mais jamais le fichier ni même son nom
+    (name/piece_id uniquement pour sa propre ligne ou pour le mandataire).
+
+    `alerts` (textes, clé inchangée) : « {pièce} à fournir : {entreprise} », « {pièce} de
+    {entreprise} a expiré / expire avant la date limite ». `alert_items` : les mêmes, typés
+    (kind = a_fournir | expire | expire_avant_limite, piece, label, company, is_me, text) pour
+    que l'écran n'ait pas à découper les textes ; `a_fournir` : total, part du membre qui
+    regarde et UNE ligne de synthèse (le tableau montre déjà chaque pièce à fournir)."""
+    deadline = project.deadline
+    if isinstance(deadline, datetime):
+        deadline = deadline.date()
+    # Un lien en lecture seule ne dépose aucune pièce (403) : aucune attestation ne lui est réclamée, ni devant le chef
+    # de file ni devant les autres membres (contrôle des bugs, 22/10/2026).
+    invites = avec_part(invites)
+    expected = _pieces_attendues(project)          # la même liste que l'aperçu du chef de file (vague 2b)
+    expected_keys = [e["key"] for e in expected]
+
+    # Réseau sans réponse : part absente pour le chef de file et les autres membres (seul son
+    # auteur la voit) — ni le nom saisi dans le brouillon, ni ses pièces.
+    contribs = visible_contributions(db, project.id, invites, viewer_invite_id=viewer_invite_id)
+    pieces_by_contrib = {}
+    for pc in db.query(ContributionPiece).filter(ContributionPiece.project_id == project.id).all():
+        pieces_by_contrib.setdefault(pc.contribution_id, []).append(pc)
+
+    members, alerts, items, all_complete = [], [], [], True
+
+    def _alert(kind, key, company, is_me, text, invite_id):
+        alerts.append(text)
+        it = {"kind": kind, "piece": key, "label": _PIECE_LABELS.get(key, key), "company": company,
+              "is_me": is_me, "text": text}
+        if for_owner:
+            it["invite_id"] = invite_id
+        items.append(it)
+
+    for inv in invites:
+        c = contribs.get(inv.id)
+        company = (c.company_name if c and c.company_name else inv.company_name) or "Partenaire"
+        is_me = (viewer_invite_id is not None and inv.id == viewer_invite_id)
+        show_detail = for_owner or is_me
+        pieces = {}
+        complete = True
+        for key in expected_keys:
+            # Meilleure pièce du type : la plus tardive en expiration (ou sans date).
+            cands = []
+            for pc in pieces_by_contrib.get(c.id, []) if c else []:
+                t = (getattr(pc, "piece_type", "") or "").strip().lower()
+                if t == key or (t in ("", "autre") and _classify_piece_type(pc.name) == key):
+                    cands.append(pc)
+            if not cands:
+                pieces[key] = {"status": "manquant"}      # code de statut inchangé (affiché « à fournir »)
+                complete = False
+                _alert("a_fournir", key, company, is_me,
+                       f"{_PIECE_LABELS.get(key, key)} à fournir : {company}", inv.id)
+                continue
+            best = max(cands, key=lambda p: (p.expiration_date or date.max))
+            status = _piece_status(best, deadline)
+            entry = {"status": status}
+            if best.expiration_date:
+                entry["expiration_date"] = best.expiration_date.isoformat()
+            if show_detail:
+                entry["name"] = best.name
+                entry["piece_id"] = best.id
+            pieces[key] = entry
+            if status in ("expire", "expire_avant_limite"):
+                complete = False
+                _alert(status, key, company, is_me,
+                       f"{_PIECE_LABELS.get(key, key)} de {company} "
+                       + ("a expiré" if status == "expire" else "expire avant la date limite"), inv.id)
+        all_complete = all_complete and complete
+        row = {"company": company, "role": inv.role or "cotraitant", "is_me": is_me,
+               "pieces": pieces, "complete": complete}
+        if for_owner:
+            row["invite_id"] = inv.id
+        members.append(row)
+    n_af = sum(1 for it in items if it["kind"] == "a_fournir")
+    n_af_moi = sum(1 for it in items if it["kind"] == "a_fournir" and it["is_me"])
+    return {"deadline": deadline.isoformat() if deadline else None, "expected": expected,
+            "members": members, "all_complete": bool(invites) and all_complete, "alerts": alerts,
+            "alert_items": items,
+            "a_fournir": {"total": n_af, "moi": n_af_moi, "resume": _a_fournir_resume(n_af, n_af_moi)}}
+
+
+@router.get("/api/projects/{project_id}/coffre-croise")
+def owner_coffre_croise(project_id: int, current_user: User = Depends(get_current_user),
+                        db: Session = Depends(get_db)):
+    """Grille du coffre-fort croisé, vue mandataire (noms/ids de pièces inclus)."""
+    project = _owned_project(project_id, current_user, db)
+    return coffre_croise(db, project, active_invites(db, project.id), viewer_invite_id=None, for_owner=True)
+
+
+@router.get("/api/invite/{token}/coffre-croise")
+@limiter.limit("60/minute")
+def guest_coffre_croise(token: str, request: Request, db: Session = Depends(get_db)):
+    """Grille du coffre-fort croisé, vue membre : statuts de tous, détail de SA ligne seulement."""
+    inv = _valid_invite(token, db)
+    project = db.query(Project).filter(Project.id == inv.project_id, Project.deleted_at.is_(None)).first()
+    if not project:
+        raise HTTPException(404, "Projet introuvable ou retiré")
+    if _network_pending(inv, db):        # aperçu minimal : pas la composition du groupement
+        raise HTTPException(403, "Acceptez d'abord l'invitation depuis votre compte Adjugo pour voir "
+                                 "les attestations du groupement.")
+    from app.services.groupement_members import apporte_une_part
+    if not apporte_une_part(inv):
+        # Un lien en lecture seule n'est pas membre du groupement (REORGANISATION_V2B § S.4) : l'état des pièces
+        # des membres, prévu pour les membres seulement, ne lui est pas communiqué ; aucun écran ne le lui montre
+        # (contrôle des bugs, deuxième passe).
+        raise HTTPException(403, "Ce lien est en lecture seule : l'état des pièces des membres ne vous est pas "
+                                 "communiqué.")
+    return coffre_croise(db, project, active_invites(db, project.id), viewer_invite_id=inv.id, for_owner=False)
 
 
 @router.get("/api/consortiums")
@@ -838,8 +2879,9 @@ def my_consortiums(current_user: User = Depends(get_current_user), db: Session =
     # Périmètre ORGANISATION : agrège les consortiums de toute l'équipe (comme la liste
     # des marchés et le tableau de bord), pas seulement ceux portés par le compte courant.
     ids = member_ids(current_user, db)
-    invites = db.query(ProjectInvite).filter(
-        ProjectInvite.owner_id.in_(ids), ProjectInvite.revoked.is_(False)).all()
+    # Un lien en lecture seule n'apporte aucune part : il ne compte pas dans « parts reçues X sur Y ».
+    invites = avec_part(db.query(ProjectInvite).filter(
+        ProjectInvite.owner_id.in_(ids), active_invite_filter()).all())
     if not invites:
         return {"consortiums": [], "active": 0, "partners_total": 0, "submitted_total": 0}
     pids = {i.project_id for i in invites}
@@ -866,6 +2908,8 @@ def my_consortiums(current_user: User = Depends(get_current_user), db: Session =
         total_score = submitted = pieces = 0
         for inv in invs:
             c = contribs.get(inv.id)
+            if c is not None and _owner_hides_part(inv, c):
+                c = None        # réseau sans réponse : son brouillon ne compte pas (ni part, ni pièces)
             flags = _partner_flags(c)
             total_score += _partner_score(flags)
             if flags["submitted"]:
@@ -891,36 +2935,50 @@ def my_consortiums(current_user: User = Depends(get_current_user), db: Session =
 def consortium_cockpit(project_id: int, current_user: User = Depends(get_current_user),
                        db: Session = Depends(get_db)):
     """Cockpit du consortium (mandataire) : partenaires × lots, complétude de chaque part,
-    et % de réponse commune PRÊTE — calcul DÉTERMINISTE (jamais inventé)."""
-    _owned_project(project_id, current_user, db)
-    invites = db.query(ProjectInvite).filter(
-        ProjectInvite.project_id == project_id,
-        ProjectInvite.revoked.is_(False)).order_by(ProjectInvite.created_at.asc()).all()
+    et % de réponse commune PRÊTE — calcul DÉTERMINISTE (jamais inventé).
+    Doctrine : le mandataire voit le PRIX DE LOT de chaque membre (prix_lot_ht), jamais la
+    décomposition. Inclut l'état dérivé du groupement (`state`) et le coffre croisé (`coffre`)."""
+    project = _owned_project(project_id, current_user, db)
+    # membres = invitations actives (ni révoquées ni déclinées) qui apportent une part (un lien en lecture seule n'a
+    # ni part, ni pièce à fournir : aucun manque ne le vise)
+    invites = avec_part(active_invites(db, project_id))
     contribs = {c.invite_id: c for c in db.query(ProjectContribution).filter(
         ProjectContribution.project_id == project_id).all()}
-    piece_counts, piece_names = {}, {}
+    for inv in invites:          # réseau sans réponse : part non montrée (_owner_hides_part)
+        if inv.id in contribs and _owner_hides_part(inv, contribs[inv.id]):
+            contribs.pop(inv.id)
+    piece_counts, piece_names, piece_types = {}, {}, {}
     for pc in db.query(ContributionPiece).filter(
             ContributionPiece.project_id == project_id).all():
         piece_counts[pc.contribution_id] = piece_counts.get(pc.contribution_id, 0) + 1
         piece_names.setdefault(pc.contribution_id, []).append(pc.name or "")
+        piece_types.setdefault(pc.contribution_id, []).append(getattr(pc, "piece_type", "") or "")
     company = db.query(Company).filter(Company.user_id == data_owner_id(current_user, db)).first()
 
     partners, lots, missing, total_score = [], {}, [], 0.0
+    piece_line = {}      # invite_id → position, dans `missing`, de sa ligne « pièces à fournir »
     for inv in invites:
         c = contribs.get(inv.id)
         lot_clean = (c.lot.strip() if c and c.lot else "")   # évite une clé de lot vide/espaces
         flags = _partner_flags(c)
         score = _partner_score(flags)                          # borné [0,1]
         total_score += score
-        name = (c.company_name if c and c.company_name else inv.company_name) or inv.recipient or "Partenaire"
-        pclass = _classify_partner_pieces(piece_names.get(c.id, []) if c else [])
+        name = (c.company_name if c and c.company_name else inv.company_name) or "Partenaire"
+        pclass = _classify_partner_pieces(piece_names.get(c.id, []) if c else [],
+                                          piece_types.get(c.id, []) if c else [])
+        has_price = bool(c and c.prix_lot_ht is not None)
         partners.append({
+            "invite_id": inv.id,
             "company": name, "role": inv.role or "cotraitant",
             "lot": lot_clean, "status": (c.status if c else "invited"),
             "has_references": flags["references"], "has_memoire": flags["memoire"],
-            "has_chiffrage": bool(c and c.chiffrage_note),
+            "has_price": has_price,
+            "prix_lot_ht": (c.prix_lot_ht if has_price else None),      # vue mandataire
+            "has_detail_chiffre": bool(c and isinstance(c.detail_chiffre, dict) and c.detail_chiffre),
+            "capacites": (c.capacites if c and isinstance(c.capacites, dict) else None),
             "qualifications_count": len(c.qualifications or []) if c else 0,
             "pieces_count": (piece_counts.get(c.id, 0) if c else 0),
+            "has_dpgf_lot": bool(c and "dpgf_lot" in piece_types.get(c.id, [])),
             "pieces_have": pclass["have"], "pieces_missing": pclass["missing"],
             "completeness": round(score * 100),
         })
@@ -929,25 +2987,54 @@ def consortium_cockpit(project_id: int, current_user: User = Depends(get_current
         # File des manques (concrets, actionnables) — le plus bloquant d'abord.
         if not flags["submitted"]:
             missing.append(f"{name} n'a pas encore soumis sa part")
+        elif not has_price:
+            missing.append(f"{name} : prix de sa partie manquant")
         elif not flags["memoire"]:
-            missing.append(f"{name} : paragraphe de mémoire manquant")
+            missing.append(f"{name} : paragraphe du dossier de présentation manquant")
         elif not flags["lot"]:
-            missing.append(f"{name} : lot/périmètre non précisé")
+            missing.append(f"{name} : partie du marché (lot) non précisée")
         elif not flags["references"]:
             missing.append(f"{name} : aucune référence renseignée")
         elif pclass["missing"]:
             # Part soumise mais pièces administratives obligatoires absentes du membre.
-            missing.append(f"{name} : pièce(s) à fournir — {', '.join(pclass['missing'][:3])}")
+            piece_line[inv.id] = len(missing)
+            missing.append(_ligne_a_fournir(name, pclass["missing"]))
+
+    # Coffre croisé : chaque attestation expirée / expirant avant la date limite, puis les pièces
+    # à fournir regroupées en UNE ligne par membre (le tableau du coffre, juste en dessous, et les
+    # pastilles de chaque part montrent déjà le détail). Si la file a déjà une ligne « à fournir »
+    # pour ce membre, celle du coffre la REMPLACE : c'est la liste complète (qualification
+    # comprise quand le DCE en demande une), avec « et N autres » au-delà de 3.
+    coffre = coffre_croise(db, project, invites, viewer_invite_id=None, for_owner=True)
+    a_fournir = {}
+    for it in coffre.get("alert_items", []):
+        if it["kind"] == "a_fournir":
+            a_fournir.setdefault(it.get("invite_id"), (it["company"], []))[1].append(it["label"])
+        elif it["text"] not in missing:
+            missing.append(it["text"])
+    for invite_id, (who, labels) in a_fournir.items():
+        line = _ligne_a_fournir(who, labels)
+        if invite_id in piece_line:
+            missing[piece_line[invite_id]] = line
+        else:
+            missing.append(line)
 
     # Conformité (politique : AVERTIR, pas bloquer) — un lot ne peut avoir qu'UN attributaire
-    # en groupement conjoint : on signale tout lot revendiqué par plusieurs partenaires.
+    # en groupement conjoint : on signale tout lot revendiqué par plusieurs partenaires (en tête
+    # de file ; placé APRÈS le coffre pour que les positions de `piece_line` restent justes).
     for k, names in lots.items():
         if len(names) > 1:
-            missing.insert(0, f"Lot « {k} » revendiqué par {len(names)} partenaires "
-                              f"({', '.join(names[:3])}) — un lot ne peut avoir qu'un seul attributaire")
+            missing.insert(0, f"Partie « {k} » revendiquée par {len(names)} partenaires "
+                              f"({', '.join(names[:3])}) : une partie (lot) n'a qu'un seul attributaire")
+
+    # Journal membre : « le mandataire a consulté votre part » (1 entrée / part / heure).
+    _record_owner_views(db, project_id, data_owner_id(current_user, db), f"user:{current_user.id}", "",
+                        [contribs.get(inv.id) for inv in invites])
 
     n = len(invites)
     pct = round(100 * total_score / n) if n else 0
+    state = groupement_state(project, db)
+    total_prev, lead_part, lead_source = _total_previsionnel(db, project)
     return {
         "partners": partners,
         "lots": [{"lot": k, "partners": v} for k, v in lots.items()],
@@ -962,7 +3049,194 @@ def consortium_cockpit(project_id: int, current_user: User = Depends(get_current
             "company": (company.name if company else "") or "",
             "qualifications": len(company.qualifications or []) if company else 0,
         },
+        "state": state,
+        "coffre": coffre,
+        "offre": {
+            "frozen": bool(state.get("offer_frozen")),
+            "total_ht": state.get("total_offre_ht"),
+            "frozen_at": state.get("frozen_at"),
+            # Total prévisionnel = celui de la convention (« Convention et accords ») : part du chef de file, partenaires
+            # et partenaires hors ligne, sans sous-traitant ; None tant qu'un prix manque ou sans partenaire (comme la
+            # convention : le nom de l'entreprise du chef de file, s'il manque, empêche de générer, pas de compter).
+            "total_ht_estime": total_prev,
+            "lead_total_ht": lead_part,
+            "lead_source": lead_source,          # « convention » (part saisie) | « estimation » (estimation de prix)
+            "warning_two_members": _deux_membres(db, project),
+        },
     }
+
+
+def _total_previsionnel(db: Session, project: Project) -> tuple:
+    """(total, part du chef de file, d'où vient cette part) : les chiffres de « Convention et accords »
+    (total_estime_ht de la convention, même calcul), pour que la page du marché ne montre jamais un autre total.
+    Part du chef de file : celle saisie dans la convention (« convention »), à défaut l'estimation de prix
+    (« estimation »)."""
+    from app.services import groupement_convention as _gc
+    try:
+        conv = _gc.get_convention(db, project.id)
+        source = "convention" if (conv is not None and isinstance(conv.params, dict)
+                                  and conv.params.get("part_mandataire_ht") is not None) else "estimation"
+        if conv is not None and conv.status in _gc.ACTIVE:
+            return conv.total_offre_ht, _gc.merged_params(conv, project).get("part_mandataire_ht"), source
+        built = _gc.build_context(db, project, conv, _gc._company_for(db, project), brouillon=True)
+        lead = next((m for m in built["ctx"]["members"] if m.get("kind") == "mandataire"), {})
+        return built["ctx"].get("total_ht"), lead.get("prix_lot_ht"), source
+    except Exception:
+        return None, None, "estimation"
+
+
+# ── Figer l'offre commune (minimal, vague 1) ─────────────────────────────────
+class FreezeBody(BaseModel):
+    lead_total_ht: Optional[float] = None    # part du mandataire si pas de chiffrage (estimate)
+
+
+@router.post("/api/projects/{project_id}/offre/figer")
+def freeze_offer(project_id: int, request: Request, body: FreezeBody = None,
+                 current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Fige l'offre commune : total = prix de lot de chaque membre (part soumise) + part du
+    mandataire. C'est SEULEMENT à partir de là que les membres voient le total (avec
+    l'avertissement « à 2 membres, le total révèle la part de l'autre »)."""
+    project = _owned_project(project_id, current_user, db)
+    # Vague 2 : « Figer l'offre » est fusionné avec la génération de la convention. Une
+    # convention générée porte déjà l'offre figée : la re-figer ici la désynchroniserait.
+    from app.services.groupement_convention import get_convention as _get_conv
+    _conv = _get_conv(db, project_id)
+    if _conv is not None and _conv.status in ("a_signer", "signee"):
+        raise HTTPException(409, {"code": "convention_generee",
+                                  "message": "L'offre est déjà figée par la convention de groupement. Pour la "
+                                             "modifier, régénérez la convention."})
+    if _conv is not None:
+        # Brouillon ou convention périmée : l'offre ne se fige QUE par la génération (qui révèle le
+        # total en même temps que l'annexe). Figer ici révélait le total et les nouveaux prix aux
+        # partenaires avant toute convention (doctrine de visibilité, relecture vague 2).
+        raise HTTPException(409, {"code": "convention_a_generer",
+                                  "message": "Avec une convention de groupement, l'offre se fige en générant la "
+                                             "convention (« Convention et accords »)."})
+    # Un lien en lecture seule n'apporte aucune part (ni manque, ni total, ni courriel) ; un sous-traitant n'est pas
+    # membre du groupement : son prix n'entre pas dans le total et le total ne lui est jamais communiqué.
+    invites = avec_part(active_invites(db, project_id))
+    if not invites:
+        raise HTTPException(422, "Aucun partenaire actif : invitez au moins un partenaire avant de figer l'offre.")
+    from app.services.groupement_members import _est_sous_traitant
+    membres = [i for i in invites if not _est_sous_traitant(i.role)]
+    contribs = visible_contributions(db, project_id, invites)      # réseau sans réponse : part absente
+    manques = []
+    for inv in invites:
+        c = contribs.get(inv.id)
+        name = (c.company_name if c and c.company_name else inv.company_name) or "Partenaire"
+        if not c or c.status != "submitted":
+            manques.append(f"{name} n'a pas encore soumis sa part")
+        elif c.prix_lot_ht is None:
+            manques.append(f"{name} : prix de sa partie manquant")
+    if manques:
+        raise HTTPException(422, {"message": "Impossible de figer l'offre : il manque des éléments.",
+                                  "missing": manques})
+    lead = body.lead_total_ht if body and body.lead_total_ht is not None else None
+    if lead is not None and (lead < 0 or lead > 1e10):
+        raise HTTPException(422, "Part du chef de file invalide.")
+    total = total_offre_ht(project, db, lead_total=lead)
+    if total is None:
+        raise HTTPException(422, "Impossible de calculer le total : vérifiez le prix de la partie de chaque partenaire.")
+    est = project.estimate if isinstance(project.estimate, dict) else {}
+    lead_total = lead if lead is not None else (
+        float(est["total_ht"]) if est.get("total_ht") is not None else None)
+    if lead_total is None:
+        # Sans la part du mandataire, le « total de l'offre commune » envoyé aux membres
+        # serait faux (somme des seules parts des partenaires).
+        raise HTTPException(422, {"message": "Indiquez votre propre part (€ HT) : aucun chiffrage "
+                                             "n'est enregistré pour ce marché.",
+                                  "missing": ["Votre part (chef de file) : montant € HT"]})
+    frozen_at = utcnow().isoformat()
+    parts = [{"invite_id": inv.id,
+              "company": (contribs[inv.id].company_name or inv.company_name or "Partenaire"),
+              "prix_lot_ht": float(contribs[inv.id].prix_lot_ht)} for inv in membres]
+    plan = dict(project.groupement_plan) if isinstance(project.groupement_plan, dict) else {}
+    plan["offre"] = {"total_ht": total, "frozen_at": frozen_at, "parts": parts, "lead_total_ht": lead_total}
+    project.groupement_plan = plan          # NOUVEAU dict : SQLAlchemy détecte le changement
+    db.commit()
+    audit.record(db, action="offer.frozen", owner_id=data_owner_id(current_user, db), project_id=project.id,
+                 actor=f"user:{current_user.id}", actor_kind="owner", target_type="project",
+                 target_id=project.id, detail=f"total {total:,.0f} € HT".replace(",", " ")[:255],
+                 ip=audit.client_ip(request))
+    # Emails best-effort à chaque membre — hors requête (jamais bloquant).
+    try:
+        base = (_settings.APP_BASE_URL or "").rstrip("/")
+        total_txt = f"{total:,.0f}".replace(",", " ")
+        mails = [(inv.recipient, f"L'offre commune est figée — {project.name[:60]}",
+                  f"Bonjour,\n\nLe chef de file a figé l'offre commune du groupement sur le marché "
+                  f"« {project.name} » : total {total_txt} € HT.\n\n"
+                  f"Votre part dans ce marché : {base}/invite/{inv.token}\n\n— Adjugo")
+                 for inv in membres if _is_email(inv.recipient)]
+        from app.services.demo_search import is_demo
+        if not is_demo(current_user):          # la démo n'envoie jamais d'email
+            _send_mails_async(mails)
+    except Exception:
+        pass
+    return {"ok": True, "total_ht": total, "frozen_at": frozen_at, "n_members": len(invites),
+            "warning_two_members": _deux_membres(db, project)}
+
+
+@router.delete("/api/projects/{project_id}/offre/figer")
+def unfreeze_offer(project_id: int, request: Request,
+                   current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Défige l'offre commune (le total n'est plus montré aux membres)."""
+    _owned_project(project_id, current_user, db)
+    done = _unfreeze_offer_if_needed(db, project_id, "défigée par le chef de file",
+                                     actor=f"user:{current_user.id}", actor_kind="owner",
+                                     ip=audit.client_ip(request))
+    return {"ok": True, "was_frozen": done}
+
+
+# ── Journal MEMBRE (D) : projection « qui a vu quoi » pour UNE invitation ────
+# Source unique (vague 4) : app/services/journal_membre.py — projection, événements de
+# groupement visibles de tous, libellés, sous-chaîne vérifiable et exports. Ré-exportés ici
+# pour les appelants existants.
+from app.services.journal_membre import (GROUP_EVENTS, INTEGRITY_LABEL,  # noqa: E402
+                                         LABELS_ME as _JOURNAL_LABELS_ME,
+                                         LABELS_OWNER as _JOURNAL_LABELS_OWNER,
+                                         LABELS_PARTNER as _JOURNAL_LABELS_PARTNER)
+
+
+_CHAIN_CACHE: dict = {}        # owner_id → (ts, intact) — process unique, TTL 5 min
+_CHAIN_TTL = 300
+
+
+def _chain_intact_cached(db: Session, owner_id: int) -> Optional[bool]:
+    """verify_chain = full-scan + re-hash de TOUT le journal du tenant : sur une route invitée
+    à 60/min ce serait un DoS trivial de l'unique worker → résultat mis en cache 5 min.
+    Erreur technique : None (inconnu), JAMAIS False (« altéré ») et jamais mise en cache."""
+    import time as _time
+    hit = _CHAIN_CACHE.get(owner_id)
+    now = _time.time()
+    if hit and now - hit[0] < _CHAIN_TTL:
+        return hit[1]
+    try:
+        intact = bool(audit.verify_chain(db, owner_id).get("intact"))
+    except Exception:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        return None
+    _CHAIN_CACHE[owner_id] = (now, intact)
+    return intact
+
+
+@router.get("/api/invite/{token}/journal")
+@limiter.limit("60/minute")
+def guest_journal(token: str, request: Request, db: Session = Depends(get_db)):
+    """Journal « qui a vu quoi » DU MEMBRE : ses entrées (invite_id = la sienne) + les
+    événements de groupement du projet. Projection SANS ip, SANS email, SANS target_id
+    d'un autre ; l'acteur devient « vous » / « mandataire » / « partenaire ».
+    Vérification par le membre : GET …/journal/integrity (app/routers/journal_membre.py)."""
+    from app.services.journal_membre import journal_entries
+    inv = _valid_invite(token, db)
+    out = journal_entries(db, inv)
+    try:
+        chained = _chain_intact_cached(db, inv.owner_id)
+    except Exception:
+        chained = None                 # inconnu : une panne n'est pas une altération
+    return {"entries": out, "chained": chained, "integrity_label": INTEGRITY_LABEL}
 
 
 # ── Notifications (activité des partenaires, in-app) ─────────────────────────
@@ -972,7 +3246,29 @@ _NOTIF_LABELS = {
     "guest.submit_contribution": "a soumis sa part",
     "guest.upload_piece": "a déposé une pièce",
     "guest.view_project": "a consulté le dossier",
+    "invite.declined": "a décliné l'invitation",
+    "guest.capacites_updated": "a mis à jour ses capacités",
+    "convention.signed": "a validé la convention de groupement",
 }
+
+
+# Notifications qui disent quelque chose de la part d'un partenaire (pièce déposée, capacités mises à jour).
+_NOTIF_DE_LA_PART = ("guest.upload_piece", "guest.capacites_updated")
+
+
+def _sans_part_cachee(rows: list, db: Session) -> list:
+    """Retire les notifications qui disent quelque chose d'une part que le chef de file ne voit pas (invitation du
+    réseau sans réponse ou déclinée : `_owner_hides_part`), lue au moment de la lecture : rien du brouillon (nom d'une
+    pièce, capacités) ne lui arrive par la cloche, comme par la liste des parts (contrôle des bugs, deuxième passe).
+    Une fois l'invitation acceptée, elles réapparaissent avec la part."""
+    ids = {r.invite_id for r in rows if r.action in _NOTIF_DE_LA_PART and r.invite_id}
+    if not ids:
+        return rows
+    invs = {i.id: i for i in db.query(ProjectInvite).filter(ProjectInvite.id.in_(ids)).all()}
+    contribs = {c.invite_id: c for c in db.query(ProjectContribution).filter(
+        ProjectContribution.invite_id.in_(ids)).all()}
+    cachees = {i for i in ids if invs.get(i) is not None and _owner_hides_part(invs[i], contribs.get(i))}
+    return [r for r in rows if not (r.action in _NOTIF_DE_LA_PART and r.invite_id in cachees)]
 
 
 @router.get("/api/notifications")
@@ -986,6 +3282,7 @@ def notifications(current_user: User = Depends(get_current_user),
         AuditLog.action.in_(list(_NOTIF_LABELS)),
         AuditLog.created_at >= since
     ).order_by(AuditLog.created_at.desc()).limit(40).all()
+    rows = _sans_part_cachee(rows, db)
     pids = {r.project_id for r in rows if r.project_id}
     names = {}
     if pids:
@@ -1006,7 +3303,7 @@ def _shared_item(inv: ProjectInvite, db: Session) -> dict:
     project = db.query(Project).filter(Project.id == inv.project_id, Project.deleted_at.is_(None)).first()
     owner_company = db.query(Company).filter(Company.user_id == inv.owner_id).first()
     c = db.query(ProjectContribution).filter(ProjectContribution.invite_id == inv.id).first()
-    return {
+    out = {
         "token": inv.token, "project_id": inv.project_id,
         "project": (project.name if project else "Appel d'offres"),
         "mandataire": (owner_company.name if owner_company else "") or "",
@@ -1015,6 +3312,31 @@ def _shared_item(inv: ProjectInvite, db: Session) -> dict:
         "contribution_status": (c.status if c else None),
         "deadline": project.deadline.isoformat() if project and project.deadline else None,
     }
+    # Vague 2 : étape du groupement (stepper 1→5) et « convention à valider » pour CE membre.
+    # Statuts seulement : jamais de prix, jamais le score seul du mandataire.
+    out["groupement"] = None
+    if project is not None:
+        try:
+            st = groupement_state(project, db)
+            from app.models import GroupementSignature
+            conv = st.get("convention") or {}
+            sig = None
+            if conv.get("id"):
+                sig = db.query(GroupementSignature).filter(
+                    GroupementSignature.convention_id == conv["id"],
+                    GroupementSignature.invite_id == inv.id).first()
+            out["groupement"] = {
+                "state": st.get("state"), "label": st.get("label"), "index": st.get("index"),
+                "etape": st.get("etape"), "etapes": st.get("etapes"),
+                "convention_status": conv.get("status") or "",
+                "a_valider": bool(sig is not None and conv.get("status") == "a_signer" and sig.status == "pending"),
+            }
+        except Exception:
+            out["groupement"] = None
+    # Rédaction, vague 4 : parties du dossier de présentation confiées à ce membre (statuts seulement).
+    from app.services.atelier_groupement import resume_partenaire
+    out["redaction"] = resume_partenaire(db, inv) if project is not None else None
+    return out
 
 
 @router.post("/api/invite/{token}/claim")
@@ -1023,22 +3345,47 @@ def claim_invite(token: str, request: Request, current_user: User = Depends(get_
     """Un titulaire de compte réclame un lien → l'AO entre dans son « Partagé avec moi »."""
     inv = _valid_invite(token, db)
     if inv.owner_id in member_ids(current_user, db):
-        raise HTTPException(400, "Vous êtes le mandataire de ce partage.")
+        raise HTTPException(400, "Vous êtes le chef de file de ce partage.")
     if inv.accepted_by_user_id and inv.accepted_by_user_id != current_user.id:
         raise HTTPException(409, "Ce lien a déjà été réclamé par un autre compte.")
     # Binding d'identité : si le lien cible une adresse précise, seul le compte de CETTE
     # adresse peut le réclamer (le secret de l'URL ne suffit plus à usurper le partenaire).
-    if _is_email(inv.recipient) and (current_user.email or "").strip().lower() != inv.recipient.strip().lower():
-        raise HTTPException(403, f"Ce lien est réservé à {_mask_email(inv.recipient)}. "
-                                 f"Connectez-vous avec ce compte pour l'accepter.")
+    if _is_email(inv.recipient):
+        if (current_user.email or "").strip().lower() != inv.recipient.strip().lower():
+            raise HTTPException(403, f"Ce lien est réservé à {_mask_email(inv.recipient)}. "
+                                     f"Connectez-vous avec ce compte pour l'accepter.")
+        # …et cette adresse doit être PROUVÉE : sinon n'importe qui pouvait créer un compte
+        # avec l'email du partenaire (jamais confirmé) et verrouiller le lien à sa place.
+        if not getattr(current_user, "email_verified", False):
+            raise HTTPException(403, "Confirmez d'abord votre adresse email (lien reçu par mail) "
+                                     "pour accepter ce partage nominatif.")
+    espace_rattache = False
+    if not inv.accepted_by_user_id and getattr(inv, "espace_hash", "") and not _is_email(inv.recipient):
+        # Rédaction V4 (contre-relecture) : le lien ne vise aucune adresse et son espace privé de rédaction est déjà
+        # ouvert. Le rattacher à un compte rend ses brouillons à ce compte : il faut donc détenir la clé de cet espace
+        # (le navigateur où le partenaire rédige). Sans elle, le chef de file, qui détient le lien, rattacherait le
+        # lien à un second compte, lirait les brouillons privés et priverait le partenaire de son espace.
+        from app.services import atelier_groupement as ag
+        if not ag.cle_valide(inv, request.headers.get(ag.ENTETE_CLE)):
+            raise HTTPException(409, {"code": "espace_a_prouver", "message": ag.MSG_RATTACHER_ESPACE})
+        espace_rattache = True
     if not inv.accepted_by_user_id:
         inv.accepted_by_user_id = current_user.id
+        _mark_network_accepted(inv)
         db.commit()
+        _sync_a_la_reponse(inv, db)
         audit.record(db, action="invite.claimed", owner_id=inv.owner_id, project_id=inv.project_id,
-                     actor=(current_user.full_name or current_user.email or f"user:{current_user.id}")[:160],
-                     actor_kind="guest", target_type="invite", target_id=inv.id,
-                     detail=(current_user.email or "")[:255], ip=audit.client_ip(request))
-    return _shared_item(inv, db)
+                     actor=(inv.company_name or "invité")[:160],
+                     actor_kind="guest", target_type="invite", target_id=inv.id, invite_id=inv.id,
+                     detail=("Espace privé de rédaction du lien rattaché au compte (clé présentée)"
+                             if espace_rattache else ""), ip=audit.client_ip(request))
+    out = _shared_item(inv, db)
+    # Boucle de croissance (vague 3) : simple SUGGESTION d'interface « publiez votre profil
+    # partenaire » si l'organisation n'en a pas de publié — jamais d'email non sollicité.
+    # Vague 2b (B1) : notée sur le serveur (users.suggestion_reseau), elle ne se perd plus entre deux onglets.
+    from app.services.prise_en_main import proposer_suggestion_reseau
+    out["suggest_profile"] = proposer_suggestion_reseau(db, current_user)
+    return out
 
 
 @router.get("/api/shared")
@@ -1046,7 +3393,7 @@ def shared_with_me(current_user: User = Depends(get_current_user), db: Session =
     """Les AO partagés AVEC moi (liens que j'ai réclamés). Pour « Partagé avec moi »."""
     rows = db.query(ProjectInvite).filter(
         ProjectInvite.accepted_by_user_id == current_user.id,
-        ProjectInvite.revoked.is_(False)).order_by(ProjectInvite.created_at.desc()).all()
+        active_invite_filter()).order_by(ProjectInvite.created_at.desc()).all()
     return [_shared_item(inv, db) for inv in rows if not _is_expired(inv.expires_at)]
 
 
@@ -1056,38 +3403,65 @@ def dossier_preview(project_id: int, current_user: User = Depends(get_current_us
                     db: Session = Depends(get_db)):
     """Liste les fichiers que contiendra le dossier commun, SANS lancer la génération
     (pas de LLM, pas de quota) — pour voir avant d'exporter."""
-    _owned_project(project_id, current_user, db)
+    project = _owned_project(project_id, current_user, db)
+    # Même nom que dans le ZIP : celui du règlement s'il y est retrouvé, sinon « Mémoire technique ».
+    from app.services.agents.redaction import DOSSIER_FORMULAIRES, DOSSIER_PIECES_PARTENAIRES
+    from app.services.memoire_export import file_stem, memoire_label
+    _stem = file_stem(memoire_label(project.ai_analysis))
     files = [
-        {"name": "memoire_technique.pdf", "kind": "Mémoire technique (savoir-faire fusionnés)"},
-        {"name": "cerfa/DC1.pdf", "kind": "CERFA — lettre de candidature (groupement)"},
-        {"name": "cerfa/DC2.pdf", "kind": "CERFA — déclaration du candidat"},
-        {"name": "cerfa/ATTRI1.pdf", "kind": "CERFA — acte d'engagement"},
+        {"name": f"{_stem}.docx", "kind": "Dossier de présentation, en Word à relire"},
+        {"name": f"{_stem}.pdf", "kind": "Dossier de présentation, en PDF"},
+        {"name": f"{DOSSIER_FORMULAIRES}/DC1.pdf", "kind": "Formulaire officiel DC1 : lettre de candidature (groupement)"},
+        {"name": f"{DOSSIER_FORMULAIRES}/DC2.pdf", "kind": "Formulaire officiel DC2 : déclaration du candidat"},
+        {"name": f"{DOSSIER_FORMULAIRES}/ATTRI1.pdf", "kind": "Formulaire officiel ATTRI1 : acte d'engagement"},
         {"name": "synthese_groupement.pdf", "kind": "Composition du groupement"},
-        {"name": "fiche_appel_offres.pdf", "kind": "Fiche récapitulative de l'AO"},
+        {"name": "fiche_appel_offres.pdf", "kind": "Fiche récapitulative du marché"},
     ]
+    # Exclut les partenaires RÉVOQUÉS ou qui ont DÉCLINÉ (comme build_dossier) : l'aperçu
+    # doit refléter exactement le ZIP réellement assemblé, jamais les pièces d'un partenaire sorti.
     rows = db.query(ContributionPiece, ProjectContribution).join(
-        ProjectContribution, ContributionPiece.contribution_id == ProjectContribution.id).filter(
+        ProjectContribution, ContributionPiece.contribution_id == ProjectContribution.id).join(
+        ProjectInvite, ProjectContribution.invite_id == ProjectInvite.id).filter(
         ContributionPiece.project_id == project_id,
-        ProjectContribution.status == "submitted").all()
+        ProjectContribution.status == "submitted",
+        active_invite_filter()).all()
     for pc, cb in rows:
-        co = (cb.company_name or "cotraitant")
-        files.append({"name": f"pieces_cotraitants/{co}/{pc.name}",
+        co = (cb.company_name or "partenaire")
+        files.append({"name": f"{DOSSIER_PIECES_PARTENAIRES}/{co}/{pc.name}",
                       "kind": f"Pièce — {co}", "size": pc.file_size or 0})
     n_pieces = len(rows)
+    # Vague 2 : la convention de groupement générée (texte figé + accords) part dans le dossier.
+    try:
+        from app.services.groupement_convention import STATUS_LABELS, get_convention
+        _conv = get_convention(db, project_id)
+        if _conv is not None and _conv.status in ("a_signer", "signee"):
+            files.append({"name": "convention_groupement.pdf",
+                          "kind": f"Convention de groupement v{_conv.version} — {STATUS_LABELS.get(_conv.status, '')}"})
+    except Exception:
+        pass
     return {"files": files, "count": len(files), "pieces_count": n_pieces}
 
 
-# ── Compte-rendu PDF du consortium (synthèse partageable) ────────────────────
+# ── Compte-rendu PDF du groupement : DOCUMENT INTERNE AU CHEF DE FILE ─────────
+# Seule l'organisation du chef de file peut le télécharger ; il reprend ce qu'elle voit déjà à
+# l'écran. Ce n'est pas une pièce du dossier remis à l'acheteur.
 @router.get("/api/projects/{project_id}/consortium/report")
 def consortium_report(project_id: int, current_user: User = Depends(get_current_user),
                       db: Session = Depends(get_db)):
     project = _owned_project(project_id, current_user, db)
     data = consortium_cockpit(project_id, current_user, db)
     company = db.query(Company).filter(Company.user_id == data_owner_id(current_user, db)).first()
-    contribs = [_serialize_contribution(c, db) for c in db.query(ProjectContribution).filter(
-        ProjectContribution.project_id == project_id).all()]
+    # Cloisonnement : même interne, le document peut être transféré par le chef de file → il ne
+    # doit JAMAIS exposer l'apport d'un partenaire RÉVOQUÉ/DÉCLINÉ, ni AUCUN prix par membre
+    # (doctrine de visibilité : le PDF n'imprime que le total de l'offre FIGÉE). Vue owner :
+    # enveloppe absente.
+    contribs = [_serialize_contribution(c, db, viewer="owner") for c, i in db.query(
+        ProjectContribution, ProjectInvite).join(
+        ProjectInvite, ProjectContribution.invite_id == ProjectInvite.id).filter(
+        ProjectContribution.project_id == project_id,
+        active_invite_filter()).all() if not _owner_hides_part(i, c)]
     from app.services.consortium_report import generate_consortium_report_pdf
     pdf = generate_consortium_report_pdf(project.name, (company.name if company else ""), data, contribs)
     safe = re.sub(r'[^A-Za-z0-9._ -]', "_", (project.name or "consortium"))[:50]
     return Response(content=pdf, media_type="application/pdf",
-                    headers={"Content-Disposition": f'attachment; filename="Compte-rendu_{safe}.pdf"'})
+                    headers={"Content-Disposition": f'attachment; filename="Compte-rendu_interne_{safe}.pdf"'})

@@ -185,7 +185,7 @@ H3("Le cœur : le « Consortium as a Service »")
 P("La plupart des outils s'arrêtent à la veille ou à la génération de documents. Notre <b>ADN</b>, ce qui "
   "nous rend différents, c'est la <b>co-traitance cloisonnée</b> : permettre à plusieurs PME de préparer "
   "<b>ensemble</b> une réponse, chacune apportant sa part (références, chiffrage, lot), <b>sans jamais voir "
-  "les données des autres</b>. Le mandataire assemble, l'IA fusionne, et le DC4 est généré.")
+  "les données des autres</b>. Le chef de file assemble, l'IA fusionne, et le DC4 est généré.")
 CALL("Pourquoi c'est puissant à vendre",
      ["<b>Effet réseau</b> : plus il y a de PME sur Adjugo, plus elles peuvent se trouver et s'allier. La "
       "valeur grandit avec la communauté.",
@@ -287,7 +287,7 @@ H3("Co-traitants vérifiés")
 P("Identifie de vrais partenaires (métier, zone) via les bases officielles, et signale les <b>red flags</b> "
   "(procédure collective via BODACC). <b>Valeur :</b> trouver le bon allié, éviter une entreprise en difficulté.")
 H3("Consortium / co-traitance cloisonnée + DC4")
-P("Le mandataire invite des partenaires via un lien sécurisé. Chacun apporte sa part <b>sans voir celle des "
+P("Le chef de file invite des partenaires via un lien sécurisé. Chacun apporte sa part <b>sans voir celle des "
   "autres</b>. L'IA fusionne, le <b>DC4</b> est généré. <b>Valeur :</b> répondre à des marchés trop gros pour "
   "une seule PME, proprement. Notre meilleur argument.")
 H3("Espace de co-construction (mémoire fusionné)")
@@ -497,7 +497,7 @@ TBL(["Terme", "Définition simple"],
      ["Mémoire technique", "La note décrivant comment l'entreprise exécutera le marché — souvent décisive."],
      ["Go / No-Go", "La décision de répondre ou non ; Adjugo la score."],
      ["Co-traitance / groupement", "Plusieurs entreprises répondent ensemble à un même marché."],
-     ["Mandataire", "L'entreprise qui pilote le groupement et porte la candidature commune."],
+     ["Chef de file", "L'entreprise qui pilote le groupement et porte la candidature commune (« mandataire » dans les formulaires officiels)."],
      ["MAPA", "Marché à procédure adaptée : sous les seuils formalisés, procédure plus souple."],
      ["Procédure formalisée", "Au-dessus des seuils : règles strictes de publicité et de mise en concurrence."],
      ["BOAMP / TED / DECP", "Sources officielles : marchés FR / marchés UE / marchés attribués."],

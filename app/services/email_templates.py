@@ -1,6 +1,7 @@
 """Gabarits d'emails HTML soignés (compatibles clients mail : layout en tableaux + styles
 INLINE, le <style> étant souvent retiré par Gmail/Outlook). Charte Adjugo : accent #1B4FFF,
 wordmark « adjug◎ » (le ◎ rappelle le logo en cercles concentriques)."""
+import html
 
 _ACCENT = "#1B4FFF"
 _INK = "#16181d"
@@ -9,8 +10,15 @@ _BG = "#f4f5f7"
 _BORDER = "#e6e8ec"
 
 
-def _shell(inner: str, preheader: str = "") -> str:
-    """Enveloppe commune : fond gris, carte blanche centrée, en-tête wordmark, pied de page."""
+_PIED = ("Adjugo — la plateforme qui simplifie la réponse aux marchés publics.<br>\n"
+         "          Si vous n'êtes pas à l'origine de cette demande, ignorez simplement cet email.")
+
+
+def _shell(inner: str, preheader: str = "", pied: str | None = None) -> str:
+    """Enveloppe commune : fond gris, carte blanche centrée, en-tête wordmark, pied de page.
+    `pied` (HTML déjà échappé) remplace la phrase du pied de page : un courriel d'invitation dit pourquoi
+    on le reçoit (vague 2b, B4, app/services/email_invitation.py) ; sans lui, le pied d'avant, inchangé."""
+    pied = _PIED if pied is None else pied
     return f"""\
 <!DOCTYPE html><html lang="fr"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"></head>
@@ -26,8 +34,7 @@ def _shell(inner: str, preheader: str = "") -> str:
       <tr><td style="padding:8px 36px 30px;">
         <hr style="border:none;border-top:1px solid {_BORDER};margin:18px 0;">
         <p style="margin:0;font-family:'Segoe UI',Helvetica,Arial,sans-serif;font-size:12px;line-height:1.6;color:{_MUTED};text-align:center;">
-          Adjugo — la plateforme qui simplifie la réponse aux marchés publics.<br>
-          Si vous n'êtes pas à l'origine de cette demande, ignorez simplement cet email.
+          {pied}
         </p>
       </td></tr>
     </table>
@@ -48,9 +55,16 @@ def _button(label: str, href: str) -> str:
 </table>"""
 
 
+def _first(name: str) -> str:
+    """Prénom affiché dans l'email : 1er mot, borné et ÉCHAPPÉ (le nom est saisi librement
+    par l'utilisateur ; sans ça on pouvait glisser un lien dans un email signé Adjugo)."""
+    parts = (name or "").split()
+    return html.escape(parts[0][:40], quote=True) if parts else ""
+
+
 def reset_password_html(link: str, name: str = "") -> str:
     """Email de réinitialisation de mot de passe (même charte que la confirmation d'adresse)."""
-    hello = "Bonjour" + (f" {name.split()[0]}" if name and name.split() else "")
+    hello = "Bonjour" + (f" {_first(name)}" if _first(name) else "")
     inner = f"""\
       <tr><td style="padding:6px 36px 4px;">
         <h1 style="margin:14px 0 6px;font-family:'Segoe UI',Helvetica,Arial,sans-serif;font-size:21px;font-weight:800;color:{_INK};text-align:center;">{hello}</h1>
@@ -66,18 +80,23 @@ def reset_password_html(link: str, name: str = "") -> str:
     return _shell(inner, preheader="Réinitialisez votre mot de passe Adjugo.")
 
 
-def verify_email_html(link: str, name: str = "") -> str:
-    """Email de confirmation d'adresse à l'inscription."""
-    hello = "Bienvenue" + (f" {name.split()[0]}" if name and name.split() else "")
+def verify_email_html(link: str, name: str = "", suite: str = "") -> str:
+    """Email de confirmation d'adresse à l'inscription. `suite` : ce qui vient après la confirmation (vague 2b, décision
+    12 (a) : la même phrase que l'écran « Confirmez votre adresse email ») ; vide, rien n'est ajouté."""
+    hello = "Bienvenue" + (f" {_first(name)}" if _first(name) else "")
+    suite_html = (f"""
+        <p style="margin:0 0 20px;font-family:'Segoe UI',Helvetica,Arial,sans-serif;font-size:14px;line-height:1.6;color:{_MUTED};text-align:center;">
+          {html.escape(suite, quote=True)}
+        </p>""" if suite else "")
     inner = f"""\
       <tr><td style="padding:6px 36px 4px;">
         <h1 style="margin:14px 0 6px;font-family:'Segoe UI',Helvetica,Arial,sans-serif;font-size:21px;font-weight:800;color:{_INK};text-align:center;">{hello}</h1>
         <p style="margin:0 0 20px;font-family:'Segoe UI',Helvetica,Arial,sans-serif;font-size:15px;line-height:1.62;color:{_INK};text-align:center;">
           Plus qu'une étape pour activer votre compte Adjugo : confirmez votre adresse email.
-        </p>
+        </p>{suite_html}
         {_button("Vérifier mon adresse email", link)}
         <p style="margin:18px 0 4px;font-family:'Segoe UI',Helvetica,Arial,sans-serif;font-size:12.5px;line-height:1.6;color:{_MUTED};text-align:center;">
-          Ce lien est valable <b>3 jours</b>. S'il ne fonctionne pas, copiez-collez cette adresse&nbsp;:
+          Ce lien est valable <b>48 heures</b>. S'il ne fonctionne pas, copiez-collez cette adresse&nbsp;:
         </p>
         <p style="margin:0;font-family:'Segoe UI',Helvetica,Arial,sans-serif;font-size:11.5px;line-height:1.5;color:{_ACCENT};text-align:center;word-break:break-all;">{link}</p>
       </td></tr>"""

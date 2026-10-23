@@ -36,8 +36,34 @@ _EFFECTIF = {
 }
 
 
-def _client():
-    return httpx.Client(timeout=12, headers={"User-Agent": "Adjugo/1.0 (+https://adjugo.fr)"})
+def _client(timeout: float = 12):
+    return httpx.Client(timeout=timeout, headers={"User-Agent": "Adjugo/1.0 (+https://adjugo.fr)"})
+
+
+def _plier(s) -> str:
+    import unicodedata
+    s = unicodedata.normalize("NFKD", str(s or "").upper())
+    return re.sub(r"[^A-Z0-9]+", " ", "".join(c for c in s if not unicodedata.combining(c))).strip()
+
+
+def _voie(adresse, code_postal, commune) -> str:
+    """L'adresse SANS son code postal ni sa commune : l'API Recherche d'entreprises écrit `adresse` en entier
+    (« 3 RUE DU PORT 29200 BREST »), en plus de `code_postal` et `libelle_commune`, qu'Adjugo garde à part (Mon
+    entreprise : Adresse, Code postal, Ville) et que les formulaires officiels et la convention recollent. Sans ce
+    retrait, ils écrivaient « 3 RUE DU PORT 29200 BREST 29200 BREST » (contrôle des bugs, deuxième passe). Seule une fin
+    « code postal [commune…] » est retirée ; une adresse qui ne finit pas ainsi reste telle quelle."""
+    a = " ".join(str(adresse or "").split())
+    cp = str(code_postal or "").strip()
+    if not a or not cp:
+        return a
+    occ = list(re.finditer(r"(?:^|\s)" + re.escape(cp) + r"(?=\s|$)", a))
+    if not occ:
+        return a
+    voie, reste = a[:occ[-1].start()].strip(" ,"), a[occ[-1].end():].strip()
+    ville = _plier(commune)
+    if voie and (not reste or (ville and _plier(reste).startswith(ville))):
+        return voie
+    return a
 
 
 def _normalize(e: dict) -> dict:
@@ -51,8 +77,12 @@ def _normalize(e: dict) -> dict:
         "siret": siege.get("siret", ""),
         "code_ape": (e.get("activite_principale") or "").replace(".", ""),
         "naf_label": _naf_label(e.get("activite_principale")),
+        # Spécialité EXPLOITABLE (mots-clés métier) dérivée du NAF → pré-remplit les critères
+        # et la 1re recherche à l'activation par SIRET (repli : libellé NAF).
+        "specialite": _specialite(e.get("activite_principale")),
         "forme_juridique": _forme_label(forme),
-        "address": siege.get("adresse") or f"{siege.get('numero_voie','')} {siege.get('libelle_voie','')}".strip(),
+        "address": (_voie(siege.get("adresse"), siege.get("code_postal"), siege.get("libelle_commune"))
+                    or f"{siege.get('numero_voie','')} {siege.get('libelle_voie','')}".strip()),
         "postal_code": siege.get("code_postal", ""),
         "city": siege.get("libelle_commune", ""),
         "departement": (siege.get("code_postal", "") or "")[:2],
@@ -64,13 +94,16 @@ def _normalize(e: dict) -> dict:
     }
 
 
-def lookup_company(query: str) -> Optional[dict]:
+def lookup_company(query: str, timeout: float = 12) -> Optional[dict]:
     """Recherche une entreprise par SIRET, SIREN, nom (France via SIRENE) ou par
     numéro de TVA intracommunautaire étranger (UE via VIES).
 
     L'API recherche-entreprises n'indexe pas le SIRET (14 chiffres) dans le `q`
     plein-texte → on interroge par le SIREN (9 premiers chiffres) tout en conservant
-    le SIRET saisi par l'utilisateur dans le résultat."""
+    le SIRET saisi par l'utilisateur dans le résultat.
+
+    `timeout` : délai HTTP (12 s par défaut, inchangé) ; le réseau de partenaires passe un
+    délai court (process unique : jamais d'attente longue sur l'unique worker)."""
     if not query:
         return None
     raw = query.strip()
@@ -83,7 +116,7 @@ def lookup_company(query: str) -> Optional[dict]:
     siret_saisi = digits if len(digits) == 14 else ""
     search = digits[:9] if len(digits) in (9, 14) else raw  # SIREN/SIRET → SIREN ; sinon nom
     try:
-        with _client() as c:
+        with _client(timeout) as c:
             r = c.get(API, params={"q": search, "per_page": 1, "page": 1})
             if r.status_code != 200:
                 return None
@@ -127,13 +160,26 @@ def discover_cotraitants(activity: str = "", departement: str = "",
         params["q"] = q
     if departement:
         params["departement"] = departement
+    params["categorie_entreprise"] = "PME"   # partenaires d'une TPE/PME : pas les grands groupes
     try:
         with _client() as c:
             r = c.get(API, params=params)
             if r.status_code != 200:
                 return {"total": 0, "results": [], "error": f"HTTP {r.status_code}"}
             data = r.json()
-            results = [_normalize(e) for e in data.get("results", [])]
+            from app.sourcing.sources.sirene import local_etablissement
+            results = []
+            for e in data.get("results", []):
+                x = _normalize(e)
+                et = local_etablissement(e, departement)
+                if et:      # l'établissement DU département, pas le siège lointain
+                    x.update({"siret": et.get("siret") or x["siret"],
+                              "address": _voie(et.get("adresse"), et.get("code_postal"), et.get("libelle_commune"))
+                              or x["address"],
+                              "postal_code": et.get("code_postal") or x["postal_code"],
+                              "city": et.get("libelle_commune") or x["city"],
+                              "departement": (et.get("code_postal") or "")[:2] or x["departement"]})
+                results.append(x)
             # filtre de cohérence : entreprises avec une dénomination
             results = [x for x in results if x["name"]]
             return {"total": data.get("total_results", len(results)),
@@ -177,6 +223,21 @@ def _lookup_vies(raw: str) -> Optional[dict]:
 
 
 # ── Helpers ──
+
+def _specialite(naf: Optional[str]) -> str:
+    """Mots-clés métier depuis le code NAF : si le NAF correspond à un métier BTP connu,
+    on renvoie ses mots-clés (bons pour la recherche d'AO) ; sinon le libellé NAF."""
+    if not naf:
+        return ""
+    code = str(naf).strip().upper()
+    for t in TRADES:
+        if t["naf"].upper() == code:
+            return t["kw"]
+    # Hors métiers BTP connus : on ne renvoie PAS le code NAF brut (mauvais mot-clé de
+    # recherche) — le libellé seulement s'il existe, sinon vide (l'utilisateur ajustera).
+    label = _naf_label(naf)
+    return label if label and label != naf else ""
+
 
 def _naf_label(naf: Optional[str]) -> str:
     if not naf:

@@ -4,18 +4,18 @@ Genere un ZIP avec tous les CERFA + documents du coffre-fort pour un projet.
 """
 import io
 import os
+import re
 import zipfile
-import datetime
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.core.org import data_owner_id, member_ids
-from app.core.http import content_disposition
+from app.core.http import NOM_INTERDIT, content_disposition
 from app.services.storage import get_storage
 from app.models import User, Project, Company, Document
-from app.services.cerfa import GENERATORS
+from app.services.cerfa import GENERATORS, reference_consultation
 
 router = APIRouter(prefix="/api/export", tags=["Export dossier"])
 
@@ -23,6 +23,30 @@ UPLOADS_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
     "uploads"
 )
+
+
+def _nom_de_fichier(nom) -> str:
+    """Un nom tel qu'il entre dans un chemin du ZIP : espaces en « _ », séparateurs de chemin et caractères interdits
+    en « _ » (contrôle des bugs, octobre 2026 : « Travaux de voirie 2026/2027 » rangeait chaque formulaire dans un
+    sous-dossier « DC1_Travaux_de_voirie_2026/ », et le sommaire nommait ces chemins)."""
+    return re.sub(NOM_INTERDIT, "_", str(nom or "")).replace(" ", "_")
+
+
+def _chemin_unique(chemin: str, vus: set) -> str:
+    """Un chemin jamais pris deux fois dans le ZIP, à la casse près (un extracteur sous Windows ou macOS confond
+    « Kbis.pdf » et « KBIS.pdf ») : deux pièces de même nom (une attestation déposée deux fois dans Mes documents)
+    écrivaient deux entrées du même chemin, et l'une écrasait l'autre à l'extraction. La suivante devient
+    « …_2.pdf », « …_3.pdf » (contrôle des bugs, octobre 2026)."""
+    dossier, sep, nom = chemin.rpartition("/")
+    racine, point, ext = nom.rpartition(".")
+    if not point:
+        racine, ext = nom, ""
+    candidat, i = chemin, 2
+    while candidat.lower() in vus:
+        candidat = f"{dossier}{sep}{racine}_{i}{point}{ext}"
+        i += 1
+    vus.add(candidat.lower())
+    return candidat
 
 
 @router.post("/{project_id}")
@@ -39,7 +63,7 @@ def export_dossier(
 
     company = db.query(Company).filter(Company.user_id == data_owner_id(current_user, db)).first()
     if not company:
-        raise HTTPException(400, "Completez votre profil entreprise")
+        raise HTTPException(400, "Renseignez votre entreprise dans Mon entreprise, onglet « Identité ».")
 
     # Preparer les donnees entreprise
     cd = {}
@@ -60,24 +84,20 @@ def export_dossier(
         # SANS ça, l'ATTRI1 du ZIP affichait toujours « 0 % — TVA non applicable » (TTC=HT),
         # même quand le client avait choisi 20 % — un acte d'engagement à la TVA fausse.
         "tva_rate": getattr(project, "tva_rate", 0) or 0,
-        "reference": "AO-{:04d}".format(project.id),
+        "reference": reference_consultation(project.ai_analysis),   # l'avis publié, jamais le n° interne
         "cotraitants": [],
     }
 
-    # Co-traitants RATTACHÉS À CE MARCHÉ uniquement (pas tout le carnet d'adresses de l'org).
+    # Entreprises RATTACHÉES À CE MARCHÉ uniquement (pas tout le carnet d'adresses de l'org), role/lot
+    # venant du LIEN (co-traitant → DC1/DC2, sous-traitant → DC4). Seulement les sous-traitants
+    # déclarés et les partenaires dont l'invitation est ACCEPTÉE (aucune entreprise sans son accord).
+    # Celles qui en sont écartées faute d'accord sont dites dans le sommaire et à l'écran.
+    avertissements = []
     try:
-        from app.routers.cotraitants import Cotraitant, ProjectCotraitant
-        link_rows = db.query(ProjectCotraitant).filter(ProjectCotraitant.project_id == project_id).all()
-        ct_ids = [l.cotraitant_id for l in link_rows]
-        cts = db.query(Cotraitant).filter(Cotraitant.id.in_(ct_ids)).all() if ct_ids else []
-        for ct in cts:
-            ct_data = {}
-            for k in ["name", "siret", "code_ape", "forme_juridique",
-                       "representant_legal", "address", "city", "postal_code",
-                       "email", "phone", "tva_intracom", "ca_n1", "ca_n2",
-                       "ca_n3", "effectif"]:
-                ct_data[k] = getattr(ct, k, "") or ""
-            pd["cotraitants"].append(ct_data)
+        from app.services.groupement_members import avertissements_formulaires, cotraitants_pour_formulaires
+        _form = cotraitants_pour_formulaires(db, project_id)
+        pd["cotraitants"].extend(_form["lignes"])
+        avertissements = avertissements_formulaires(_form)
     except Exception:
         pass
 
@@ -86,12 +106,13 @@ def export_dossier(
     # que build_dossier (bouton « Télécharger ») déclarait bien le groupement — incohérence.
     try:
         from app.models import ProjectContribution, ProjectInvite
+        from app.services.groupement_members import active_invite_filter
         _seen_sir = {str(c.get("siret") or "").strip() for c in pd["cotraitants"] if c.get("siret")}
         rows = db.query(ProjectContribution).join(
             ProjectInvite, ProjectContribution.invite_id == ProjectInvite.id).filter(
             ProjectContribution.project_id == project_id,
             ProjectContribution.status == "submitted",
-            ProjectInvite.revoked.is_(False)).all()
+            active_invite_filter()).all()
         for c in rows:
             sir = str(getattr(c, "siret", "") or "").strip()
             if sir and sir in _seen_sir:
@@ -105,32 +126,59 @@ def export_dossier(
                 "address": getattr(c, "address", "") or "", "postal_code": getattr(c, "postal_code", "") or "",
                 "city": getattr(c, "city", "") or "",
                 "email": contact.get("email", ""), "phone": contact.get("telephone", ""),
+                # role/lot : co-traitant → DC1/DC2 ; sous-traitant → DC4 (cf. cerfa._is_soustraitant).
+                "role": getattr(c, "role", "") or "cotraitant", "lot": getattr(c, "lot", "") or "",
             })
             if sir:
                 _seen_sir.add(sir)
     except Exception:
         pass
 
+    # Convention de groupement générée et à jour : les CERFA reprennent SES membres, lots,
+    # prix, forme et habilitation (le dossier dit partout la même chose), et le PDF de la
+    # convention (avec les accords enregistrés) rejoint le ZIP.
+    from app.services.groupement_convention import active_convention_pdf, apply_to_cerfa, STATUS_LABELS
+    grp = apply_to_cerfa(db, project, cd, pd)
+    conv_pdf = active_convention_pdf(db, project) if grp else None
+
     # Creer le ZIP
     zip_buf = io.BytesIO()
-    date_str = datetime.date.today().strftime("%Y-%m-%d")
-    project_slug = project.name.replace(" ", "_")[:30]
+    # Le jour de Paris (format.py), jamais le jour UTC du serveur : noms de fichiers en AAAA-MM-JJ (ils se rangent dans
+    # l'ordre), dates du sommaire en JJ/MM/AAAA comme les autres textes (contrôle des bugs, deuxième passe).
+    from app.services import pieces_fin
+    jour = pieces_fin.jour_paris()
+    date_str = jour.strftime("%Y-%m-%d")
+    date_fr = jour.strftime("%d/%m/%Y")
+    project_slug = _nom_de_fichier(project.name)[:30]
 
+    # DC4 (déclaration de sous-traitance) UNIQUEMENT si un sous-traitant est déclaré —
+    # sinon on joignait un DC4 vide/sans objet à chaque dossier de groupement.
+    from app.services.cerfa import _soustraitants
+    _has_soustraitance = bool(_soustraitants(pd.get("cotraitants", [])))
+
+    cerfa_ok = []
     with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        # 1. Generer les 4 CERFA
+        # 1. Generer les CERFA (DC4 seulement en cas de sous-traitance)
         for doc_type, generator in GENERATORS.items():
+            if doc_type == "dc4" and not _has_soustraitance:
+                continue
             try:
                 pdf_bytes = generator(cd, pd)
-                filename = "01_CERFA/{}_{}_{}.pdf".format(
+                filename = "01_Formulaires_officiels/{}_{}_{}.pdf".format(
                     doc_type.upper(), project_slug, date_str
                 )
                 zf.writestr(filename, pdf_bytes)
+                cerfa_ok.append(doc_type)
             except Exception as e:
                 # Ajouter un fichier d'erreur
                 zf.writestr(
-                    "01_CERFA/{}_ERREUR.txt".format(doc_type.upper()),
+                    "01_Formulaires_officiels/{}_ERREUR.txt".format(doc_type.upper()),
                     "Erreur generation {}: {}".format(doc_type.upper(), str(e))
                 )
+
+        # 1 bis. Convention de groupement (texte figé + accords enregistrés)
+        if conv_pdf:
+            zf.writestr("03_Groupement/Convention_de_groupement_v{}.pdf".format(conv_pdf[1].version), conv_pdf[0])
 
         # 2. Documents : CE marché (project_id) + pièces générales du coffre-fort (project_id NULL,
         #    type Kbis/attestations valables pour tout pli) — JAMAIS les documents d'un AUTRE
@@ -143,6 +191,7 @@ def export_dossier(
         ).all()
 
         storage = get_storage()
+        chemins_vus = set()
         for doc in documents:
             category = str(getattr(doc.category, "value", doc.category) or "autre")
             content = None
@@ -154,13 +203,15 @@ def export_dossier(
             if content:
                 ext = (os.path.splitext(doc.file_key)[1]
                        or os.path.splitext(doc.name)[1] or ".pdf")
-                safe_name = doc.name.replace("/", "_").replace(" ", "_")
+                safe_name = _nom_de_fichier(doc.name)
+                if safe_name.lower().endswith(ext.lower()):     # « Kbis.pdf » → « Kbis.pdf », jamais « Kbis.pdf.pdf »
+                    ext = ""
                 filename = "02_Documents/{}/{}{}".format(category.capitalize(), safe_name, ext)
-                zf.writestr(filename, content)
+                zf.writestr(_chemin_unique(filename, chemins_vus), content)
             else:
                 # Document en base mais fichier introuvable dans le stockage
                 zf.writestr(
-                    "02_Documents/{}.txt".format(doc.name.replace(" ", "_")),
+                    _chemin_unique("02_Documents/{}.txt".format(_nom_de_fichier(doc.name)), chemins_vus),
                     "Document reference: {}\nCategorie: {}\nFichier non disponible sur le serveur.".format(
                         doc.name, category
                     )
@@ -174,9 +225,13 @@ def export_dossier(
         sommaire.append("")
         sommaire.append("Projet : " + project.name)
         sommaire.append("Client : " + (project.client or ""))
-        sommaire.append("Montant de l'offre (HT) : " + ("{:,.0f} EUR".format(est.get("total_ht")).replace(",", " ") if est.get("total_ht") else "à chiffrer (aucun chiffrage enregistré)"))
-        sommaire.append("Reference : AO-{:04d}".format(project.id))
-        sommaire.append("Date : " + date_str)
+        if grp and grp.get("total_ht") is not None:
+            sommaire.append("Montant de l'offre commune du groupement (HT) : "
+                            + "{:,.2f} EUR".format(grp["total_ht"]).replace(",", " "))
+        else:
+            sommaire.append("Montant de l'offre (HT) : " + ("{:,.0f} EUR".format(est.get("total_ht")).replace(",", " ") if est.get("total_ht") else "à chiffrer (aucun chiffrage enregistré)"))
+        sommaire.append("Reference : marche n° {:04d}".format(project.id))
+        sommaire.append("Date : " + date_fr)
         sommaire.append("")
         sommaire.append("-" * 60)
         sommaire.append("ENTREPRISE CANDIDATE")
@@ -192,39 +247,68 @@ def export_dossier(
         sommaire.append("CA N-1 : " + ("{:,.0f} EUR".format(_ca1).replace(",", " ") if _ca1 else "—"))
         sommaire.append("")
 
-        if pd["cotraitants"]:
+        # Un sous-traitant n'est pas membre du groupement (DC1 « candidat seul », DC4 joint) : sa rubrique à part
+        # (contrôle des bugs, deuxième passe : il était compté parmi les « partenaires du groupement »).
+        from app.services.cerfa import _groupement_members, _soustraitants
+        for titre, liste in (("PARTENAIRES DU GROUPEMENT", _groupement_members(pd["cotraitants"])),
+                             ("SOUS-TRAITANTS DÉCLARÉS (DC4)", _soustraitants(pd["cotraitants"]))):
+            if not liste:
+                continue
             sommaire.append("-" * 60)
-            sommaire.append("CO-TRAITANTS ({})".format(len(pd["cotraitants"])))
+            sommaire.append("{} ({})".format(titre, len(liste)))
             sommaire.append("-" * 60)
-            for i, ct in enumerate(pd["cotraitants"]):
+            for i, ct in enumerate(liste):
                 sommaire.append("{}. {} - SIRET: {}".format(i + 1, ct.get("name", ""), ct.get("siret", "")))
+            sommaire.append("")
+
+        if avertissements:
+            sommaire.append("-" * 60)
+            sommaire.append("A VERIFIER AVANT DEPOT")
+            sommaire.append("-" * 60)
+            for a in avertissements:
+                sommaire.append("- " + a)
             sommaire.append("")
 
         sommaire.append("-" * 60)
         sommaire.append("CONTENU DU DOSSIER")
         sommaire.append("-" * 60)
         sommaire.append("")
-        sommaire.append("01_CERFA/")
+        sommaire.append("01_Formulaires_officiels/")
         # Dérivé de GENERATORS (sinon le sommaire listait 4 CERFA alors que le ZIP en contient 6 :
         # la déclaration sur l'honneur OBLIGATOIRE et le DUME manquaient au sommaire).
         for dt in GENERATORS:
+            if dt == "dc4" and not _has_soustraitance:   # cohérent avec le ZIP réellement généré
+                continue
             sommaire.append("  - {}_{}_{}.pdf".format(dt.upper(), project_slug, date_str))
         sommaire.append("")
         sommaire.append("02_Documents/")
         for doc in documents:
-            sommaire.append("  - {} ({})".format(doc.name, doc.category or "autre"))
+            # .value : sinon le sommaire affichait « DocCategory.administratif » (repr de l'enum).
+            cat = getattr(doc.category, "value", doc.category) or "autre"
+            sommaire.append("  - {} ({})".format(doc.name, cat))
+        if conv_pdf:
+            c_ = conv_pdf[1]
+            sommaire.append("")
+            sommaire.append("03_Groupement/")
+            sommaire.append("  - Convention_de_groupement_v{}.pdf ({})".format(
+                c_.version, STATUS_LABELS.get(c_.status, c_.status)))
 
         sommaire.append("")
         sommaire.append("=" * 60)
-        sommaire.append("Genere par adjugo. le " + date_str)
+        sommaire.append("Genere par adjugo. le " + date_fr)
 
         zf.writestr("00_SOMMAIRE.txt", "\n".join(sommaire))
 
     zip_bytes = zip_buf.getvalue()
     filename = "Dossier_{}_{}.zip".format(project_slug, date_str)
+    if grp:
+        # Formulaires produits APRÈS la convention : compte pour l'état « prêt à déposer ».
+        from app.services.groupement_convention import mark_cerfa_generated
+        mark_cerfa_generated(db, project.id, [d for d in ("dc1", "dc2", "attri1") if d in cerfa_ok],
+                             grp.get("convention_version"))
 
-    return Response(
-        content=zip_bytes,
-        media_type="application/zip",
-        headers={"Content-Disposition": content_disposition(filename)},
-    )
+    headers = {"Content-Disposition": content_disposition(filename)}
+    if avertissements:
+        from app.core.http import AVERTISSEMENT_HEADER, en_tete_avertissements
+        headers[AVERTISSEMENT_HEADER] = en_tete_avertissements(avertissements)
+    return Response(content=zip_bytes, media_type="application/zip", headers=headers)

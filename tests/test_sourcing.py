@@ -2,16 +2,23 @@
 Tests du moteur de sourcing — normalisation, provenance, dédup, scoring.
 Fixtures enregistrées (payloads réels figés) → aucun appel réseau.
 """
+from datetime import datetime, timedelta
+
 from app.sourcing.sources.boamp import BoampSource
 from app.sourcing.sources.sirene import SireneSource
 from app.sourcing.search import _dedup_tenders, TenderSearchService
 from app.sourcing.scoring import score_tender, score_company
 
+# Date limite de réponse RELATIVE à « maintenant » : le payload reste figé, mais sa date
+# limite doit rester dans le futur. Sinon TenderSearchService écarte l'AO comme clôturé
+# (date passée) — et le scoring le pénalise —, ce qui périmait le test avec le temps.
+_FUTURE_DEADLINE = (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%dT12:00:00+00:00")
+
 # Payload BOAMP réel figé (avec champs en LISTE qui avaient cassé la 1re version)
 BOAMP_ROW = {
     "idweb": "26-57883", "objet": "Rénovation des toitures du collège",
     "nomacheteur": "Département du Finistère", "code_departement": ["29"],
-    "dateparution": "2026-06-01", "datelimitereponse": "2026-07-08T12:00:00+00:00",
+    "dateparution": "2026-06-01", "datelimitereponse": _FUTURE_DEADLINE,
     "descripteur_libelle": ["Toiture", "Couverture"], "descripteur_code": ["345"],
     "type_marche": ["TRAVAUX"], "procedure_libelle": ["Procédure adaptée"],
     "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-57883",

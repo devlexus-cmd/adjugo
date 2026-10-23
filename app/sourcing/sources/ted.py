@@ -11,7 +11,7 @@ from typing import Optional
 
 import httpx
 
-from app.sourcing.base import TenderSource, TenderCriteria
+from app.sourcing.base import ResultatsSource, TenderSource, TenderCriteria
 from app.sourcing.schemas import NormalizedTender, Provenance
 
 logger = logging.getLogger("adjugo")
@@ -117,7 +117,9 @@ class TedSource(TenderSource):
             t = self._normalize(n, prefixes, only_scope)
             if t:
                 out.append(t)
-        return out
+        # Le nombre d'avis reçus accompagne les fiches : une page pleine dont des avis sont hors zone reste pleine
+        # (« Charger plus » se juge source par source, search.py).
+        return ResultatsSource(out, lignes_lues=len(notices))
 
     def _normalize(self, n: dict, prefixes: tuple = (), only_scope: bool = False) -> Optional[NormalizedTender]:
         pub = n.get("publication-number")

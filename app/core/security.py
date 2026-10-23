@@ -16,19 +16,50 @@ settings = get_settings()
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 
 
+# PBKDF2-HMAC-SHA256. 600k itérations = recommandation OWASP 2024 (l'ancien 100k était 6×
+# trop faible). Rétro-compatible : les hash existants `salt$hash` sont relus à 100k et
+# re-hachés au login (cf. needs_rehash). Le nombre d'itérations est encodé dans le hash.
+_PBKDF2_ITERS = 600_000
+_LEGACY_ITERS = 100_000
+
+
 def hash_password(password: str) -> str:
     salt = secrets.token_hex(16)
-    hashed = hashlib.pbkdf2_hmac("sha256", password.encode(), salt.encode(), 100000).hex()
-    return f"{salt}${hashed}"
+    hashed = hashlib.pbkdf2_hmac("sha256", password.encode(), salt.encode(), _PBKDF2_ITERS).hex()
+    return f"pbkdf2_sha256${_PBKDF2_ITERS}${salt}${hashed}"
+
+
+def _parse_hash(hashed: str):
+    """(iters, salt, hash). Tolère l'ancien format `salt$hash` (100k itérations)."""
+    parts = hashed.split("$")
+    if len(parts) == 4 and parts[0] == "pbkdf2_sha256":
+        return int(parts[1]), parts[2], parts[3]
+    if len(parts) == 2:                       # legacy
+        return _LEGACY_ITERS, parts[0], parts[1]
+    raise ValueError("format de hash inconnu")
 
 
 def verify_password(plain: str, hashed: str) -> bool:
     try:
-        salt, stored_hash = hashed.split("$")
-        check = hashlib.pbkdf2_hmac("sha256", plain.encode(), salt.encode(), 100000).hex()
+        iters, salt, stored_hash = _parse_hash(hashed)
+        check = hashlib.pbkdf2_hmac("sha256", plain.encode(), salt.encode(), iters).hex()
         return hmac.compare_digest(check, stored_hash)   # comparaison à temps constant
     except Exception:
         return False
+
+
+def needs_rehash(hashed: str) -> bool:
+    """Vrai si le hash est plus faible que la cible actuelle → à re-hacher au prochain login."""
+    try:
+        iters, _, _ = _parse_hash(hashed)
+        return iters < _PBKDF2_ITERS
+    except Exception:
+        return True
+
+
+# Hash factice (au format courant) pour exécuter un PBKDF2 équivalent quand l'email est
+# inconnu : empêche de distinguer « email inexistant » par le temps de réponse.
+DUMMY_HASH = f"pbkdf2_sha256${_PBKDF2_ITERS}${'0' * 32}${'0' * 64}"
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
@@ -48,9 +79,78 @@ def decode_token(token: str) -> dict:
         raise HTTPException(status_code=401, detail="Token invalide ou expire", headers={"WWW-Authenticate": "Bearer"})
 
 
+oauth2_acheteur = OAuth2PasswordBearer(tokenUrl="/api/acheteur/login")
+
+
+def get_current_acheteur(token: str = Depends(oauth2_acheteur), db: Session = Depends(get_db)):
+    """Auth de l'ESPACE ACHETEUR (collectivités), strictement cloisonnée du produit PME :
+    le token DOIT porter `typ="acheteur"` et l'identité est chargée depuis la table
+    SÉPARÉE `acheteurs` (jamais `users`). Un token PME (sans `typ`) est donc rejeté."""
+    from app.models import Acheteur
+    payload = decode_token(token)
+    # Comme côté PME : un jeton « à finalité » (purpose) ou sans version (tv) n'est pas une
+    # session — seul `_token()` (login/inscription acheteur) en émet, toujours avec tv.
+    if payload.get("typ") != "acheteur" or payload.get("purpose") or "tv" not in payload:
+        raise HTTPException(status_code=401, detail="Token acheteur requis",
+                            headers={"WWW-Authenticate": "Bearer"})
+    try:
+        aid = int(payload.get("sub"))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=401, detail="Token invalide")
+    acheteur = db.query(Acheteur).filter(Acheteur.id == aid).first()
+    if acheteur is None:
+        # 401 (et non 404) : du point de vue du porteur de token, « compte introuvable » et
+        # « session invalide » sont indistinguables — on n'expose pas la différence.
+        raise HTTPException(status_code=401, detail="Session invalide, reconnectez-vous",
+                            headers={"WWW-Authenticate": "Bearer"})
+    if not getattr(acheteur, "is_active", True):
+        raise HTTPException(status_code=403, detail="Compte désactivé",
+                            headers={"WWW-Authenticate": "Bearer"})
+    if int(payload.get("tv") or 0) != int(getattr(acheteur, "token_version", 0) or 0):
+        raise HTTPException(status_code=401, detail="Session expirée, reconnectez-vous",
+                            headers={"WWW-Authenticate": "Bearer"})
+    # Compte démo : accepté seulement si la démo publique est ouverte ou, pour une session
+    # ouverte par le lien privé, si la clé du lien n'a pas changé (cf. demo_guard).
+    from app.services.acheteur_demo_seed import DEMO_EMAIL as _ACH_DEMO
+    if (getattr(acheteur, "email", "") or "").strip().lower() == _ACH_DEMO:
+        _refuser_session_demo_perimee(payload)
+        _noter_activite_demo()
+    return acheteur
+
+
+def _noter_activite_demo() -> None:
+    """Une session démo est active : pas de remise à neuf de la vitrine sous ses pieds
+    (app/services/demo_remise.py)."""
+    from app.services.demo_remise import noter_activite
+    noter_activite()
+
+
+def _refuser_session_demo_perimee(payload: dict) -> None:
+    """401 si la session démo (PME ou collectivités) n'est plus acceptée : démo publique
+    fermée, ou lien privé dont la clé a changé ou a été retirée."""
+    from app.core.demo_guard import demo_session_valide, DEMO_LIEN_CLAIM, DEMO_LIEN_PERIME
+    if demo_session_valide(payload):
+        return
+    detail = DEMO_LIEN_PERIME if payload.get(DEMO_LIEN_CLAIM) else "Session expirée, reconnectez-vous"
+    raise HTTPException(status_code=401, detail=detail, headers={"WWW-Authenticate": "Bearer"})
+
+
 def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
     from app.models import User
     payload = decode_token(token)
+    # Cloisonnement 2 faces : un token ACHETEUR (qui porte `typ`) ne doit JAMAIS être
+    # accepté par l'auth PME (sinon un sub=acheteur_id pourrait charger un User homonyme).
+    if payload.get("typ"):
+        raise HTTPException(status_code=401, detail="Token invalide pour cet espace",
+                            headers={"WWW-Authenticate": "Bearer"})
+    # Seuls les jetons de SESSION ouvrent une session. Un jeton « à finalité » (lien de
+    # confirmation d'email, state OAuth…) porte `purpose` : il ne doit JAMAIS valoir session
+    # (sinon le lien reçu par mail donnait un accès complet au compte pendant sa validité).
+    # Liste blanche positive : tout jeton de session (register/login/demo/google/
+    # change-password/reset/transfert) porte `tv` ; un jeton sans `tv` n'en est pas un.
+    if payload.get("purpose") or "tv" not in payload:
+        raise HTTPException(status_code=401, detail="Session invalide, reconnectez-vous",
+                            headers={"WWW-Authenticate": "Bearer"})
     user_id = payload.get("sub")
     try:
         uid = int(user_id)
@@ -58,17 +158,23 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
         raise HTTPException(status_code=401, detail="Token invalide")
     user = db.query(User).filter(User.id == uid).first()
     if user is None:
-        raise HTTPException(status_code=404, detail="Utilisateur introuvable")
+        raise HTTPException(status_code=401, detail="Session invalide, reconnectez-vous",
+                            headers={"WWW-Authenticate": "Bearer"})
     # Compte désactivé : un token déjà émis ne doit plus donner accès (le login le bloque déjà,
     # mais les sessions en cours restaient valides).
     if not getattr(user, "is_active", True):
         raise HTTPException(status_code=403, detail="Compte désactivé",
                             headers={"WWW-Authenticate": "Bearer"})
-    # Révocation de session : la version du token (tv, défaut 0) DOIT correspondre à celle de
-    # l'utilisateur. Un token SANS tv vaut 0 → rejeté dès que token_version a été incrémenté
-    # (retrait/transfert/changement de mot de passe) : plus de contournement par token « legacy ».
-    # Tous les tokens émis portent tv (register/login/demo), donc aucune régression.
+    # Révocation de session : la version du token (tv) DOIT correspondre à celle de
+    # l'utilisateur (incrémentée au retrait/transfert/changement de mot de passe). Un token
+    # SANS tv est déjà rejeté plus haut (ce n'est pas un jeton de session).
     if int(payload.get("tv") or 0) != int(getattr(user, "token_version", 0) or 0):
         raise HTTPException(status_code=401, detail="Session expirée, reconnectez-vous",
                             headers={"WWW-Authenticate": "Bearer"})
+    # Démo publique fermée : une session démo ouverte auparavant ne donne plus accès, sauf
+    # session ouverte par le lien privé avec la clé ACTUELLE (cf. demo_guard).
+    from app.services.demo_seed import DEMO_EMAIL
+    if (getattr(user, "email", "") or "").strip().lower() == DEMO_EMAIL:
+        _refuser_session_demo_perimee(payload)
+        _noter_activite_demo()
     return user

@@ -14,9 +14,11 @@ from app.core.database import get_db
 from app.core.config import get_settings
 from app.core.security import get_current_user
 from app.core.org import member_ids
-from app.core.http import content_disposition
+from app.core.mime import file_headers, mime_for
+from app.core.uploads import read_upload_limited
 from app.models import User, Document, DocCategory
 from app.services.storage import get_storage
+from app.services.pieces_fin import ALERTE_JOURS, etat_fin, jour_paris
 
 settings = get_settings()
 router = APIRouter(prefix="/api/documents", tags=["Coffre-fort"])
@@ -33,11 +35,9 @@ def _validate_and_read(file: UploadFile) -> tuple[bytes, str]:
     if _ALLOWED_EXT and ext not in _ALLOWED_EXT:
         raise HTTPException(400, f"Type de fichier non autorisé ({ext or 'inconnu'}). "
                                  f"Autorisés : {', '.join(sorted(_ALLOWED_EXT))}")
-    content = file.file.read()
-    if len(content) == 0:
-        raise HTTPException(400, "Fichier vide")
-    if len(content) > _MAX_BYTES:
-        raise HTTPException(413, f"Fichier trop volumineux (max {settings.MAX_UPLOAD_MB} Mo)")
+    # Lecture BORNÉE (limite + 1 octet) : un corps de plusieurs Go n'est jamais chargé en
+    # mémoire avant le 413 (process unique partagé par tous les clients).
+    content = read_upload_limited(file, _MAX_BYTES)
     return content, ext
 
 
@@ -69,28 +69,29 @@ def list_documents(
         for p in db.query(Project).filter(Project.id.in_(pids)).all():
             pnames[p.id] = p.name
 
-    result = []
-    for doc in docs:
-        days_until_exp = None
-        if doc.expiration_date:
-            days_until_exp = (doc.expiration_date - date.today()).days
+    today = jour_paris()
+    return [_doc_item(doc, pnames.get(doc.project_id), today) for doc in docs]
 
-        result.append({
-            "id": doc.id,
-            "name": doc.name,
-            "category": doc.category.value if doc.category else "autre",
-            "file_size": doc.file_size,
-            "mime_type": doc.mime_type,
-            "expiration_date": str(doc.expiration_date) if doc.expiration_date else None,
-            "days_until_expiration": days_until_exp,
-            "version": doc.version,
-            "created_at": doc.created_at.isoformat(),
-            "project_id": doc.project_id,
-            "folder": doc.folder or "",
-            "project_name": pnames.get(doc.project_id),
-        })
 
-    return result
+def _doc_item(doc: Document, project_name, today) -> dict:
+    """Une ligne de Mes documents. `fin` : l'état de la date de fin, le MÊME calcul que la pastille « pièces à
+    renouveler » et le courriel d'alerte (app.services.pieces_fin) ; None sans date."""
+    fin = etat_fin(doc.expiration_date, today)
+    return {
+        "id": doc.id,
+        "name": doc.name,
+        "category": doc.category.value if doc.category else "autre",
+        "file_size": doc.file_size,
+        "mime_type": doc.mime_type,
+        "expiration_date": str(doc.expiration_date) if doc.expiration_date else None,
+        "days_until_expiration": fin["jours"] if fin else None,
+        "fin": fin,
+        "version": doc.version,
+        "created_at": doc.created_at.isoformat() if doc.created_at else None,
+        "project_id": doc.project_id,
+        "folder": doc.folder or "",
+        "project_name": project_name,
+    }
 
 
 @router.post("/", status_code=201)
@@ -103,10 +104,14 @@ def upload_document(
     db: Session = Depends(get_db),
 ):
     """Uploader un document dans le coffre-fort."""
+    from app.core.demo_guard import refuser_demo
+    refuser_demo(current_user, "déposer des documents")     # défense en profondeur (middleware démo)
     content, ext = _validate_and_read(file)
     category = category if category in _VALID_CATS else "autre"
     file_key = f"{current_user.id}/{uuid.uuid4().hex}{ext}"
-    get_storage().save(file_key, content, file.content_type)
+    # Type DÉRIVÉ de l'extension autorisée, jamais le Content-Type annoncé par le client.
+    mime = mime_for(file_key)
+    get_storage().save(file_key, content, mime)
 
     # Parser la date d'expiration
     exp_date = None
@@ -122,7 +127,7 @@ def upload_document(
         category=category,
         file_key=file_key,
         file_size=len(content),
-        mime_type=file.content_type,
+        mime_type=mime,
         expiration_date=exp_date,
     )
     db.add(doc)
@@ -146,16 +151,23 @@ def replace_document(
     db: Session = Depends(get_db),
 ):
     """Remplacer un document par une nouvelle version."""
+    from app.core.demo_guard import refuser_demo
+    refuser_demo(current_user, "déposer des documents")     # défense en profondeur (middleware démo)
+    # Seule la version COURANTE et active se remplace : remplacer un document à la corbeille
+    # ou une ancienne version créait une version « vivante » orpheline de son historique.
     old_doc = db.query(Document).filter(
-        Document.id == doc_id, Document.user_id.in_(member_ids(current_user, db))
+        Document.id == doc_id, Document.user_id.in_(member_ids(current_user, db)),
+        Document.deleted_at.is_(None), Document.parent_id.is_(None),
     ).first()
     if not old_doc:
-        raise HTTPException(status_code=404, detail="Document introuvable")
+        raise HTTPException(status_code=404, detail="Document introuvable (peut-être à la corbeille "
+                                                    "ou déjà remplacé) : rechargez la liste.")
 
     # Sauvegarder la nouvelle version
     content, ext = _validate_and_read(file)
     file_key = f"{current_user.id}/{uuid.uuid4().hex}{ext}"
-    get_storage().save(file_key, content, file.content_type)
+    mime = mime_for(file_key)       # dérivé de l'extension, pas du client
+    get_storage().save(file_key, content, mime)
 
     exp_date = None
     if expiration_date:
@@ -172,14 +184,31 @@ def replace_document(
         category=old_doc.category,
         file_key=file_key,
         file_size=len(content),
-        mime_type=file.content_type,
+        mime_type=mime,
         expiration_date=exp_date or old_doc.expiration_date,
         version=old_doc.version + 1,
         parent_id=None,
+        # Conserver le rattachement : sans ça, remplacer une pièce la sortait de son AO
+        # et de son dossier → elle disparaissait des exports du marché concerné.
+        project_id=old_doc.project_id,
+        folder=old_doc.folder,
     )
     db.add(new_doc)
     db.flush()                      # obtenir new_doc.id avant d'y rattacher l'ancien
-    old_doc.parent_id = new_doc.id  # l'ancienne version devient enfant (archivée, masquée)
+    # L'ancienne version devient enfant (archivée, masquée) — par UPDATE CONDITIONNEL : deux
+    # remplacements simultanés (double-clic, deux membres) créaient sinon deux versions
+    # « courantes » dont une sans historique. Le second voit 0 ligne modifiée → 409.
+    hit = db.query(Document).filter(
+        Document.id == old_doc.id, Document.parent_id.is_(None), Document.deleted_at.is_(None),
+    ).update({Document.parent_id: new_doc.id}, synchronize_session=False)
+    if hit != 1:
+        db.rollback()
+        try:
+            get_storage().delete(file_key)
+        except Exception:
+            pass
+        raise HTTPException(status_code=409, detail="Ce document vient d'être remplacé ou supprimé. "
+                                                    "Rechargez la liste puis réessayez.")
     db.commit()
     db.refresh(new_doc)
 
@@ -198,19 +227,50 @@ def rename_document(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Renommer un document (titre affiché dans le coffre-fort)."""
+    """Modifier une pièce de Mes documents : son nom, sa catégorie, sa date de fin (vague 2a, A3). Seuls les champs
+    présents changent. Une date de fin vide l'efface ; une date changée remet à zéro les alertes déjà envoyées, pour
+    que la nouvelle date ait les siennes (30 jours, 7 jours, le jour même)."""
+    from app.core.demo_guard import refuser_demo
+    refuser_demo(current_user, "gérer vos documents")     # défense en profondeur (middleware démo)
     doc = db.query(Document).filter(
         Document.id == doc_id, Document.user_id.in_(member_ids(current_user, db)),
-        Document.deleted_at.is_(None),
+        Document.deleted_at.is_(None), Document.parent_id.is_(None),
     ).first()
     if not doc:
         raise HTTPException(status_code=404, detail="Document introuvable")
-    name = (payload.get("name") or "").strip()
-    if not name:
-        raise HTTPException(status_code=400, detail="Le nom ne peut pas être vide")
-    doc.name = name[:500]
+    if not isinstance(payload, dict) or not ({"name", "category", "expiration_date"} & set(payload)):
+        raise HTTPException(status_code=400, detail="Rien à modifier : indiquez un nom, une catégorie ou une date de fin.")
+    if "name" in payload:
+        name = str(payload.get("name") or "").strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="Le nom ne peut pas être vide")
+        doc.name = name[:500]
+    if "category" in payload:
+        cat = str(payload.get("category") or "")
+        if cat not in _VALID_CATS:
+            raise HTTPException(status_code=400, detail="Catégorie inconnue : choisissez-en une dans la liste.")
+        doc.category = DocCategory(cat)
+    if "expiration_date" in payload:
+        brut = payload.get("expiration_date")
+        fin = None
+        if brut not in (None, ""):
+            try:
+                fin = date.fromisoformat(str(brut)[:10])
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Date de fin illisible : choisissez-la dans le calendrier.")
+            if not (2000 <= fin.year <= 2100):
+                raise HTTPException(status_code=400, detail="Date de fin improbable : vérifiez l'année.")
+        if fin != doc.expiration_date:
+            doc.expiration_date = fin
+            doc.alert_30_sent = doc.alert_7_sent = doc.alert_day_sent = False
     db.commit()
-    return {"id": doc.id, "name": doc.name}
+    db.refresh(doc)
+    pname = None
+    if doc.project_id:
+        from app.models import Project
+        p = db.query(Project).filter(Project.id == doc.project_id).first()
+        pname = p.name if p else None
+    return _doc_item(doc, pname, jour_paris())
 
 
 @router.delete("/{doc_id}", status_code=204)
@@ -221,6 +281,8 @@ def delete_document(
 ):
     """Mettre un document à la corbeille (suppression douce, réversible).
     Le fichier de stockage est conservé tant que la corbeille n'est pas purgée."""
+    from app.core.demo_guard import refuser_demo
+    refuser_demo(current_user, "gérer vos documents")     # défense en profondeur (middleware démo)
     doc = db.query(Document).filter(
         Document.id == doc_id, Document.user_id.in_(member_ids(current_user, db)),
         Document.deleted_at.is_(None),
@@ -228,8 +290,27 @@ def delete_document(
     if not doc:
         raise HTTPException(status_code=404, detail="Document introuvable")
     from app.models import utcnow
-    doc.deleted_at = utcnow()
+    now = utcnow()
+    doc.deleted_at = now
+    # Les ANCIENNES versions (chaîne parent_id → version plus récente) suivent le document
+    # à la corbeille : sinon elles restaient téléchargeables et hors de la purge à 30 jours.
+    old_ids = _older_version_ids(db, doc.id, member_ids(current_user, db))
+    if old_ids:
+        db.query(Document).filter(Document.id.in_(old_ids), Document.deleted_at.is_(None)).update(
+            {Document.deleted_at: now}, synchronize_session=False)
     db.commit()
+
+
+def _older_version_ids(db: Session, doc_id: int, owners) -> list:
+    """Toutes les anciennes versions d'un document (transitivement), dans le périmètre."""
+    ids, frontier = set(), {doc_id}
+    while frontier:
+        rows = db.query(Document.id).filter(
+            Document.parent_id.in_(list(frontier)), Document.user_id.in_(owners)).all()
+        children = {r[0] for r in rows} - ids - {doc_id}
+        ids |= children
+        frontier = children
+    return list(ids)
 
 
 @router.post("/{doc_id}/restore", status_code=200)
@@ -244,7 +325,29 @@ def restore_document(
     ).first()
     if not doc:
         raise HTTPException(status_code=404, detail="Document introuvable")
+    # Ancienne version dont la version COURANTE est à la corbeille : on restaure la tête de
+    # chaîne (et les versions jetées avec elle). Sinon la version restaurée devenait « vivante »
+    # mais invisible, puis effacée avec la tête à la purge des 30 jours.
+    owners = member_ids(current_user, db)
+    head, hops = doc, 0
+    while head.parent_id is not None and hops < 200:
+        nxt = db.query(Document).filter(Document.id == head.parent_id,
+                                        Document.user_id.in_(owners)).first()
+        if not nxt:
+            break
+        head, hops = nxt, hops + 1
+    if head is not doc and head.deleted_at is not None:
+        doc = head
+    trashed_at = doc.deleted_at
     doc.deleted_at = None
+    # Restaure aussi les anciennes versions mises à la corbeille EN MÊME TEMPS que lui
+    # (même horodatage) — pas celles qu'on aurait jetées séparément auparavant.
+    if trashed_at is not None:
+        old_ids = _older_version_ids(db, doc.id, member_ids(current_user, db))
+        if old_ids:
+            db.query(Document).filter(Document.id.in_(old_ids),
+                                      Document.deleted_at == trashed_at).update(
+                {Document.deleted_at: None}, synchronize_session=False)
     db.commit()
     return {"ok": True, "id": doc.id}
 
@@ -262,29 +365,35 @@ def download_document(
     if not doc or not doc.file_key:
         raise HTTPException(404, "Document introuvable")
     storage = get_storage()
-    signed = storage.url(doc.file_key)
+    signed = storage.url(doc.file_key, filename=doc.name)
     if signed:
         return RedirectResponse(signed)
     try:
         content = storage.load(doc.file_key)
     except FileNotFoundError:
         raise HTTPException(410, "Fichier absent du stockage")
+    # Type recalculé depuis l'extension de la clé (validée à l'envoi), jamais doc.mime_type :
+    # les anciennes lignes portent encore le type annoncé par le navigateur.
     return StreamingResponse(
         io.BytesIO(content),
-        media_type=doc.mime_type or "application/octet-stream",
-        headers={"Content-Disposition": content_disposition(doc.name)},
+        media_type=mime_for(doc.file_key),
+        headers=file_headers(doc.name, doc.file_key),
     )
 
 
 @router.get("/expiring")
 def get_expiring_documents(
-    days: int = 30,
+    days: int = ALERTE_JOURS,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Récupérer les documents qui expirent dans les X prochains jours."""
+    """Les pièces à renouveler : date de fin passée, ou dans les X prochains jours (30 par défaut, comme la liste et
+    le courriel d'alerte : app.services.pieces_fin). Jour de Paris."""
     from datetime import timedelta
-    threshold = date.today() + timedelta(days=days)
+    # Bornage : days=99999999 provoquait un OverflowError (500) dans timedelta.
+    days = max(0, min(int(days or 0), 3650))
+    today = jour_paris()
+    threshold = today + timedelta(days=days)
 
     docs = db.query(Document).filter(
         Document.user_id.in_(member_ids(current_user, db)),
@@ -298,5 +407,6 @@ def get_expiring_documents(
         "id": d.id,
         "name": d.name,
         "expiration_date": str(d.expiration_date),
-        "days_remaining": (d.expiration_date - date.today()).days,
+        "days_remaining": (d.expiration_date - today).days,
+        "fin": etat_fin(d.expiration_date, today),
     } for d in docs]

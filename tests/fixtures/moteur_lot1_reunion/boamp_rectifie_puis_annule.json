@@ -1,0 +1,96 @@
+{
+ "lu_le": "2026-10-21",
+ "source": "API BOAMP (OpenDataSoft), lue en GET le 21/10/2026 avec l'en-tête AdjugoBot : l'avis 26-83249 (Collège Maurice Satineau, Baie-Mahault, 971), son rectificatif 26-84145 (28/08/2026) et son annulation 26-89465 (15/09/2026), trouvés par une lecture des annulations parues depuis le 01/09/2026 (27) et des rectificatifs qui visent les mêmes avis (3) ; champs des avis = SELECT de app/sourcing/sources/boamp.py, des suites = SELECT_SUITES ; corps réduit au bloc rectificatif/annulation",
+ "avis": [
+  {
+   "idweb": "26-83249",
+   "objet": "Prestations de voyages scolaires pour le Collège Maurice Satineau",
+   "nomacheteur": "COLLEGE MAURICE SATINEAU",
+   "code_departement": [
+    "75",
+    "78",
+    "91",
+    "92",
+    "93",
+    "94",
+    "95",
+    "971"
+   ],
+   "dateparution": "2026-08-25",
+   "datelimitereponse": "2026-09-16T12:00:00+00:00",
+   "descripteur_libelle": [
+    "Voyage"
+   ],
+   "descripteur_code": [
+    "367"
+   ],
+   "nature_libelle": "Avis de marché",
+   "famille_libelle": "Marchés entre 90 k€ et seuils européens",
+   "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-83249",
+   "type_marche": [
+    "SERVICES"
+   ],
+   "procedure_libelle": "Procédure Ouverte",
+   "annonce_lie": null,
+   "nature": "APPEL_OFFRE",
+   "etat": "INITIAL",
+   "contractfolderid": null
+  }
+ ],
+ "suites": [
+  {
+   "idweb": "26-84145",
+   "annonce_lie": [
+    "26-83249"
+   ],
+   "nature": "RECTIFICATIF",
+   "etat": "RECTIFICATIF",
+   "famille": "FNS",
+   "dateparution": "2026-08-28",
+   "datelimitereponse": null,
+   "contractfolderid": null,
+   "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-84145",
+   "donnees": "{\"FNSimple\": {\"rectificatif\": {\"avisInitial\": {\"idWeb\": \"26-83249\"}, \"natureMarche\": {\"intitule\": \"Prestations de voyages scolaires pour le collège Maurice Satineau\", \"codeCPV\": {\"objetPrincipal\": {\"classPrincipale\": \"63500000\"}}, \"natureMarche\": {\"services\": \"\"}, \"description\": \"Le collège Maurice Satineau souhaite organiser sept voyages scolaires. Chaque voyage fait l'objet d'un lot et nos attentes en matière de transport, d'hébergement et de restauration sont précisées dans les documents fournis.\"}, \"infosRectif\": \"La régie demandée n'est pas conforme à la règlementation comptable et le montant du marché dépasse le seuil de la procédure formalisée - Le marché est annulé\"}}}",
+   "objet": "Prestation de voyages scolaires v",
+   "nomacheteur": "COLLEGE MAURICE SATINEAU",
+   "code_departement": [
+    "91",
+    "92",
+    "93",
+    "94",
+    "95",
+    "971"
+   ],
+   "descripteur_libelle": [
+    "Voyage"
+   ]
+  },
+  {
+   "idweb": "26-89465",
+   "annonce_lie": [
+    "26-83249"
+   ],
+   "nature": "ANNULATION",
+   "etat": "INITIAL",
+   "famille": "FNS",
+   "dateparution": "2026-09-15",
+   "datelimitereponse": null,
+   "contractfolderid": null,
+   "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-89465",
+   "donnees": "{\"FNSimple\": {\"annulation\": {\"avisInitial\": {\"idWeb\": \"26-83249\"}, \"natureMarche\": {\"intitule\": \"Prestations de voyages scolaires pour le collège Maurice Satineau\", \"codeCPV\": {\"objetPrincipal\": {\"classPrincipale\": \"63500000\"}}, \"natureMarche\": {\"fournitures\": \"\"}, \"description\": \"Le collège Maurice Satineau souhaite organiser sept voyages scolaires. Chaque voyage fait l'objet d'un lot et nos attentes en matière de transport, d'hébergement et de restauration sont précisées dans les documents fournis.\"}, \"infosAnnulation\": \"L'examen attentif du dossier relatif à la procédure de passation du marché\\nde prestation de voyages scolaires pour le Collège Maurice Satineau, a per-\\nmis de déceler certaines anomalies. Aussi, il a été décidé cejour, pour motif\\nd'intérêt général, de ne pas donner suite à la consultation engagée.\\nPremièrement, il est nécessaire de redéfinir précisément le besoin exprimé\\nafin d'assurer une adéquation optimale du service aux attentes de l'établis-\\nsement et des élèves concernés.\\nEnsuite, le dossier de consultation devra être mis en conformité avec les\\nexigences réglementaires en vigueur, garantissant ainsi la transparence et\\nl'égalité de la procédure.\\nEnfin, la présente procédure est suspendue, et une nouvelle consuitation\\nsera lancée ultérieurement, après finalisation du besoin et mise à jour du\\ndossier.\\nLa présente décision sera notifiée à l'ensemble des candidats ayant retiré le\\ndossier de consultation.\\nFait à Baie-Mahault, le 9 septembre 2026\"}}}",
+   "objet": "Prestation de voyages scolaires",
+   "nomacheteur": "COLLEGE MAURICE SATINEAU",
+   "code_departement": [
+    "91",
+    "92",
+    "93",
+    "94",
+    "95",
+    "971"
+   ],
+   "descripteur_libelle": [
+    "Voyage"
+   ]
+  }
+ ]
+}

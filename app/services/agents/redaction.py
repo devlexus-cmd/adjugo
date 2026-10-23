@@ -1,7 +1,13 @@
 """
 AGENT 3 — RÉDACTEUR
-Tâche : produire le dossier de réponse. Mémoire technique (IA) + formulaires CERFA
-pré-remplis (DC1 en groupement, DC2 par membre, ATTRI1) + dossier ZIP téléchargeable.
+Tâche : assembler le dossier de réponse : formulaires CERFA pré-remplis (DC1 en groupement,
+DC2 par membre, ATTRI1), dossier ZIP téléchargeable, et le dossier de présentation (« mémoire
+technique ») RÉDIGÉ DANS L'ATELIER (app/services/atelier.py).
+
+Rédaction, vague 2 : l'ancien moteur qui écrivait tout le mémoire d'un seul appel à l'IA (et
+fusionnait les apports des partenaires) est RETIRÉ. Le dossier commun prend le texte de
+l'atelier, avec les mêmes règles que son export : rien si l'export est bloqué sans dérogation,
+avertissement BLOQUANT tant que toutes les parties ne sont pas validées.
 
 Prend en compte le groupement recommandé par l'Agent 2 : les co-traitants retenus
 sont injectés dans le DC1 (section groupement) et un DC2 est généré par membre.
@@ -12,185 +18,42 @@ import base64
 import zipfile
 from typing import Optional
 
-from app.services.llm import complete, MODEL_FAST
+# Avertissement (non bloquant) quand le règlement impose son propre cadre de réponse.
+FICHIER_IMPOSE_WARNING = ("Dossier de présentation : l'acheteur impose son propre cadre de réponse. Recopiez-y "
+                          "ce texte ; ne déposez pas le fichier Word d'Adjugo seul.")
+
+# Dossiers du ZIP « Préparer mes documents » (réorganisation, vague 1 : noms lus par le client, sans « CERFA »
+# ni « co-traitant » ; l'aperçu du dossier commun, app/routers/invites.py, reprend les mêmes).
+DOSSIER_FORMULAIRES = "formulaires_officiels"
+DOSSIER_PIECES_PARTENAIRES = "pieces_partenaires"
 
 # Seuil (€ HT) au-delà duquel le DUME est ajouté d'office au dossier. Les procédures
 # formalisées le rendent quasi incontournable ; ajustable selon la stratégie commerciale.
 DUME_THRESHOLD = 90000
 
-MEMOIRE_SYSTEM = """Tu es un rédacteur expert de mémoires techniques pour les marchés
-publics français du BTP. Tu produis un mémoire technique convaincant, concret et
-structuré en Markdown, prêt à être inséré dans une réponse à appel d'offres.
-Pas de bla-bla : des engagements précis, des moyens chiffrés, une méthodologie crédible."""
-
-_FUSION_SYSTEM = """Tu es l'architecte d'un groupement d'entreprises (co-traitance) répondant
-à un marché public. On te donne les apports BRUTS de chaque PME du groupement (lots,
-qualifications, références, paragraphes rédigés chacun de leur côté). Ta mission : les
-FUSIONNER en une synthèse d'équipe unique, cohérente et sans redondance — pas une
-juxtaposition. Reformule (jamais de copier-coller verbatim), regroupe les savoir-faire
-qui se recoupent, mets en avant la complémentarité des lots. Règle absolue : n'invente
-AUCUN moyen, chiffre, référence ou certification absent des apports fournis."""
-
-
-def _fuse_consortium(raw_block: str, details: dict, lang_name: str = None) -> str:
-    """2ᵉ passe LLM : transforme les apports bruts des co-traitants en une synthèse
-    d'équipe fusionnée et dédupliquée. Retourne "" en cas d'échec (repli géré par l'appelant)."""
-    if not (raw_block or "").strip():
+def _criteres_du_plan(details: dict) -> str:
+    """Critères remis à la rédaction. Avec la grille « Comment vous serez noté » : seulement
+    les lignes retrouvées dans le règlement ou confirmées par l'utilisateur, poids TEL QU'ÉCRIT
+    (une ligne « à vérifier » n'entre pas dans le plan). Analyse plus ancienne (sans grille) :
+    les NOMS proposés par l'IA, sans leurs poids, jamais contrôlés contre le texte."""
+    g = (details or {}).get("grille_notation")
+    if isinstance(g, dict):
+        from app.services.grille_notation import plan_text
+        return plan_text(g) or "non retrouvés dans le règlement (ne pas en inventer)"
+    raw = (details or {}).get("criteres_attribution")
+    if isinstance(raw, dict):
+        raw = [raw]
+    if not isinstance(raw, (list, tuple)):
         return ""
-    prompt = (f"MARCHÉ : {details.get('intitule_marche','')}\n"
-              f"ALLOTISSEMENT : {details.get('allotissement','')}\n\n"
-              f"APPORTS BRUTS DES CO-TRAITANTS :\n{raw_block}\n\n"
-              "Produis 2 à 4 paragraphes Markdown qui tissent ces apports en une présentation "
-              "UNIQUE des moyens mutualisés du groupement : complémentarité des lots, "
-              "savoir-faire combinés, références consolidées. Reformule tout, fusionne les "
-              "redondances, n'invente rien. Pas de liste à puces entreprise par entreprise.")
-    if lang_name and lang_name.lower() != "français":
-        prompt += f"\n\nLANGUE : rédige en {lang_name}."
-    try:
-        out = complete(_FUSION_SYSTEM, prompt, max_tokens=700, temperature=0.25, model=MODEL_FAST)
-        return (out or "").strip()
-    except Exception:
+    noms = []
+    for x in raw:
+        n = (x.get("critere") or x.get("intitule") or x.get("nom") or "") if isinstance(x, dict) else x
+        n = re.sub(r"\s+", " ", str(n or "")).strip()[:160]
+        if n and n not in noms:
+            noms.append(n)
+    if not noms:
         return ""
-
-
-def _generate_memoire_fast(analysis: dict, company: dict, cotraitants: list,
-                           lang_name: str = None, db=None, user_id: int = None,
-                           estimate: dict = None, contributions: list = None) -> str:
-    """Mémoire technique en UN seul appel LLM. SOURCÉ sur la base de connaissances de
-    l'entreprise quand elle existe (extraits injectés + citations [S1]) → traçabilité ;
-    sinon mémoire générique (l'entreprise est invitée à alimenter sa base)."""
-    details = analysis.get("details", {}) if analysis else {}
-    quals = company.get("qualifications", [])
-    if isinstance(quals, list):
-        quals = ", ".join(q.get("name", "") if isinstance(q, dict) else str(q) for q in quals)
-    cot = "; ".join(f"{c.get('name')} ({c.get('specialites','')})" for c in cotraitants) or "aucun"
-
-    # Équipe interne (moyens humains) : présentée nommément dans le mémoire si renseignée.
-    team_block = ""
-    team = company.get("team") or []
-    if isinstance(team, list):
-        members = "\n".join(
-            f"- {m.get('nom','')} — {m.get('fonction','')}"
-            + (f" ({m.get('qualifications','')})" if m.get('qualifications') else "")
-            + (f" ; réf. : {m.get('references','')}" if m.get('references') else "")
-            for m in team if isinstance(m, dict) and m.get('nom'))
-        if members:
-            team_block = ("\n\nÉQUIPE INTERNE DÉDIÉE (présente-la NOMMÉMENT dans « Moyens humains », "
-                          f"avec rôles et qualifications) :\n{members}")
-
-    # Chiffrage : si un devis a été établi, la méthodologie et le planning du mémoire
-    # DOIVENT refléter le découpage chiffré (cohérence prix / discours).
-    chiffrage_block, chiffrage_rule = "", ""
-    if estimate and estimate.get("lignes"):
-        lines = "\n".join(f"- [{l.get('phase','')}] {l.get('tache','')} — {l.get('jours','')} j"
-                          for l in estimate["lignes"])
-        chiffrage_block = (f"\n\nDÉCOUPAGE CHIFFRÉ DE LA PRESTATION (charge totale : "
-                           f"{estimate.get('jours_total','')} jours) :\n{lines}")
-        chiffrage_rule = ("\n\nRÈGLE : structure la section « Méthodologie » et le « Planning » "
-                          "autour de CES phases et tâches ; le planning doit refléter la charge en jours.")
-
-    # CONSORTIUM (réseau Adjugo) : fusion des apports des co-traitants invités.
-    # Chaque PME a renseigné sa part (lot, références, qualifs, paragraphe, prix) via
-    # son lien cloisonné ; l'IA les tisse en UNE réponse commune cohérente.
-    consortium_block, consortium_rule = "", ""
-    subs = [c for c in (contributions or []) if isinstance(c, dict) and c.get("status") == "submitted"]
-    if subs:
-        parts = []
-        for c in subs:
-            refs = "; ".join(
-                (r.get("intitule", "") + (f" — {r.get('client','')}" if r.get("client") else "")
-                 + (f" ({r.get('annee','')})" if r.get("annee") else ""))
-                for r in (c.get("references") or []) if isinstance(r, dict) and r.get("intitule"))
-            quals_c = ", ".join(str(q) for q in (c.get("qualifications") or []) if q)
-            b = f"- {c.get('company_name') or '(co-traitant)'} — rôle {c.get('role','cotraitant')}, lot : {c.get('lot') or '(non précisé)'}"
-            if quals_c:
-                b += f"\n  Qualifications : {quals_c}"
-            if refs:
-                b += f"\n  Références : {refs}"
-            # NB : l'« approche prix » (chiffrage_note) n'est volontairement PAS injectée dans le
-            # mémoire TECHNIQUE fusionné — le prix est jugé séparément (DPGF/BPU/cockpit) et n'a
-            # pas à apparaître dans la note méthodologique commune.
-            if c.get("memoire_paragraph"):
-                b += f"\n  Apport rédigé par la PME : {c['memoire_paragraph']}"
-            parts.append(b)
-        raw_block = "\n".join(parts)
-        # 2ᵉ PASSE DE FUSION : au lieu d'injecter les paragraphes des PME bruts (risque
-        # de copier-coller verbatim dans le mémoire), on les fait d'abord SYNTHÉTISER en
-        # un récit d'équipe unique, dédupliqué. Repli gracieux sur la concat si l'appel
-        # échoue (jamais de blocage). Voir _fuse_consortium().
-        fused = _fuse_consortium(raw_block, details, lang_name)
-        if fused:
-            consortium_block = ("\n\nMOYENS MUTUALISÉS DU GROUPEMENT (synthèse déjà fusionnée "
-                                "des apports réels des co-traitants — réutilise-la telle quelle, "
-                                "ne re-liste pas les entreprises mécaniquement) :\n" + fused)
-        else:
-            consortium_block = ("\n\nCONTRIBUTIONS DES CO-TRAITANTS DU CONSORTIUM "
-                                "(apports réels fournis par chaque PME — à FUSIONNER) :\n" + raw_block)
-        consortium_rule = ("\n\nRÈGLE CONSORTIUM : intègre les qualifications, références et apports de CHAQUE "
-                           "co-traitant ci-dessus ; attribue chaque lot à l'entreprise qui le couvre et tisse "
-                           "leurs moyens et savoir-faire en un récit d'équipe UNIQUE et cohérent. REFORMULE — "
-                           "ne recopie JAMAIS mot pour mot le paragraphe d'une PME — et fusionne les savoir-faire "
-                           "redondants. N'invente rien au-delà de ce que chaque co-traitant a fourni.")
-
-    # RAG : récupère le savoir-faire réel de l'entreprise pertinent pour ce marché
-    sources_block, src_rule, chunks = "", "", []
-    if db is not None and user_id:
-        try:
-            from app.services import rag
-            q = " ".join(str(details.get(k, "")) for k in ("intitule_marche", "type_marche", "critere_rse")) \
-                + " méthodologie sécurité qualité références moyens"
-            # Base COMMUNE de l'organisation (si org existe ; sinon base perso). On met en
-            # commun les savoir-faire de l'équipe pour rédiger, sans modifier les bases perso.
-            pool = [user_id]
-            try:
-                from app.core.org import member_ids
-                from app.models import User as _U
-                _u = db.query(_U).get(user_id)
-                if _u is not None and getattr(_u, "org_id", None):
-                    pool = member_ids(_u, db)
-            except Exception:
-                pool = [user_id]
-            chunks = rag.retrieve_multi(db, pool, q, k=6, relevance=True)
-            if chunks:
-                sources_block = "\n\nSOURCES (savoir-faire RÉEL de l'entreprise — appuie-toi DESSUS) :\n" + rag.sources_block(chunks)
-                src_rule = ("\n\nRÈGLE : appuie chaque affirmation factuelle (moyens, références, "
-                            "certifications, chiffres) sur ces sources et CITE-les avec [S1], [S2]… "
-                            "N'invente aucun chiffre ni référence absent des sources.")
-        except Exception:
-            pass
-    # Anti-invention : AUCUNE source réelle (ni savoir-faire indexé, ni apport de co-traitant)
-    # → on interdit explicitement d'inventer plutôt que de produire un mémoire fabriqué de toutes
-    # pièces présenté comme la réponse réelle de l'entreprise (promesse « Aucune invention »).
-    if not chunks and not subs:
-        src_rule = ("\n\nRÈGLE ANTI-INVENTION (aucune source réelle disponible) : tu n'as NI savoir-faire "
-                    "indexé NI apport de co-traitant. N'invente AUCUN chiffre, référence client, "
-                    "certification, ni moyen humain/matériel précis. Pour tout élément factuel non fourni, "
-                    "écris « [À compléter par l'entreprise] ». Reste sur une trame méthodologique générale.")
-
-    prompt = f"""Rédige un mémoire technique pour cet appel d'offres.
-
-MARCHÉ : {details.get('intitule_marche','')}
-ACHETEUR : {details.get('acheteur','')}
-ALLOTISSEMENT : {details.get('allotissement','')}
-DÉLAI : {details.get('delai_execution','')}
-EXIGENCES RSE : {details.get('critere_rse','')}
-CRITÈRES D'ATTRIBUTION : {details.get('criteres_attribution','')}
-
-ENTREPRISE MANDATAIRE : {company.get('name','')} — {company.get('forme_juridique','')},
-{company.get('city','')}, effectif {company.get('effectif','')}, qualifications : {quals}.
-CO-TRAITANTS DU GROUPEMENT : {cot}.{team_block}{consortium_block}{sources_block}{chiffrage_block}
-
-Structure en Markdown avec ces sections :
-1. Présentation du groupement et répartition des lots
-2. Méthodologie et organisation du chantier
-3. Moyens humains et matériels
-4. Démarche qualité, sécurité et RSE (clause d'insertion)
-5. Planning et engagements de délai
-Sois concret, mentionne explicitement la co-traitance par lot. ~600 mots.{src_rule}{chiffrage_rule}{consortium_rule}"""
-    if lang_name and lang_name.lower() != "français":
-        prompt += (f"\n\nLANGUE : rédige l'intégralité du mémoire en {lang_name} "
-                   f"(titres de sections compris).")
-    return complete(MEMOIRE_SYSTEM, prompt, max_tokens=2000, temperature=0.3, model=MODEL_FAST)
+    return "; ".join(noms) + " (poids non contrôlés : n'en cite aucun et ne suppose aucun ordre d'importance)"
 
 
 def build_dossier(analysis: dict, company: dict, cotraitants: list,
@@ -206,26 +69,26 @@ def build_dossier(analysis: dict, company: dict, cotraitants: list,
     cotraitants = cotraitants or []
     warnings = []
 
-    # Contributions cloisonnées des co-traitants (réseau Adjugo) à fusionner dans le mémoire.
+    # Parts SOUMISES des partenaires (réseau Adjugo) : leur identité juridique alimente les CERFA.
+    # On EXCLUT les parts dont le lien a été révoqué OU décliné (partenaire sorti du groupement).
+    # DOCTRINE DE VISIBILITÉ : seul le PRIX DE VENTE du lot (prix_lot_ht) est lisible ici
+    # (ATTRI1/convention) ; detail_chiffre (enveloppe chiffrée) n'est JAMAIS lu.
     contributions = []
     if db is not None and project_id:
         try:
             from app.models import ProjectContribution, ProjectInvite
-            # On EXCLUT les parts dont le lien a été révoqué (partenaire retiré du groupement) →
-            # jamais dans le dossier déposé, même pour une révocation antérieure au correctif.
+            from app.services.groupement_members import active_invite_filter
             rows = db.query(ProjectContribution).join(
                 ProjectInvite, ProjectContribution.invite_id == ProjectInvite.id).filter(
                 ProjectContribution.project_id == project_id,
                 ProjectContribution.status == "submitted",
-                ProjectInvite.revoked.is_(False)).all()
+                active_invite_filter()).all()
             contributions = [{
                 "company_name": c.company_name, "role": c.role, "lot": c.lot,
                 "siret": getattr(c, "siret", "") or "", "forme_juridique": getattr(c, "forme_juridique", "") or "",
                 "address": getattr(c, "address", "") or "", "postal_code": getattr(c, "postal_code", "") or "",
                 "city": getattr(c, "city", "") or "", "contact": c.contact or {},
-                "references": c.references or [], "qualifications": c.qualifications or [],
-                "chiffrage_note": c.chiffrage_note or "", "memoire_paragraph": c.memoire_paragraph or "",
-                "status": c.status,
+                "prix_lot_ht": getattr(c, "prix_lot_ht", None), "status": c.status,
             } for c in rows]
         except Exception:
             contributions = []
@@ -235,23 +98,55 @@ def build_dossier(analysis: dict, company: dict, cotraitants: list,
     if db is not None and project_id:
         try:
             from app.models import ContributionPiece, ProjectContribution, ProjectInvite
+            from app.services.groupement_members import active_invite_filter
             prows = db.query(ContributionPiece, ProjectContribution).join(
                 ProjectContribution, ContributionPiece.contribution_id == ProjectContribution.id).join(
                 ProjectInvite, ProjectContribution.invite_id == ProjectInvite.id).filter(
                 ContributionPiece.project_id == project_id,
                 ProjectContribution.status == "submitted",
-                ProjectInvite.revoked.is_(False)).all()
+                active_invite_filter()).all()
             cotraitant_pieces = [{"company": (cb.company_name or "cotraitant"),
                                   "name": pc.name, "file_key": pc.file_key} for pc, cb in prows]
         except Exception:
             cotraitant_pieces = []
 
-    # ── Mémoire technique (IA, un seul appel) ──
-    try:
-        memoire_md = _generate_memoire_fast(analysis, company, cotraitants, lang_name, db=db, user_id=user_id, estimate=estimate, contributions=contributions)
-    except Exception as e:
-        memoire_md = f"# Mémoire technique\n\n(génération indisponible : {e})"
-        warnings.append(f"mémoire: {e}")
+    # ── Dossier de présentation = le texte de l'ATELIER (aucun appel à l'IA ici) ──
+    # Mêmes règles que l'export de l'atelier : rien n'est joint si l'export est bloqué sans
+    # dérogation (« [À compléter] », fait à relire non traité, partie vide, limite dépassée) ;
+    # avertissement BLOQUANT tant que toutes les parties ne sont pas validées. Jamais de message
+    # technique dans le livrable.
+    from app.services import memoire_export
+    memoire_label = memoire_export.memoire_label(analysis)
+    memoire_files, memoire_md, memoire_etat, memoire_garder = {}, "", None, []
+    if db is not None and project_id:
+        try:
+            from app.services import atelier
+            from app.models import Project as _P, User as _U
+            from app.core.org import data_owner_id
+            _proj = db.query(_P).filter(_P.id == project_id).first()
+            _u = db.get(_U, user_id) if user_id else None
+            _owner = data_owner_id(_u, db) if _u is not None else (_proj.user_id if _proj else None)
+            if _proj is not None and _owner is not None:
+                commun = atelier.dossier_commun(db, _proj, _owner)
+                memoire_files, memoire_md = commun["files"], commun["markdown"]
+                memoire_etat = commun["etat"]
+                memoire_garder = list(commun.get("garder") or [])
+                warnings.extend(commun["warnings"])
+        except Exception as e:
+            import logging
+            logging.getLogger("adjugo").warning("dossier de présentation de l'atelier indisponible (projet %s) : %s",
+                                                project_id, type(e).__name__)
+            memoire_files, memoire_md = {}, ""
+            warnings.append("BLOQUANT — Le dossier de présentation n'a pas pu être joint : ouvrez l'atelier "
+                            "(sur la page du marché, carte « Dossier de présentation ») puis relancez l'assemblage.")
+    else:
+        warnings.append("BLOQUANT — Dossier de présentation non rédigé : préparez-le dans l'atelier (sur la page "
+                        "du marché, carte « Dossier de présentation »).")
+    # Le règlement impose son propre cadre de réponse : le fichier Word d'Adjugo ne se dépose pas
+    # seul (avertissement non bloquant, affiché avec le dossier).
+    _gn = details.get("grille_notation") if isinstance(details, dict) else None
+    if isinstance(_gn, dict) and ((_gn.get("contraintes") or {}).get("fichier_impose")):
+        warnings.append(FICHIER_IMPOSE_WARNING)
 
     # Taux de TVA piloté par le projet (0 % par défaut — art. 293 B CGI).
     tva_rate = 0
@@ -294,14 +189,48 @@ def build_dossier(analysis: dict, company: dict, cotraitants: list,
     _real_ht = (estimate or {}).get("total_ht") if isinstance(estimate, dict) else None
     if not _real_ht:
         warnings.append("Montant d'engagement (ATTRI1) vide : chiffrez le marché avant de déposer.")
+    from app.services.cerfa import reference_consultation as _reference_consultation
     project_data = {
         "name": details.get("intitule_marche", "Marché public"),
         "client": details.get("acheteur", ""),
         "budget": _real_ht,  # None → ATTRI1 « À COMPLÉTER » (jamais un prix inventé)
         "tva_rate": tva_rate,
-        "reference": f"AO-{(project_id or 0):04d}",
+        "reference": _reference_consultation(analysis),   # l'avis publié, jamais le n° interne d'Adjugo
         "cotraitants": cerfa_cotraitants,   # ← DC1 groupement / DC2 multi-membres (incl. contributions)
     }
+
+    # ── Convention de groupement (vague 2) ── si elle est générée et à jour, les CERFA reprennent
+    # SES membres, lots, prix, forme et habilitation, et son PDF (accords inclus) remplace le
+    # modèle à compléter. Le mémoire est DÉJÀ rédigé ci-dessus : la convention n'est JAMAIS
+    # transmise au LLM (invariant de la doctrine de visibilité).
+    convention_pdf, _grp_conv = None, None
+    if db is not None and project_id:
+        try:
+            from app.models import Project as _Project
+            from app.services import groupement_convention as _gc
+            _proj = db.query(_Project).filter(_Project.id == project_id).first()
+            if _proj is not None:
+                _grp_conv = _gc.apply_to_cerfa(db, _proj, company, project_data)
+                if _grp_conv:
+                    cerfa_cotraitants = project_data["cotraitants"]
+                    act = _gc.active_convention_pdf(db, _proj)
+                    if act:
+                        convention_pdf, _conv = act
+                        if _conv.status != "signee":
+                            _sigs = _gc.signatures_of(db, _conv)
+                            warnings.append("Convention de groupement générée mais pas encore validée par tous "
+                                            f"(accords {sum(1 for s in _sigs if s.status in ('signed', 'hors_ligne'))}"
+                                            f" sur {len(_sigs)}).")
+                else:
+                    _conv = _gc.get_convention(db, project_id)
+                    if _conv is not None and _conv.status == "perimee":
+                        warnings.append("La convention de groupement n'est plus à jour (une part, un prix ou la "
+                                        "composition a changé) : régénérez-la avant de déposer.")
+                    elif _conv is not None and _conv.status == "draft":
+                        warnings.append("Convention de groupement en brouillon : générez-la dans « Convention et "
+                                        "accords » (page du marché, étape Préparer) pour que chaque membre la valide.")
+        except Exception as e:
+            warnings.append(f"convention de groupement : {e}")
 
     # ── Pare-feu : champs critiques manquants = pli rejeté. On signale (bloquant,
     # remonté en rouge côté front) sans empêcher l'assemblage du brouillon.
@@ -309,7 +238,7 @@ def build_dossier(analysis: dict, company: dict, cotraitants: list,
         from app.services.cerfa import missing_company_fields
         miss = missing_company_fields(company)
         if miss:
-            warnings.append("BLOQUANT — profil entreprise incomplet (rejet probable du pli) : "
+            warnings.append("BLOQUANT — à renseigner dans Mon entreprise, onglet « Identité » (rejet probable du pli) : "
                             + ", ".join(miss))
     except Exception:
         pass
@@ -321,11 +250,25 @@ def build_dossier(analysis: dict, company: dict, cotraitants: list,
     # DC4 (déclaration de sous-traitance) : dès qu'il y a un GROUPEMENT/consortium, on le
     # génère pré-rempli — la sous-traitance est fréquente en groupement et l'acheteur
     # l'exige le cas échéant ; mieux vaut le fournir prêt que de l'oublier.
-    has_groupement = bool(cerfa_cotraitants)
+    # DC4 = déclaration de SOUS-TRAITANCE : on ne le joint que si un partenaire est
+    # réellement déclaré sous-traitant (role sous_traitant), pas pour un simple groupement
+    # de co-traitants — sinon on ajoutait un DC4 sans objet à chaque dossier.
+    from app.services.cerfa import _soustraitants
+    has_soustraitance = bool(_soustraitants(cerfa_cotraitants))
+    # Membres du groupement (co-traitants) dont le représentant légal (signataire du DC2)
+    # est manquant : leur DC2 serait non signable → on avertit (bloquant) plutôt que de
+    # produire un DC2 vide en silence.
+    from app.services.cerfa import _groupement_members
+    _missing_rep = [ct.get("name") or ct.get("siret") or "un partenaire du groupement"
+                    for ct in _groupement_members(cerfa_cotraitants)
+                    if not str(ct.get("representant_legal") or "").strip()]
+    if _missing_rep:
+        warnings.append("BLOQUANT — représentant légal (signataire du DC2) manquant pour : "
+                        + ", ".join(_missing_rep) + ". Demandez-le au partenaire avant dépôt.")
     if (country or "FR").upper() == "FR":
         include_dume = (project_data.get("budget") or 0) >= DUME_THRESHOLD
         # "honneur" = déclaration sur l'honneur (R2143-3), pièce obligatoire de tout pli FR.
-        cerfa_ids = ["dc1", "dc2"] + (["dc4"] if has_groupement else []) + ["attri1", "honneur"] \
+        cerfa_ids = ["dc1", "dc2"] + (["dc4"] if has_soustraitance else []) + ["attri1", "honneur"] \
             + (["dume"] if include_dume else [])
     else:
         cerfa_ids = ["dume"]   # ESPD localisé = pièce de candidature paneuropéenne
@@ -342,7 +285,14 @@ def build_dossier(analysis: dict, company: dict, cotraitants: list,
             except Exception as e:
                 warnings.append(f"{cid}: {e}")
     except Exception as e:
-        warnings.append(f"cerfa indisponible: {e}")
+        warnings.append(f"formulaires officiels indisponibles : {e}")
+    if db is not None and project_id:
+        # Formulaires produits : ils comptent pour « Prêt à déposer ». Pour un groupement, seulement s'ils datent
+        # d'APRÈS la convention (depot_readiness compare l'horodatage à sa génération) ; pour une entreprise seule,
+        # tels quels (réorganisation, vague 2a, A2 : depot_readiness_seul, DC1, DC2, ATTRI1 ou DUME).
+        from app.services.groupement_convention import mark_cerfa_generated
+        mark_cerfa_generated(db, project_id, [c["id"] for c in cerfa_files if c["id"] in ("dc1", "dc2", "attri1", "dume")],
+                             (_grp_conv or {}).get("convention_version"))
 
     # ── Formulaire national supplémentaire (PL, PT, IT, NL, RO) ──
     if (country or "FR").upper() != "FR":
@@ -357,11 +307,14 @@ def build_dossier(analysis: dict, company: dict, cotraitants: list,
         except Exception as e:
             warnings.append(f"formulaire national: {e}")
 
-    # ── Convention de groupement (projet, à compléter/signer) si groupement ──
-    convention_md = _groupement_convention(company, cerfa_cotraitants, details) if cerfa_cotraitants else ""
+    # ── Convention de groupement : la VRAIE (générée, accords inclus) si elle existe ; sinon
+    #    le modèle à compléter/signer (comportement historique) si groupement.
+    convention_md = ("" if convention_pdf else
+                     (_groupement_convention(company, cerfa_cotraitants, details) if cerfa_cotraitants else ""))
 
     # ── ZIP ──
-    zip_bytes, zip_name, failed_pieces = _build_zip(memoire_md, cerfa_files, company, details, cerfa_cotraitants, project_id, cotraitant_pieces, convention_md)
+    zip_bytes, zip_name, failed_pieces = _build_zip(memoire_files, cerfa_files, company, details, cerfa_cotraitants, project_id,
+                                                    cotraitant_pieces, convention_md, convention_pdf=convention_pdf)
     if failed_pieces:
         warnings.append("Pièces partenaires non jointes au dossier (à re-déposer) : "
                         + ", ".join(failed_pieces[:8]))
@@ -369,6 +322,14 @@ def build_dossier(analysis: dict, company: dict, cotraitants: list,
     return {
         "memoire_markdown": memoire_md,
         "memoire_preview": _preview(memoire_md, 400),
+        "memoire_nom": memoire_label,
+        "memoire_fichiers": [name for name, _b in memoire_files.values()],
+        "memoire_etat": memoire_etat,
+        # Octets des fichiers (archivage dans le dossier du marché) : retirés par la route avant la
+        # réponse JSON (ils sont déjà dans le ZIP).
+        "_memoire_files": memoire_files,
+        # Fichiers d'un lot NON joint (bloqué) : gardés tels quels dans le dossier du marché (rédaction, vague 6).
+        "_memoire_garder": memoire_garder,
         "cerfas": [{"id": c["id"], "name": c["name"],
                     "content_b64": base64.b64encode(_as_bytes(c["content"])).decode()}
                    for c in cerfa_files],
@@ -382,7 +343,9 @@ def _groupement_convention(company, cotraitants, details):
     """Brouillon de convention de groupement momentané d'entreprises (à relire/signer).
     Désigne le mandataire et liste les membres + leurs lots. Pièce attendue par
     l'acheteur sur les marchés en groupement."""
-    mand = company.get("name", "le mandataire") if isinstance(company, dict) else "le mandataire"
+    mand = (company.get("name") if isinstance(company, dict) else "") or "Entreprise à préciser"
+    # Rôle affiché en clair (jamais le code brut « sous_traitant » / « mandataire »).
+    role_lbl = {"cotraitant": "co-traitant", "sous_traitant": "sous-traitant", "mandataire": "chef de file"}
     lines = [
         "# Convention de groupement momentané d'entreprises",
         "",
@@ -393,23 +356,27 @@ def _groupement_convention(company, cotraitants, details):
         f"**Acheteur :** {details.get('acheteur','')}",
         "",
         "## Article 1 — Membres du groupement",
-        f"- **{mand}** — mandataire du groupement",
+        f"- **{mand}** — chef de file (mandataire du groupement)",
     ]
     for c in cotraitants:
         ident = c.get("name", "")
         extra = " — ".join(x for x in [c.get("lot") and f"lot : {c['lot']}",
                                        c.get("siret") and f"SIRET {c['siret']}"] if x)
-        lines.append(f"- {ident}" + (f" ({extra})" if extra else "") + f" — {c.get('role','cotraitant')}")
+        role = str(c.get("role") or "cotraitant")
+        lines.append(f"- {ident}" + (f" ({extra})" if extra else "") + f" — {role_lbl.get(role, role)}")
     lines += [
         "",
         "## Article 2 — Forme du groupement",
         "Le groupement est **conjoint** / **solidaire** *(rayer la mention inutile)*. En cas "
-        "de groupement conjoint, le mandataire est solidaire de chacun des membres pour "
+        "de groupement conjoint, le chef de file (mandataire) est solidaire de chacun des membres pour "
         "l'exécution du marché.",
         "",
-        "## Article 3 — Mandataire",
-        f"{mand} est désigné mandataire. Il représente l'ensemble des membres vis-à-vis de "
-        "l'acheteur, coordonne les prestations et est l'interlocuteur unique.",
+        "## Article 3 — Chef de file (mandataire)",
+        # Tournure sans accord (nom d'entreprise ou repli « Entreprise à préciser ») : jamais
+        # « Entreprise à préciser est désigné … Il représente ».
+        f"Est désigné chef de file (mandataire du groupement) : {mand}. Le chef de file représente "
+        "l'ensemble des membres vis-à-vis de l'acheteur, coordonne les prestations et est "
+        "l'interlocuteur unique.",
         "",
         "## Article 4 — Répartition des prestations et de la rémunération",
         "Chaque membre exécute le(s) lot(s) indiqué(s) à l'article 1 et perçoit la part de "
@@ -428,26 +395,30 @@ def _groupement_convention(company, cotraitants, details):
     return "\n".join(lines)
 
 
-def _build_zip(memoire_md, cerfa_files, company, details, cotraitants, project_id, cotraitant_pieces=None, convention_md=""):
+def _build_zip(memoire_files, cerfa_files, company, details, cotraitants, project_id, cotraitant_pieces=None, convention_md="",
+               convention_pdf=None):
+    """`memoire_files` = {"docx": (nom, octets), "pdf": (nom, octets)} (vide si la rédaction a
+    échoué : aucun fichier de mémoire plutôt qu'un fichier qui contiendrait un message d'erreur)."""
     import os
     buf = io.BytesIO()
     failed_pieces = []
-    ao = re.sub(r"[^\w\s-]", "", details.get("intitule_marche", "AO"))[:40].strip() or f"projet_{project_id}"
+    ao = re.sub(r"[^\w\s-]", "", details.get("intitule_marche") or "")[:40].strip() or f"marche_{project_id or 0}"
     zip_name = f"Adjugo_Dossier_{ao}.zip".replace(" ", "_")
 
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        # Tout en PDF : les utilisateurs n'ouvrent pas des .md/.txt.
+        # Dossier de présentation en Word (à relire et compléter) ET en PDF, sous le nom du règlement.
         from app.services.md_pdf import markdown_to_pdf, text_to_pdf
-        try:
-            zf.writestr("memoire_technique.pdf", markdown_to_pdf(memoire_md, "Mémoire technique"))
-        except Exception:
-            zf.writestr("memoire_technique.txt", memoire_md.encode("utf-8"))   # repli sûr
+        for _kind, (name, content) in sorted((memoire_files or {}).items()):
+            zf.writestr(name, content)
         for c in cerfa_files:
-            zf.writestr(f"cerfa/{c['name']}", _as_bytes(c["content"]))
+            zf.writestr(f"{DOSSIER_FORMULAIRES}/{c['name']}", _as_bytes(c["content"]))
         zf.writestr("synthese_groupement.pdf",
                     text_to_pdf(_groupement_recap(company, cotraitants, details), "Composition du groupement"))
-        zf.writestr("fiche_appel_offres.pdf", text_to_pdf(_ao_recap(details), "Fiche récapitulative de l'AO"))
-        if convention_md:
+        zf.writestr("fiche_appel_offres.pdf", text_to_pdf(_ao_recap(details), "Fiche récapitulative du marché"))
+        if convention_pdf:
+            # Convention GÉNÉRÉE (texte figé + accords enregistrés) : remplace le modèle.
+            zf.writestr("convention_groupement.pdf", convention_pdf)
+        elif convention_md:
             try:
                 zf.writestr("convention_groupement.pdf",
                             markdown_to_pdf(convention_md, "Convention de groupement"))
@@ -465,16 +436,16 @@ def _build_zip(memoire_md, cerfa_files, company, details, cotraitants, project_i
                 except Exception:
                     # Ne plus avaler silencieusement : le mandataire doit savoir qu'une
                     # pièce partenaire manque au ZIP (sinon dossier commun incomplet déposé).
-                    failed_pieces.append(f"{p.get('company') or 'co-traitant'} — {p.get('name') or 'pièce'}")
+                    failed_pieces.append(f"{p.get('company') or 'partenaire'} — {p.get('name') or 'pièce'}")
                     continue
-                co = re.sub(r"[^\w\s-]", "", p.get("company", "") or "cotraitant")[:40].strip() or "cotraitant"
+                co = re.sub(r"[^\w\s-]", "", p.get("company", "") or "partenaire")[:40].strip() or "partenaire"
                 nm = os.path.basename(p.get("name", "") or "piece") or "piece"
-                path = f"pieces_cotraitants/{co}/{nm}"
+                path = f"{DOSSIER_PIECES_PARTENAIRES}/{co}/{nm}"
                 i = 2
                 while path in seen:        # évite l'écrasement si deux pièces de même nom
                     stem, dot, ext = nm.rpartition(".")
                     nm2 = (f"{stem}_{i}{dot}{ext}" if dot else f"{nm}_{i}")
-                    path = f"pieces_cotraitants/{co}/{nm2}"
+                    path = f"{DOSSIER_PIECES_PARTENAIRES}/{co}/{nm2}"
                     i += 1
                 seen.add(path)
                 zf.writestr(path, content)
@@ -484,10 +455,10 @@ def _build_zip(memoire_md, cerfa_files, company, details, cotraitants, project_i
 def _groupement_recap(company, cotraitants, details):
     lines = ["COMPOSITION DU GROUPEMENT — ADJUGO", "=" * 45, ""]
     lines.append(f"Marché : {details.get('intitule_marche','')}")
-    lines.append(f"Mandataire : {company.get('name','')} ({company.get('siret','')})")
+    lines.append(f"Chef de file : {company.get('name','')} ({company.get('siret','')})")
     lines.append("")
     if cotraitants:
-        lines.append("Co-traitants :")
+        lines.append("Partenaires du groupement :")
         for c in cotraitants:
             lines.append(f"  - {c.get('name','')} | {c.get('specialites','')} | SIRET {c.get('siret','')}")
     else:
@@ -496,7 +467,7 @@ def _groupement_recap(company, cotraitants, details):
 
 
 def _ao_recap(details):
-    lines = ["FICHE RÉCAPITULATIVE AO", "=" * 45, ""]
+    lines = ["FICHE RÉCAPITULATIVE DU MARCHÉ", "=" * 45, ""]
     for k, v in (details or {}).items():
         if isinstance(v, (str, int, float)) and str(v).strip():
             lines.append(f"{k.replace('_',' ').title()} : {v}")

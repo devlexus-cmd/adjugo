@@ -35,9 +35,15 @@ def create_job(db, user_id: int, kind: str, label: str = "") -> Job:
     return j
 
 
-def run_in_thread(job_id: int, work) -> None:
+def run_in_thread(job_id: int, work, on_error=None, tenant_id=None, error_message=None) -> None:
     """Lance `work(db) -> dict` dans un thread démon, avec une session DB dédiée.
-    Le statut et le résultat du Job sont mis à jour en base."""
+    Le statut et le résultat du Job sont mis à jour en base.
+
+    on_error(db, job) : ce qu'il faut défaire quand le traitement échoue (défaut : rembourser UNE
+    analyse au propriétaire du job — le cas des traitements qui en ont consommé une à la
+    soumission). tenant_id : espace facturé pour les appels IA (défaut : le propriétaire du job).
+    error_message : message montré au client à la place de l'erreur technique (jamais de détail
+    interne quand il est fourni)."""
     def _run():
         from app.services.llm import tenant_scope
         db = SessionLocal()
@@ -48,7 +54,7 @@ def run_in_thread(job_id: int, work) -> None:
             j.status = "running"
             db.commit()
             # Attribution des tokens IA au tenant propriétaire du job (plafond par tenant).
-            with tenant_scope(j.user_id):
+            with tenant_scope(tenant_id if tenant_id is not None else j.user_id):
                 result = work(db)
             j = db.get(Job, job_id)
             j.result = result
@@ -56,22 +62,36 @@ def run_in_thread(job_id: int, work) -> None:
             db.commit()
         except Exception as e:
             logger.warning("job %s en échec : %s", job_id, e)
+            msg = (error_message or str(e))[:1000]
             try:
                 db.rollback()
                 j = db.get(Job, job_id)
                 if j:
+                    # Le statut « error » n'est rendu visible qu'AVEC le remboursement (même
+                    # validation) : le client qui voit l'échec voit aussi son quota rendu.
                     j.status = "error"
-                    j.error = str(e)[:1000]
+                    j.error = msg
+                    try:
+                        if on_error is not None:
+                            on_error(db, j)
+                        else:
+                            # Le traitement a consommé une analyse à la soumission mais n'a rien
+                            # produit → on rembourse le client.
+                            from app.core.quota import refund_analysis
+                            from app.models import User
+                            u = db.get(User, j.user_id)
+                            if u:
+                                refund_analysis(u, db)
+                    except Exception as e3:
+                        logger.warning("job %s : remboursement après échec impossible : %s", job_id, e3)
+                        db.rollback()
+                        j = db.get(Job, job_id)
+                        if j:
+                            j.status = "error"
+                            j.error = msg
                     db.commit()
-                    # Le traitement a consommé une analyse à la soumission mais n'a rien
-                    # produit → on rembourse le client.
-                    from app.core.quota import refund_analysis
-                    from app.models import User
-                    u = db.get(User, j.user_id)
-                    if u:
-                        refund_analysis(u, db)
-            except Exception:
-                pass
+            except Exception as e2:
+                logger.warning("job %s : nettoyage après échec impossible : %s", job_id, e2)
         finally:
             db.close()
 
@@ -79,7 +99,12 @@ def run_in_thread(job_id: int, work) -> None:
 
 
 def job_out(j: Job) -> dict:
+    # Les clés « _… » d'un résultat sont internes (ex. relevé de débit de l'atelier) : jamais
+    # renvoyées au client.
+    res = j.result if j.status == "done" else None
+    if isinstance(res, dict):
+        res = {k: v for k, v in res.items() if not str(k).startswith("_")}
     return {"id": j.id, "kind": j.kind, "status": j.status, "label": j.label,
-            "result": j.result if j.status == "done" else None,
+            "result": res,
             "error": j.error if j.status == "error" else "",
             "created_at": j.created_at.isoformat() if j.created_at else None}

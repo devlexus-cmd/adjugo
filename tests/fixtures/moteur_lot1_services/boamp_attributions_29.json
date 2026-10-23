@@ -1,0 +1,90 @@
+{
+ "_requete": {
+  "url": "https://www.boamp.fr/api/explore/v2.1/catalog/datasets/boamp/records",
+  "params": {
+   "limit": 4,
+   "order_by": "-dateparution",
+   "where": "nature=\"ATTRIBUTION\" AND (objet like \"voirie\" OR descripteur_libelle like \"voirie\") AND (code_departement like \"29\") AND dateparution >= date'2021-11-01' AND dateparution <= date'2025-04-01'",
+   "select": "idweb,objet,nomacheteur,code_departement,dateparution,descripteur_libelle,url_avis,annonce_lie"
+  },
+  "lu_le": "2026-10-21"
+ },
+ "total_count": 37,
+ "results": [
+  {
+   "idweb": "25-34232",
+   "objet": "Travaux pour la requalification des espaces publics du centre-ville de Guipavas",
+   "nomacheteur": "Brest métropole",
+   "code_departement": [
+    "29"
+   ],
+   "dateparution": "2025-03-26",
+   "descripteur_libelle": [
+    "Voirie"
+   ],
+   "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:25-34232",
+   "annonce_lie": [
+    "25-1371"
+   ]
+  },
+  {
+   "idweb": "25-32908",
+   "objet": "Construction d'une maison de l'intercommunalité à Savenay",
+   "nomacheteur": "CC Estuaire et Sillon",
+   "code_departement": [
+    "44",
+    "49",
+    "56",
+    "35",
+    "85",
+    "22",
+    "29"
+   ],
+   "dateparution": "2025-03-25",
+   "descripteur_libelle": [
+    "Bâtiment",
+    "Gros oeuvre",
+    "Terrassement",
+    "Voirie et réseaux divers",
+    "Bardage"
+   ],
+   "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:25-32908",
+   "annonce_lie": [
+    "24-133493"
+   ]
+  },
+  {
+   "idweb": "25-10734",
+   "objet": "Travaux d'entretien et d'aménagement de chaussée et trottoirs sur le territoire de Brest métropole",
+   "nomacheteur": "Brest Métropole",
+   "code_departement": [
+    "29"
+   ],
+   "dateparution": "2025-01-30",
+   "descripteur_libelle": [
+    "Voirie"
+   ],
+   "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:25-10734",
+   "annonce_lie": [
+    "24-122961"
+   ]
+  },
+  {
+   "idweb": "25-8460",
+   "objet": "Confection de marquages routiers sur chaussées",
+   "nomacheteur": "Brest métropole",
+   "code_departement": [
+    "29"
+   ],
+   "dateparution": "2025-01-23",
+   "descripteur_libelle": [
+    "Voirie"
+   ],
+   "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:25-8460",
+   "annonce_lie": [
+    "24-117277"
+   ]
+  }
+ ],
+ "_note": "Réponse publique lue le 2026-10-21 (GET, en-tête AdjugoBot). Numéros des titulaires remplacés par des numéros fictifs ; le reste est tel que lu."
+}

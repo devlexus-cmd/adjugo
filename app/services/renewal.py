@@ -10,12 +10,13 @@ extraite du texte quand elle est citée, sinon ESTIMÉE par type de contrat — 
 labellisée « estimation ». Aucune date ni titulaire inventé (anti-hallucination).
 """
 import logging
+import re
 from datetime import date, timedelta
 
 import httpx
 
 from app.services.llm import complete_json
-from app.services.agents.amont import _words, _deps, _dep_of  # helpers de scoring partagés
+from app.services.agents.amont import _words  # helper de scoring partagé
 
 logger = logging.getLogger("adjugo")
 API = "https://www.boamp.fr/api/explore/v2.1/catalog/datasets/boamp/records"
@@ -33,11 +34,18 @@ def _fetch_attributions(query: str, departements, per: int = 50) -> list:
     end = (today - timedelta(days=int(1.5 * 365))).isoformat()   # … et ≥ 1,5 an (zone de renouvellement)
     where = f'nature="ATTRIBUTION" AND (objet like "{q}" OR descripteur_libelle like "{q}")'
     if departements:
-        deps = " OR ".join(f'code_departement like "{d}"' for d in departements)
-        where = f"({where}) AND ({deps})"
+        # Le BOAMP écrit les départements 01 à 09 sans zéro (« 6 ») : on demande les deux formes,
+        # comme la recherche d'avis (app.sourcing.sources.boamp).
+        from app.sourcing.http import safe_terms as _safe
+        from app.sourcing.sources.boamp import formes_boamp
+        formes = [f for d in departements for f in formes_boamp(_safe(str(d)) or "") if f]
+        if formes:
+            deps = " OR ".join(f'code_departement like "{f}"' for f in dict.fromkeys(formes))
+            where = f"({where}) AND ({deps})"
     where += f" AND dateparution >= date'{start}' AND dateparution <= date'{end}'"
     params = {"limit": min(per, 60), "order_by": "-dateparution", "where": where, "select": SELECT}
     from app.sourcing.http import get_with_retry
+    from app.sourcing.sources.boamp import dept_canonique
     r = get_with_retry(API, params=params, timeout=14)   # retry + backoff
     out = []
     for row in r.json().get("results", []):
@@ -50,7 +58,7 @@ def _fetch_attributions(query: str, departements, per: int = 50) -> list:
             "idweb": idweb,
             "objet": (row.get("objet") or "").strip()[:400],
             "acheteur": _as_str(row.get("nomacheteur")),
-            "dept": (deps[0] if deps else ""),
+            "dept": (dept_canonique(deps[0]) if deps else ""),
             "lieu": ", ".join(desc) if isinstance(desc, list) and desc else "",
             "date_attribution": (row.get("dateparution") or "")[:10],
             "url": row.get("url_avis") or (f"https://www.boamp.fr/avis/detail/{idweb}" if idweb else ""),
@@ -86,7 +94,7 @@ def detect_renewals(query: str, departements, criteria: dict, domaines=None, lan
 LISTE :
 {lines}"""
     try:
-        data = complete_json(_SYS, user, max_tokens=2600, temperature=0.1)
+        data = complete_json(_SYS, user, max_tokens=2600, temperature=0.1, tache="renouvellements")
         enrich = {a.get("index"): a for a in (data.get("avis") or []) if isinstance(a, dict)}
     except Exception as e:
         logger.warning("Radar échéances : enrichissement IA en échec : %s", e)
@@ -104,9 +112,16 @@ LISTE :
             continue
         duree = info.get("duree_mois")
         ctype = info.get("type") if info.get("type") in ("accord-cadre", "marché") else None
-        estimated = duree is None
-        if not isinstance(duree, (int, float)) or duree <= 0:
+        # Une durée n'est « lue » (« réelle » à l'écran, « durée lue » au journal du repli) que si l'IA a rendu un
+        # nombre de mois strictement positif ; 0, une chaîne (« 36 »), un booléen ou null : la durée par défaut du
+        # type de contrat, marquée estimée (avant : 0 ou « 36 » remplacés par la durée par défaut mais dits
+        # « réels » ; relecture du lot 1, docs/MOTEUR_LOT1.md).
+        estimated = not (isinstance(duree, (int, float)) and not isinstance(duree, bool) and duree > 0)
+        if estimated:
             duree = _DEFAULT_DUREE.get(ctype, 36)
+        # Borne HAUTE : une durée LLM absurde (ex. duree_mois=999999999) ferait planter
+        # timedelta (OverflowError → 500). On plafonne à 240 mois (20 ans).
+        duree = min(float(duree), 240)
         fin = aw + timedelta(days=int(duree * 30.4))
         renouv = fin - timedelta(days=120)   # republication anticipée ~4 mois avant la fin
         if not (win_start <= renouv <= win_end):
@@ -135,11 +150,20 @@ def _score(r, criteria, domaines, renouv, today) -> int:
         metier = 27
     else:
         metier = 10
-    deps = _deps(criteria.get("departements"))
-    zone = 25 if (deps and r.get("dept") in deps) else (15 if not deps else 6)
+    deps = _departements_voulus(criteria.get("departements"))
+    dep = str(r.get("dept") or "").strip().upper()
+    zone = 25 if (deps and any(dep.startswith(d) for d in deps)) else (15 if not deps else 6)
     days = (renouv - today).days
     imminence = 30 if days <= 90 else (24 if days <= 270 else 16)  # plus c'est proche, plus c'est chaud
     return min(100, metier + zone + imminence)
+
+
+def _departements_voulus(v) -> list:
+    """Départements de « Ce que je cherche », sur leur code COMPLET (outre-mer « 974 », jamais « 97 » ;
+    Corse « 2A » ; « 6 » → « 06 ») : la même règle que le filtre des fins de contrat (decp.code_departement)."""
+    from app.services.decp import code_departement     # import local : decp importe ce module
+    items = v if isinstance(v, (list, tuple)) else re.split(r"[,;\s]+", str(v or ""))
+    return [c for c in (code_departement(x) for x in items) if c]
 
 
 def _parse(s):

@@ -1,0 +1,1384 @@
+# Réorganisation de l'interface : vague 2b, « prise en main et partenaire »
+
+Contrat de la vague 2b. Étude : « Réorganiser l'interface d'Adjugo : étude définitive » (12/10/2026), § 6, 7, 9
+(vague 2b), 10 et 11. Base : `feat/produit-acheteur-collectivites` = `0afc1ed` (production du 20/10/2026 : vagues 0,
+1 et 2a, contrats `docs/REORGANISATION_V1.md` et `docs/REORGANISATION_V2A.md`). Tête Alembic de départ :
+`c4montantseul` ; tête d'arrivée : `c5priseenmain` (seule migration de la vague, chantier B1).
+
+Décisions de la vague (recommandations de l'étude, retenues) : D12 (a) garder le blocage tant que l'adresse email n'est
+pas confirmée, et le rendre vivant ; D13 (a) un marché d'exemple entièrement fictif et dit comme tel ; D15 (a) l'espace
+du partenaire sans compte réduit à sa part, avec un seul encart « Créer mon compte ». D14 (offres, tarifs) est réservée
+à Eliot : aucun contrôle d'offre, aucun prix, aucune carte d'offre ni la vitrine ne changent ; une durée d'essai citée
+est lue dans la configuration du serveur, jamais écrite en dur.
+
+Convention commune aux chantiers : le marché d'exemple vit à l'adresse `/app/exemple` (écran « exemple », ouvert par
+`go('exemple')` ou un lien vers `/app/exemple`) ; l'aperçu « Voir ce que verra [partenaire] » vit sur la page du marché
+(`/app/marches/<id>/apercu-partenaire`). Les chantiers qui ne les construisent pas y renvoient seulement par ces adresses.
+
+La vague a été menée en quatre chantiers parallèles, chacun dans sa section, puis réunie (§ R).
+
+| Chantier | Contenu | Section |
+|---|---|---|
+| **B1** prise en main | « Vos premiers pas » sur l'accueil (cinq tâches lues dans les données, repliable, état gardé sur le serveur), états vides avec le rappel de leur tâche, confirmation d'email vivante (D12 a), « Je ne sais pas » au montant porté seul, carte « Faites-vous trouver » (§ 7.1 à 7.4, 7.7) | § B1 |
+| **B2** marché d'exemple | Une page à part, `/app/exemple`, en lecture seule : le parcours d'un marché à plusieurs jusqu'à « Seul 43 % · À plusieurs 100 % », puis l'écran du partenaire (§ 7.5, D13 a) | § B2 |
+| **B3** espace partenaire | L'espace du partenaire réduit à « Votre part dans [marché] », avec la même barre d'étapes, dans ses deux mises en œuvre (dossier partagé de l'application, `invite.html`) ; un seul encart « Créer mon compte » ; « Voir ce que verra [partenaire] » sur la page du marché (§ 6, § 7.6, D15 a) | § B3 |
+| **B4** courriel d'invitation | Le courriel d'invitation à un groupement en HTML avec sa version texte : il nomme le chef de file, le marché, la date limite, ce qui est attendu et ce que verra le partenaire, et mène à « Votre part dans [marché] » ; renvoi et rappel planifié (§ 6, § 7.6, § 7.7) | § B4 |
+| **Réunion** | Les quatre chantiers réunis, leurs points de contact et les vérifications d'ensemble | § R |
+
+---
+
+## B1. Prise en main
+
+Étude, § 7.1 à 7.4 et 7.7. Base `0afc1ed` ; tête d'arrivée `c5priseenmain` (`c4montantseul` → `c5priseenmain`).
+Tests : `tests/test_reorganisation_v2b_prise_en_main.py` (39 tests, sans navigateur ni réseau ; les fonctions de
+`app.js` sont exécutées sous Node). Tests existants mis à jour, chacun avec sa raison en commentaire :
+`test_reorganisation_v1_contre_relecture` (le jalon « Renseignez le nom et le SIRET… » remplacé par la tâche « Dire ce
+que vous faites et où »), `test_demo_lien_prive` (la revérification transmet aussi le détail d'un 401 : 3 appels au
+lieu de 2), `test_reorganisation_v1_relecture` (bandeau des cookies et fenêtre du SIRET),
+`test_reorganisation_v2a_adresses_etapes` (phrase de l'état vide de « À faire »), `test_reorganisation_v2a_reunion`
+(une seule tête, chaîne vérifiée), `test_reorganisation_v1_socle` (repère `ecran-attente`), `test_demo_sans_cout` (les
+deux écritures nouvelles). Postgres : `scratchpad/b1/run_b1_pg.py` de la session (§ B1.9).
+
+### B1.1 « Vos premiers pas » sur l'accueil, état gardé sur le serveur
+
+- **Quand** : pendant `PREMIERS_PAS_JOURS` = 30 jours à compter de la création du compte (`users.created_at`, en UTC),
+  tant qu'une tâche n'est pas terminée. Tout terminé : le bloc quitte l'accueil. Hors de la période, le serveur ne
+  calcule aucune tâche. Jamais pour la démonstration (vitrine en lecture guidée). La date de fin vient du serveur
+  (`jusqu_au`) et n'est dite que dans la bulle (« Cette liste reste sur l'accueil jusqu'au 19/11/2026. ») : l'écran
+  n'écrit jamais « 30 jours » en dur.
+- **Où** : en tête de l'accueil, à la place de l'ancien « Premiers pas sur Adjugo » (3 jalons calculés dans le
+  navigateur, masqués par la clé `adjugo_onboarding_done` du navigateur : la liste, `onboarding`, `showOnboarding`,
+  `dismissOnboarding` et la clé ont disparu).
+- **Repliable**, et l'état est **sur le serveur** (`users.premiers_pas_replie`) : un autre onglet, un autre appareil,
+  la page ouverte par le lien de confirmation le retrouvent. Bouton « Replier » / « Déplier » (`aria-expanded`,
+  `aria-controls`, qui ne désigne la liste que lorsqu'elle est dans la page : § S.15) ; le compte « N sur M » reste
+  visible replié (décision 8 : jamais un pourcentage).
+- **Une bulle (i)**, à côté du titre (§ 7.4) : chaque tâche se coche d'elle-même d'après ce qui a été fait dans Adjugo ;
+  comment un marché entre dans Mes marchés (analysé, ou préparé à plusieurs depuis une fin de contrat : ce sont les
+  seuls chemins de l'écran) ; la date de fin.
+- **Routes** (`app/routers/prise_en_main.py`, règles dans `app/services/prise_en_main.py`) :
+
+| Route | Effet |
+|---|---|
+| `GET /api/prise-en-main` | `premiers_pas` (`visible`, `replie`, `jusqu_au`, `taches`, `n_terminees`, `n_total`), `suggestion_reseau` (la carte à montrer, ou `null`), `profil_reseau` (`publie` · `en_attente` · `brouillon` · `aucun`) |
+| `PUT /api/prise-en-main` | `{replie: bool}` : replier ou déplier ; rend l'état ; 120/heure ; démonstration : 403 |
+| `POST /api/prise-en-main/suggestion-reseau/fermer` | la carte « Faites-vous trouver » est fermée (ou suivie) ; 120/heure ; démonstration : 403 |
+
+  Lecture seule pour le reste : seulement des **comptes** des données de l'organisation (`data_owner_id`,
+  `member_ids`), jamais un contenu, aucune IA, aucun courriel. Un compte dont l'adresse n'est pas confirmée peut lire
+  cet état et replier la liste ou fermer la carte (ses seules préférences d'affichage, sans coût) ; B1 ne lui ouvre
+  rien d'autre.
+- **Lu** au démarrage (`boot`), en revenant à l'accueil (`go('dashboard')`), après « Ce que je cherche »
+  (`saveCriteria`), après la fenêtre du SIRET (`welcomeStart`) et à la confirmation de l'adresse. Une erreur de lecture
+  n'affiche rien plutôt qu'un état faux.
+
+### B1.2 La liste d'activation (§ 7.2)
+
+Chaque tâche commence par un verbe, n'a que trois statuts (**Pas commencé · En cours · Terminé**) et se termine selon
+une condition **lue dans les données** de l'organisation par le serveur (`taches`), jamais cochée à la main ni devinée.
+L'écran (`tachePremiersPas`, fonction pure en tête de `app.js`) ne fait que dire les mots ; une clé que le serveur ne
+connaît pas n'est pas affichée.
+
+| Tâche (clé) | Terminée quand | En cours quand | Chemin direct |
+|---|---|---|---|
+| **Dire ce que vous faites et où** (`dire`) | métier (spécialités ou codes CPV), zone (départements) **et** montant porté seul dits : un montant, **ou « Je ne sais pas » coché** (`criteria_v2.ce_que_je_cherche_dit`) | une ou deux des trois réponses ; la ligne dit ce qui reste (« Reste à dire : votre zone, le montant que vous portez seul (ou « Je ne sais pas ») ») | « Renseigner » → Mon entreprise › Ce que je cherche |
+| **Ajouter 3 marchés à Mes marchés** (`suivre`, « Suivre 3 marchés » jusqu'à la relecture, § S.9) | 3 marchés dans Mes marchés (hors corbeille), « 3 sur 3 » | 1 ou 2 | « Trouver des marchés » |
+| **Lire le dossier d'un marché** (`lire`) | un marché dont le dossier complet a été lu (`ai_analysis.dce_available`) | un dossier du marché importé (pièce rangée « DCE »), pas encore lu | « Ouvrir le marché » (le plus récent dont le dossier n'est pas lu, jamais une carte « À venir ») ou « Trouver des marchés » |
+| **Inviter un partenaire, ou vous faire trouver** (`plusieurs`) | une invitation créée sur un marché (toutes passent par `_create_invite` : partenaire connu, membre du réseau, entreprise du registre), **ou** le profil publié sur le réseau Adjugo | un profil partenaire enregistré pas publié, ou en attente de validation | « Inviter un partenaire » (seulement s'il y a un marché sur lequel inviter) ; « Publier mon profil » ou « Voir ma demande de publication » |
+| **Ajouter vos 3 derniers dossiers de présentation** (`dossiers`) | 3 documents « Dossier de présentation » (`knowledge_docs.kind = "memoire"`) dans Mon savoir-faire, **ceux du compte**, comme l'écran les liste (§ S.7) | 1 ou 2 | « Importer » → Mes documents › Mon savoir-faire |
+
+- **La tâche des dossiers** (« Mes preuves » dans l'étude, « après Réd. V3 ») est affichée parce que sa fonction est en
+  ligne : l'import dans Mon savoir-faire (`POST /api/knowledge/upload`, type « Dossier de présentation » par défaut) et
+  les fiches qu'Adjugo propose ensuite à partir du document (rédaction, vague 3 : `app/routers/fiches_import.py`), qui
+  rejoignent Mes preuves. L'import vit dans Mon savoir-faire : c'est là que mène la tâche.
+- **L'étape « Lancez votre première recherche »**, validée seulement après une analyse, **a disparu** (test).
+- **Une tâche terminée** n'a plus de bouton ; le titre passe en gris. Pastilles : `neutral` (Pas commencé),
+  `a_etudier` (En cours), `go` (Terminé). La ligne d'état dit ce qui est lu, sans plus : « Partenaire invité sur un
+  marché. » (une invitation peut être un lien à copier : « envoyée » n'est pas vérifiable), « Profil publié sur le réseau
+  Adjugo. », « 1 sur 3 dans Mes marchés. »…
+- **375 px** : l'icône et le texte sur la première ligne (le texte passe à la ligne dans sa colonne), le statut puis les
+  boutons en dessous, alignés sur le texte ; aucun défilement de côté (vérifié dans le navigateur).
+- **Cloisonnement** : un partenaire invité ne compte que ses propres marchés, invitations, dossiers et profil ; la
+  réponse ne porte ni le nom ni le marché du chef de file (test
+  `test_cloisonnement_rien_du_chef_de_file_dans_les_premiers_pas_du_partenaire`).
+- **Chaque tâche revient dans l'état vide de son écran** (§ 7.2, [S12]) : un rappel « Vos premiers pas : [tâche]
+  [statut] » (`ppRappel(k)`, `.pp-rappel`), seulement tant que la liste est affichée et que la tâche n'est pas
+  terminée. Où : `dire` en tête de Ce que je cherche (avec ce qui reste à dire) ; `suivre` dans Trouver des marchés
+  (premier lancement) et dans Mes marchés vide ; `lire` sous « Le dossier complet du marché est indispensable » (étape
+  Lire) ; `plusieurs` dans « À plusieurs » de l'accueil, dans « Où je suis partenaire » vide et dans le Réseau Adjugo
+  tant que le profil n'est pas publié ; `dossiers` dans Mon savoir-faire vide.
+
+### B1.3 « Je ne sais pas » au montant porté seul (§ 7.1, point 3)
+
+- **Une réponse, distincte d'un champ vide** : `matching_criteria_ext.montant_porte_seul_inconnu` (BOOLEAN, faux par
+  défaut). Vide et faux : jamais répondu. Jamais vrai en même temps qu'un montant : `PUT /api/criteria/` avec un
+  montant le remet à faux ; avec « Je ne sais pas » (sans montant dans la même requête) il efface le montant ; absent
+  de la requête (une page plus ancienne), il est gardé. `GET` le rend toujours en booléen. Mes données (RGPD) l'exporte.
+- **N'entre dans aucun calcul**, comme le montant (vague 2a, A3.2) : seul `app/routers/criteria_v2.py` le nomme ; la
+  liste d'activation lit seulement qu'une réponse a été donnée (test).
+- **Fenêtre du SIRET** : la question « Jusqu'à quel montant répondez-vous seul ? » (facultatif), un montant en € HT ou
+  « Je ne sais pas » ; sans réponse, rien n'est enregistré ni déduit (test sous Node : trois cas). La bulle dit « Seul
+  le SIRET est demandé » (plus « Un seul champ suffit ») ; le bouton porte `building-2`, plus `sparkles` (réservé à
+  l'IA, § 8). Le bandeau des cookies ne passe plus par-dessus : il s'efface tant que la fenêtre est ouverte et revient
+  ensuite.
+- **Ce que je cherche** : une case « Je ne sais pas » sous le champ ; cochée, elle efface et grise le montant ; la bulle
+  dit « Si vous ne savez pas, cochez « Je ne sais pas » ».
+
+### B1.4 Les états vides (§ 7.3)
+
+Chacun dit l'état du système et propose un chemin direct ; **aucun ne promet une fonction qui n'est pas en ligne**.
+
+| Écran | Message | Action |
+|---|---|---|
+| Accueil › À faire (et la cloche) | « Rien n'attend de réponse de votre part. » (le bloc est toujours là ; jamais « 0 ») — seulement une fois lus les pièces à renouveler et les invitations reçues (§ S.6) | — |
+| Accueil › À plusieurs | « Aucun groupement en cours. Pour répondre avec une autre entreprise, ouvrez un marché et invitez-la. » | Voir un exemple ; rappel `plusieurs` |
+| Trouver › Publiés, zéro résultat | la carte d'élargissement, inchangée | Élargir… |
+| Trouver › À venir | « Contrats de votre zone qui arrivent à échéance. » avant une recherche ; « Aucune échéance proche sur ce périmètre. » après | Modifier ma zone (→ le champ « Départements » de l'onglet, la zone de cette recherche : § S.8) |
+| Mes marchés | « Les marchés que vous suivez ou analysez arrivent ici. » | Trouver des marchés · Voir un exemple ; rappel `suivre` |
+| Mes marchés › Où je suis partenaire | phrase de la vague 2a (le marché apparaît quand une entreprise vous invite et que vous acceptez depuis votre compte) | Publier mon profil sur le réseau (seulement s'il n'est ni publié ni en attente) ; rappel `plusieurs` |
+| Partenaires › Réseau Adjugo, profil non publié | « L'annuaire s'ouvre quand votre profil est publié : c'est la règle pour tous. » ; une demande en attente garde le message du serveur | Compléter mon profil (ou « Voir ma demande de publication ») |
+| Mes documents › Mes pièces | « Ajoutez vos attestations avec leur date de fin : Adjugo vous prévient avant qu'elles expirent. » (vague 2a, A3.3 : la saisie de la catégorie et de la date existe) | Ajouter un document |
+| Mon savoir-faire | « Vos anciens dossiers servent de source au dossier de présentation. » (au lieu de « Aucun document. Importez les vôtres pour que l'IA rédige… ») | Importer, dans l'état vide lui-même (le même import que la carte du dessus, type choisi au-dessus) ; rappel `dossiers` |
+
+- **« Voir un exemple »** (3 boutons : premiers pas, À plusieurs, Mes marchés) mène au marché d'exemple, `go('exemple')`,
+  adresse `/app/exemple` (convention commune des chantiers). Il ne s'affiche **que si cette adresse ouvre vraiment
+  l'écran « exemple »** (`exempleEnLigne()` : `etatDeAdresse("/app/exemple").view === "exemple"`) : tant que le
+  chantier du marché d'exemple n'est pas réuni, aucun bouton ne mène à un écran absent (test sous Node : faux puis vrai
+  quand `ADRESSES.exemple` existe). Sous le bouton des premiers pas : « Entreprises et client fictifs ».
+- **« Les projets votés en conseil arriveront ici. »** (phrase de l'étude pour À venir) n'est pas affichée : Veille V1
+  n'est pas en ligne (règle du § 7.3, test).
+- **« Sur chaque marché, Adjugo indique si vous pouvez répondre seul… »** n'est pas affichée (après Moteur V1 et l'avis
+  du conseil, § 7.3).
+
+### B1.5 L'aide en bulles (§ 7.4)
+
+- Les **deux bulles qui manquaient** :
+  - « **Où récupérer le dossier du marché** », sur l'avertissement de l'étape Lire : sur la plateforme où le client l'a
+    publié, que l'avis donne en général ; ce que contient le dossier complet et ce qu'il apporte. **Le lien de l'avis
+    est à côté** (« Ouvrir l'avis du marché », seulement si le marché a une adresse d'avis), jamais dans la bulle
+    (aucune action dans une bulle : test sur les bulles des zones touchées).
+  - « **Comment Adjugo dit seul ou à plusieurs** », à côté du titre « Répondre à plusieurs ? » : la comparaison du
+    dossier à ce que l'entreprise a dit d'elle, sur les six critères du calcul (métier, zone, montant, capacité
+    financière, qualifications, délai de réponse : `dce_scoring.py`), puis le même calcul sur les capacités réunies
+    des partenaires choisis (`groupement_scoring.py`) ; « Une capacité inconnue ne compte jamais en plus. »
+- La troisième, « ce que voit votre partenaire », devient un écran réel (chantier B3, « Voir ce que verra
+  [partenaire] ») : rien ici.
+- **Compte** (`role="tooltip"` dans `app.html`) : 184 en production, 186 après B1 (+1 premiers pas, +1 « Comment Adjugo
+  dit seul ou à plusieurs » ; « Où récupérer… » remplace la bulle existante de l'avertissement). Une seule bulle
+  d'explication sur la carte nouvelle (test). Pas de visite guidée.
+
+### B1.6 Confirmation d'email vivante (décision 12 (a)) et carte « Faites-vous trouver »
+
+- **Le blocage est gardé** : écran plein `ecran-confirmation-email` tant que `user.email_verified` est faux (tous modes
+  de connexion). Il devient vivant :
+  - il **revérifie seul** (`confirmationSuivre`, `confirmationVerifier`) : `GET /api/auth/me` (sans cache, sans la
+    barre de progression) toutes les 5 s pendant 2 minutes, toutes les 15 s jusqu'à 15 minutes, puis chaque minute
+    (`delaiReverification`) ; **seulement quand l'onglet est visible** (onglet caché : plus aucune minuterie) ; **tout
+    de suite quand on revient sur l'onglet** (`visibilitychange`, `focus` ; les deux ensemble ne font qu'un appel :
+    2 s d'écart minimum) ; le compte à rebours repart à chaque retour. Une minuterie au plus à la fois.
+  - dès que le serveur dit « confirmée » (lien cliqué ici, sur le téléphone ou dans un autre onglet), l'écran s'ouvre
+    (« Adresse email confirmée »), les premiers pas sont relus, la fenêtre du SIRET suit. La revérification s'arrête
+    (observateur `user.email_verified`), et à la déconnexion. 401 : la session perdue est traitée comme ailleurs.
+  - « J'ai cliqué sur le lien » : une vérification tout de suite ; pas encore confirmée : « Pas encore confirmée :
+    cliquez sur le lien du courriel, puis revenez ici. »
+  - **les réponses s'affichent dans l'écran** (`confirmation.message`, `role="status"`) : le message habituel, en bas
+    de page (z-index 200), passait SOUS cet écran plein (300) ; la réponse de « Renvoyer l'email de vérification »
+    (envoyé, déjà confirmée, trop d'envois) était donc invisible depuis l'inscription (vu dans le navigateur, corrigé :
+    `confirmationRenvoyer`). « Adresse email confirmée » reste un message habituel : l'écran plein a disparu.
+  - **il dit la suite** : « Une fois confirmé, vous entrez votre SIRET et vous voyez les marchés de votre zone. »,
+    seulement quand l'entreprise n'a pas encore de SIRET (compte neuf) ; et « Dès que vous cliquez sur le lien, ici ou
+    sur votre téléphone, cette page s'ouvre d'elle-même. » (`role="status"`). Fenêtre accessible (`role="dialog"`,
+    `aria-modal`, titre et description liés).
+- **Le courriel de confirmation dit la même phrase** (`APRES_CONFIRMATION`, `app/routers/auth.py` ; texte et HTML :
+  `verify_email_html(link, name, suite)`), **seulement quand elle est vraie** : l'entreprise de l'organisation n'a pas
+  encore de SIRET (`_suite_apres_confirmation`). Un collègue d'une entreprise déjà renseignée ou un renvoi après le
+  SIRET ne la reçoivent pas. Sans `suite`, le courriel HTML est identique à celui d'avant.
+- **Le serveur refuse toujours ce qu'il refusait** : aucun refus ajouté ni retiré. Le commentaire d'`auth.py`
+  (inscription) qui décrivait ce blocage est corrigé et dit ce qui est vrai dans le code : sans adresse confirmée,
+  refus de toute analyse d'un marché (`consume_analysis`, 403), des rédactions de l'atelier, de l'entretien et des
+  fiches de Mon savoir-faire (403 `email_non_confirme`, `adresse_a_confirmer`), de l'invitation d'un membre du réseau,
+  de la demande de publication du profil, de l'accord sur une convention, de l'acceptation d'un lien nominatif (403) ;
+  aucun courriel au nom d'Adjugo vers un tiers (le lien d'invitation reste à copier) ; ce qui ne lit **pas** l'adresse
+  (appels qui passent seulement par `exiger_ia` : questions sur un marché déjà analysé, estimation du prix, veille),
+  borné par le garde-fou de l'essai. Chaque refus cité est vérifié dans le code par un test.
+- **La carte « Faites-vous trouver pour des groupements »** (suggestion d'interface, jamais un courriel) est **gardée
+  sur le serveur** (`users.suggestion_reseau` : `""` jamais proposée, `"a_montrer"`, `"fermee"`) : proposée après
+  l'inscription (mot de passe et Google) et après l'acceptation d'une invitation (`proposer_suggestion_reseau`, si
+  l'organisation n'a pas de profil publié ni en attente) ; elle s'affiche aussi dans l'onglet ouvert par le lien de
+  confirmation et sur un autre appareil (`GET /api/prise-en-main`) ; « Fermer » ou la suivre la ferme sur le serveur
+  (`_rnSuggestFermer`) ; un profil publié depuis l'éteint ; une nouvelle proposition la remontre, comme avant.
+
+### B1.7 Au rechargement d'une adresse, aucun écran avant qu'elle soit résolue
+
+- **Le défaut** (signalé en production, reproduit avec le code `0afc1ed` dans un navigateur réel, § B1.9) : au
+  rechargement de `/app/marches/1`, l'accueil s'affichait environ une seconde (le temps des chargements de `boot`), puis
+  la page du marché.
+- **Maintenant** : `view` est vide au départ et `ecranPret` faux ; la zone de contenu est cachée (`v-show`) et une
+  attente s'affiche à sa place (`ecran-attente`, `role="status"`, « Chargement de l'écran » pour le lecteur d'écran).
+  `ecranPret` passe à vrai quand `boot` a ouvert l'écran de l'adresse ; pour un marché qui n'est pas encore dans la
+  liste, à la réponse de `GET /api/projects/{id}` (marché ouvert, ou Mes marchés avec « Ce marché n'est plus
+  accessible »). `boot` attend ses chargements avec `Promise.allSettled` : un chargement en échec n'empêche plus
+  d'ouvrir l'écran. La fenêtre du SIRET attend aussi `ecranPret` (plus d'éclair de la fenêtre avant la fiche de
+  l'entreprise).
+- `/api/auth/me` en échec au démarrage (hors 401, déjà traité) : l'attente cesse et la zone reste vide, plutôt qu'un
+  accueil qui dirait « rien n'attend de réponse » sans l'avoir lu.
+- **Avant le montage de Vue**, le gabarit brut de `app.html` (tous les écrans à la fois, avec leurs `{{ … }}`) était
+  rendu le temps de charger `app.js` (vu dans le navigateur : son texte était affiché, l'accueil brut en tête). La
+  feuille de style, chargée dans `<head>`, le cache désormais : `#app:not([data-v-app]) { display:none; }` (Vue pose
+  `data-v-app` sur `#app` au montage ; vérifié dans `vue-3.5.38.prod.js`). Seule `app.html` a un `#app`.
+- Adresses et retour arrière de la vague 2a inchangés (test sous Node : rien d'affiché pendant l'appel, le marché à la
+  réponse, Mes marchés au refus). Repère ajouté : `ecran-attente` (`ZONES` du socle, `vague2b_b1`).
+
+### B1.8 Migration `c5priseenmain` (après `c4montantseul`)
+
+- Ajoute, **chacune seulement si elle manque** (idempotente) : `users.premiers_pas_replie` (BOOLEAN, défaut faux),
+  `users.suggestion_reseau` (VARCHAR(12), défaut `''`), `matching_criteria_ext.montant_porte_seul_inconnu` (BOOLEAN,
+  défaut faux). NULL permis et valeur par défaut posée par la base : exactement ce que pose la réconciliation
+  `b7d9e1f3a2c4` (`sync_models`) sur une base neuve à partir du modèle ; une base de production migrée et une base
+  neuve ont le même schéma (vérifié sur Postgres). Le code lit NULL comme la valeur par défaut.
+- Lignes existantes : rien de replié, aucune carte proposée, aucun « Je ne sais pas » inventé.
+- **Déploiement sans casse** : le code de production précédent ne déclare pas ces colonnes ; ses écritures les omettent
+  et la base pose la valeur par défaut, ses lectures les ignorent (vérifié sur Postgres : inscription, critères).
+- **Retour arrière réel** : les trois colonnes sont retirées (l'état replié, la carte et les « Je ne sais pas » sont
+  perdus, rien d'autre).
+- Une seule tête : `c5priseenmain` (le test de la réunion de la vague 2a ne fige plus la tête, il vérifie la chaîne).
+
+### B1.9 Vérifications
+
+- **Suite complète SQLite** (TZ=UTC) : **2 244 réussis sur 2 244** (2 205 en production + les 39 du chantier) ;
+  `tests/test_demo_*.py` et
+  `tests/test_demo_sans_cout.py` verts (les deux écritures nouvelles y sont déclarées sans coût : aucune IA, aucun
+  courriel, aucun fichier, refusées à la démonstration dans la route).
+- `scripts/sri_update.py --check`, `node --check` sur tous les fichiers JS servis, `scripts/i18n_ajouter.py --check`
+  (636 → 689 clés, néerlandais et espagnol ; « marché » = aanbesteding / licitación, « à plusieurs » = samen /
+  agrupación, comme en vague 1) ; gabarit de l'application compilé par le Vue du dépôt (tests existants).
+- **Postgres 16.2** depuis l'état exact de la production (`0afc1ed` extrait par `git archive`, tête `c4montantseul`,
+  données créées par ce code : comptes confirmé et non confirmé, critères avec montant, 3 marchés, une invitation, un
+  dossier rangé, un marché lu, un compte de 40 jours) : `scratchpad/b1/run_b1_pg.py`. Migration, valeurs par défaut,
+  données inchangées, schéma égal à celui d'une base neuve ; premiers pas lus dans ces données, replié gardé, « Je ne
+  sais pas », carte gardée et fermée, analyse toujours refusée sans adresse confirmée ; code de production relancé sur
+  la base migrée (lecture, écriture, inscription) ; retour arrière réel, remontée, rejeu forcé : **29 contrôles sur
+  29**. 15 fichiers de tests communs (authentification, isolement, réseau, Mon entreprise, adresses, réunion, garde-fou
+  de l'essai, données, démonstration, RGPD) : code de production et code nouveau, chacun 393 réussis, 11 échecs et
+  9 erreurs, **les mêmes** (`test_secu_rgpd.py`, son `PRAGMA` propre à SQLite, et 5 de `test_secu2_donnees.py`, déjà
+  en échec avec la production) ; le fichier du chantier sur une base à part : 39 sur 39.
+- **Navigateur réel** (serveurs locaux du worktree et du code de production `0afc1ed`, bases à part, IA, courriels et
+  réseau sortant coupés ; scripts `scratchpad/b1/srv/` de la session) :
+  - **rechargement de `/app/marches/8`**, chaque état du DOM noté par un observateur de mutations dans un iframe du même
+    domaine (le panneau du navigateur étant caché, les images y sont ralenties) — production : page brute, puis
+    **l'accueil (`vue-dashboard`) affiché 1,1 s**, puis le marché ; code nouveau : page brute cachée, attente, puis le
+    marché, **jamais l'accueil** ; `/app/marches/99999` : attente, puis Mes marchés avec « Ce marché n'est plus
+    accessible » ; même résultat dans la démonstration (`/app/marches/15`). Avec `app.js` retardé de 4 s (serveur
+    statique lent), avant le montage : `#app` caché, aucun texte affiché ;
+  - **confirmation vivante** (compte de test créé par le formulaire d'inscription) : `GET /api/auth/me` toutes les 5 s ;
+    onglet caché 12 s : aucun appel ; retour sur l'onglet (visibilité et focus ensemble) : un seul appel, tout de suite ;
+    lien de confirmation ouvert dans un autre onglet : l'écran s'ouvre seul à l'appel suivant, puis plus aucun appel ;
+    adresse confirmée en base pendant que l'écran est ouvert : ouvert en 1 s ; « J'ai cliqué sur le lien » et
+    « Renvoyer » répondent dans l'écran ;
+  - **premiers pas** : bulle, compte « 0 sur 5 », replié gardé après rechargement (serveur), carte « Faites-vous
+    trouver » fermée par « Plus tard » et absente après rechargement ; « Je ne sais pas » coché dans Ce que je cherche
+    puis enregistré : la tâche « Dire » passe à Terminé et son rappel disparaît ; fenêtre du SIRET avec la question,
+    bandeau des cookies effacé tant qu'elle est ouverte, revenu après ;
+  - thème sombre : accueil, écran de confirmation et fenêtre du SIRET à **1 280 et 375 px** ; À plusieurs et Ce que je
+    cherche à 375 px ; aucun défilement de côté (largeur du document = 375) ;
+  - **démonstration par lien privé** (clé jetable écrite dans un fichier, jamais affichée ; page d'ouverture servie en
+    local) : ni premiers pas ni carte « Faites-vous trouver », « À faire » (2 pièces à renouveler) et « À plusieurs »
+    affichés, aucune erreur de script, marché de la vitrine rechargé sans l'accueil, 1 280 et 375 px ; aucun courriel
+    tenté (journal du serveur).
+
+### B1.10 Pour la réunion des chantiers
+
+- **Marché d'exemple (B2)** : il suffit que `ADRESSES.exemple = "exemple"` et la vue « exemple » existent pour que les
+  3 boutons « Voir un exemple » apparaissent (`exempleEnLigne`) ; le test
+  `test_aucune_promesse_d_une_fonction_qui_n_est_pas_en_ligne` en compte 3, tous gardés et menant à `go('exemple')`.
+- **Courriel d'invitation (B4)** : `app/services/email_templates.py` — B1 ajoute le paramètre `suite` à
+  `verify_email_html` ; B4 ajoute `pied` à `_shell`. Les deux se cumulent. `app/routers/invites.py` : B1 ne touche que
+  `claim_invite` (la suggestion passe par `proposer_suggestion_reseau`).
+- **Espace partenaire (B3)** : l'acceptation d'une invitation (`claim_invite`) propose la carte comme avant ; rien
+  d'autre en commun.
+- **Alembic** : une autre migration de la vague se place après `c5priseenmain`.
+- **Traductions** : 53 clés ajoutées par B1 ; `--check` après la fusion de `i18n.js`.
+
+### B1.11 Laissé, avec sa raison
+
+- **« Je remplirai plus tard »** (fenêtre du SIRET) reste gardé dans le navigateur (`adjugo_welcome_done`) : la
+  fenêtre revient sur un autre appareil tant que le SIRET manque. Le chantier ne demandait que la carte « Faites-vous
+  trouver » côté serveur ; la fenêtre, elle, se ferme définitivement avec le SIRET (donnée du serveur).
+- **Note « Ce qui a changé »** (vague 1, § 7.7) : inchangée, gardée dans le navigateur. Pour les 7 PME : un compte
+  créé il y a plus de 30 jours ne voit pas « Vos premiers pas » ; l'ancienne liste « Premiers pas sur Adjugo »
+  disparaît pour tous. Aucun écran n'est renommé par B1 (pas d'ancien nom en bulle).
+- **Pas de poussée du serveur** pour la confirmation (ni WebSocket ni SSE : un seul serveur, sans file) : une
+  revérification espacée, seulement onglet visible, suffit.
+- **Trouver › À venir** : la seconde phrase de l'étude attend Veille V1 (§ B1.4).
+
+---
+
+## B2. Le marché d'exemple
+
+Tests : `tests/test_reorganisation_v2b_exemple.py` (15 tests : adresse et rubrique, fichier servi et lu, chiffres
+recalculés par le moteur, cohérence des montants, mention sur chaque bloc, noms de la démo seulement, analyse sans
+« No-Go » ni injonction, lecture seule sous Node avec les vraies méthodes, rien ne change côté serveur, entrée,
+traductions, 375 px et accessibilité, contrat) ; `tests/test_demo_sans_cout.py` (la démo et le lien privé l'ouvrent sans
+coût). Aucune migration.
+
+### B2.1 Ce qu'on voit
+
+Une page à part, à l'adresse **`/app/exemple`** (vue `exemple`, titre « Marché d'exemple », sa phrase dans la bulle (i)
+de l'en-tête). Elle range les blocs de la page d'un marché, avec les mêmes classes (barre d'étapes, colonnes « Seul /
+À plusieurs », manques, tableau de répartition, liste « Avant de déposer ») :
+
+| Bloc (`data-test`) | Contenu |
+|---|---|
+| `exemple-entete` | Le marché (objet, client, procédure, montant, lieu, délai, 3 parties), les deux entreprises (l'entreprise qui répond, son partenaire), « Lecture seule : rien de cet exemple n'est enregistré dans votre compte. » |
+| `exemple-etapes` | Lire · Décider · Préparer · Déposer, en ancres (`rnScrollTo`), puis « Aller à l'écran du partenaire » |
+| `exemple-lire` | « Analyse du dossier du marché » réécrite (ce que dit le dossier, sans conseil), « Dossier lu en entier : 4 pièces », trois phrases du règlement avec leur article, « Comment l'offre sera notée » (Prix 50 %, Valeur technique 50 %) |
+| `exemple-decider` | « Répondre à plusieurs ? » : l'avertissement (capacités déclarées, à confirmer), **Seul 43 %** (À étudier) et **À plusieurs 100 %** (Bon potentiel en groupement), les 6 critères « seul → à plusieurs » avec « apporté par », les 4 manques avec la phrase du dossier quand il y en a une, « Qui me complète ? » (le partenaire, depuis Mes partenaires), le calcul du chiffre d'affaires cumulé, puis « Seul 43 % · À plusieurs 100 % » et la décision, prise par l'entreprise |
+| `exemple-preparer` | L'invitation acceptée, « Parts reçues 1 sur 1 », « Accords des membres 2 sur 2 », la répartition (prix de vente de chacun, total de l'offre commune), « Ce que chacun voit » |
+| `exemple-deposer` | « Avant de déposer : 3 contrôles sur 4 », le manque nommé (l'attestation URSSAF du chef de file expire avant la date limite), « Adjugo nomme ce qui manque, sans rien bloquer » |
+| `exemple-partenaire` | L'écran du partenaire, dans un cadre : « Votre part dans « … » », chef de file, rôle et partie, « à plusieurs 100 % » et « Vous apportez », son prix (« Le détail de vos postes, vous seul le voyez »), le total commun et l'avertissement « À 2 membres… » ; puis « Il voit » / « Il ne voit pas » (ni le pourcentage seul du chef de file, ni le détail de ses prix, ni ses pièces ni son savoir-faire) |
+
+En bas : « Sur vos marchés, chaque étape se fait depuis la page du marché », « Trouver des marchés » et « Retour ».
+
+**Entièrement fictif, et dit comme tel (D13 a).** Chaque bloc porte la pastille
+**« Exemple · entreprises et client fictifs »** (une par carte, test) ; la bulle de l'en-tête dit que tout est inventé et que les pourcentages sont ceux du
+calcul d'Adjugo avec les capacités de l'exemple. Les seuls noms sont ceux de la démonstration de pitch, contrôlés contre
+le registre des entreprises le 13/10/2026 : **Bâtiment de l'Ouest**, **Breizh Désamiantage**, **Kerhel Agglomération**
+(et le marché « Réhabilitation énergétique — Gymnase de Kerhel »). Aucun nom nouveau n'a été nécessaire. Aucune
+personne, aucun SIRET ni SIREN, aucune adresse électronique, aucun téléphone, aucun lien ; seuls les départements sont
+réels (Loire-Atlantique, Morbihan), comme dans la démo.
+
+**L'analyse réécrite** : celle de Kerhel dans la démo prescrit « La bonne stratégie est claire : répondre en
+GROUPEMENT… » et « à étudier sérieusement, mais uniquement en groupement » (étude, § 2.10). L'exemple dit ce que contient
+le dossier, ce qui manque seul et ce qu'apporte le partenaire ; la phrase de décision dit que
+c'est l'entreprise qui décide. Test : aucun mot banni, aucune injonction (« il faut », « devez », « foncez »,
+« recommand… », « à écarter », « ! »…), jamais « vérifié » (décision 9 : rien ici n'est une identité contrôlée au
+registre), zéro émoji.
+
+### B2.2 Les données : un fichier statique versionné
+
+`app/static/exemple-marche.json`, servi tel quel au navigateur (`/static/exemple-marche.json`, en-tête de non-mise en
+cache comme tout `/static`). Ni base, ni IA, ni réseau. Lu une fois par l'écran (`exempleCharger`, `fetch` du fichier
+seul) et contrôlé (`exempleValide`, fonction pure en tête de `app.js`) : s'il manque une partie, la page dit
+« L'exemple n'a pas pu être chargé. Réessayez dans un instant. » avec « Réessayer », jamais un exemple à moitié. Textes
+rendus en `{{ }}`, jamais `v-html`. Les montants sont des nombres (`eurExemple` les écrit « 280 000 € HT »).
+
+**Les chiffres ne sont pas inventés** : le bloc `calcul` du fichier (non affiché) porte les données de l'exemple
+(exigences du marché, capacités des deux entreprises, critères) ; le test les passe au moteur d'Adjugo
+(`groupement_scoring.score_groupement`, le délai de réponse compté à 60 jours) et retrouve exactement ce que la page
+affiche : 43 et 100, les verdicts, les points de chacun des 6 critères, « apporté par », les 4 manques seul (tous
+comblés à plusieurs), le chiffre d'affaires cumulé au dernier exercice (3 350 000 €, la moyenne des trois exercices
+restant à confirmer : § S.12) et l'avertissement « capacités déclarées ». Les trois
+phrases citées sont celles du règlement fictif de la démo (`demo_groupement.EXIGENCE_CA`, `EXIGENCE_QUALIFICATIONS`,
+`EXIGENCE_CAPACITES`), mot pour mot. Les montants s'additionnent (970 000 + 280 000 = 1 250 000 € HT, le total que
+voit aussi le partenaire), « N sur M » partout ailleurs (décision 8).
+
+### B2.3 Il ne se mélange jamais aux vraies données
+
+- **Aucune écriture, aucun appel à l'API** : ni `this.api()`, ni `openAo`, ni `this.projects` dans les méthodes de la
+  page ; aucun champ, aucun `v-model`, aucun formulaire ; les seuls gestes sont « Retour », les ancres, « Réessayer » et
+  « Trouver des marchés » (test). Sous Node, avec les vraies méthodes `go` et `exempleCharger` : ouvrir l'exemple lit
+  le seul fichier statique, n'appelle aucun chargement de l'API ni `openAo`, et Mes marchés reste tel quel.
+- **Jamais dans Mes marchés** : il n'a ni identifiant ni statut ; il n'entre dans aucune liste, aucun filtre, aucune
+  pastille, aucune ligne « À faire ».
+- **Exclu des compteurs, des alertes, du quota, des statistiques et de l'historique du réseau** : contrôlé côté
+  serveur (Mes marchés, statistiques, compte et quota, abonnement, notifications, tableau de bord des groupements,
+  groupements, « Où je suis partenaire », pièces à renouveler, historique du réseau, alertes : identiques avant et après
+  l'ouverture de l'exemple).
+- **Mesure d'usage** : comme chaque écran, son ouverture est comptée par la mesure ANONYME de la vague 1
+  (`ECRANS` reçoit `exemple` : jour, écran, nombre ; ni compte, ni organisation ; jamais la démo). C'est la seule trace
+  qu'il laisse, et aucune mesure nominative n'existe.
+
+### B2.4 Adresse, rubrique, entrée
+
+- **Adresse** : `ADRESSES.exemple = "exemple"` → `/app/exemple` (lien, favori, rechargement, précédent et suivant,
+  comme tout écran de la vague 2a) ; « Retour » fait comme le bouton précédent quand on vient d'un écran de
+  l'application, sinon il ouvre l'accueil (`exempleRetour`).
+- **Rubrique** : la page est rangée sous l'Accueil (`RUBRIQUES`, sans onglet ni entrée de menu : étude, § 10), qui reste
+  surligné, menu latéral et barre basse ; l'en-tête dit « Marché d'exemple » (`enteteTitre`), pas « Accueil ».
+- **Entrée posée par ce chantier** : en bas de « Répondre à plusieurs ? » (étape Décider de chaque marché, démo
+  comprise), « Le parcours en entier sur un marché fictif : voir un exemple » (un vrai lien vers `/app/exemple`). Les
+  autres entrées (états vides de l'accueil et de Mes marchés, premiers pas : étude § 7.3) sont celles du chantier B1,
+  par la même adresse.
+
+### B2.5 La démonstration de pitch ne change pas
+
+Aucun fichier de la démo n'est modifié (`demo_seed.py`, `demo_redaction.py`, `demo_groupement.py`, `demo_carnet.py`,
+`acheteur_demo_seed.py`). Comparé par script (`scratchpad/b2/demo_avant_apres.py` de la session) : base neuve, démo
+recréée comme au démarrage, toutes les routes de lecture `GET /api/…` appelées par la session démo (PME et
+collectivités, marchés « toiture » et Kerhel), plus le lien du partenaire de Kerhel ; textes des PDF lus page par page ;
+jetons, empreintes et horodatages neutralisés. Code de production `0afc1ed` puis code de ce chantier : **189 réponses
+sur 190 identiques** ; la seule différence est le manifeste public des empreintes des scripts (`app.js` et `i18n.js`
+ont changé). À l'écran, la démo gagne seulement la ligne « voir un exemple » en bas de « Répondre à plusieurs ? ».
+
+Dans la démo (et par le lien privé), l'exemple s'ouvre sans coût : page et fichier servis, aucune IA, aucun courriel,
+aucun fichier rangé, aucun appel réseau, l'ouverture n'est pas comptée, Mes marchés identique
+(`test_marche_d_exemple_ouvert_a_la_demo_sans_cout`, et `_exemple_dans_la_demo` rejoué par
+`test_lien_prive_de_bout_en_bout`).
+
+### B2.6 Repères, textes, traductions
+
+| Repère | Zone |
+|---|---|
+| `vue-exemple` | La page (section de vue, dans `contenu`) |
+| `exemple-entete`, `exemple-etapes`, `exemple-lire`, `exemple-decider`, `exemple-preparer`, `exemple-deposer`, `exemple-partenaire` | Ses blocs (dans `vue-exemple`) |
+
+`ZONES` du socle (`tests/test_reorganisation_v1_socle.py`, groupe `vague2b_exemple`) suit. Tests mis à jour, chacun
+avec sa raison en commentaire : `test_reorganisation_v1_menu.py` (« chaque écran en 2 clics au plus » : l'exemple est
+une page à part, sans entrée de menu), `test_reorganisation_v1_socle.py` (les repères), `test_demo_sans_cout.py`
+(l'exemple dans la démo et par le lien privé).
+
+Décision 16 : 35 libellés traduits (636 → 671 clés, `scripts/i18n_ajouter.py --check`) : le titre et sa bulle, la
+mention, les titres et étiquettes de la page, le message d'erreur, « Réessayer », l'entrée « voir un exemple ». Le
+contenu du fichier (le marché fictif, en français) n'est pas traduit, comme les données de la démo.
+
+Styles : un bloc `.ex` à la fin de `styles.css` (la mention, les deux entreprises, le cadre de l'écran du partenaire,
+« Il voit / Il ne voit pas ») ; une colonne à 640 px et moins. Pas de refonte graphique : couleurs, police et classes
+de la page du marché.
+
+### B2.7 Vérifications
+
+- Suite complète verte : **2 221 tests sur 2 221** (SQLite, TZ=UTC ; production : 2 205) ;
+  `scripts/sri_update.py --check` ; `node --check` de `app.js` et `i18n.js` ; gabarit de `app.html` compilé par le Vue
+  du dépôt ; `scripts/i18n_ajouter.py --check` (671 clés) ; garde des mots bannis verte. Toutes ces vérifications ont
+  été refaites en entier à la reprise du chantier (la première tentative avait vu ses suites de référence interrompues).
+- Aucune migration, aucune route nouvelle (la seule écriture est le compteur anonyme existant, testé sur Postgres en
+  vague 1). Par prudence, les tests touchés (démo sans coût, lien privé, Kerhel, menu, socle, marché d'exemple) ont été
+  rejoués sur **Postgres 16.2** : base neuve montée par `alembic upgrade head` de chaque code (tête `c4montantseul`
+  des deux côtés), code de production `0afc1ed` (225 sur 225) puis ce chantier (241 sur 241) : aucun échec.
+- Démo de pitch comparée de nouveau à la reprise (`demo_avant_apres.py`, code de production `0afc1ed` puis ce
+  chantier, tous deux extraits par `git archive`) : 189 réponses sur 190 identiques, seule différence le manifeste des
+  empreintes des scripts (B2.5).
+- **Navigateur réel** (serveur local sur le code de ce chantier, base jetable, démo par **lien privé** avec une clé
+  jetable écrite dans un fichier de la session et jamais affichée, `DEMO_PUBLIC=0`, réseau sortant coupé, courriels et
+  IA coupés) : démo → Kerhel → « voir un exemple » → la page (1 280 px, clair) : en-tête, Lire, Décider (43 % / 100 %,
+  critères, manques, « Qui me complète ? », cumul), Préparer (répartition, total), Déposer (3 sur 4), écran du
+  partenaire ; « Retour » rend Kerhel (`/app/marches/2`), suivant rouvre `/app/exemple` ; deux requêtes seulement :
+  le fichier statique et le relevé anonyme de l'écran (`POST /api/mesure/ecran`, ignoré pour la démo), aucune autre
+  lecture de l'API ; Mes marchés garde ses 7 marchés. Rechargement de `/app/exemple` à 375 px en sombre : aucun
+  défilement horizontal, barre basse sur « Accueil », bloc par bloc lisible (tableau de répartition en lignes, écran du
+  partenaire). Compte de test local (créé par la route d'inscription, adresse confirmée en base) : `/app/exemple`
+  s'ouvre, ancres et « Aller à l'écran du partenaire » mènent à leur bloc, néerlandais (libellés traduits). Console
+  sans erreur de script.
+
+### B2.8 Laissé, avec sa raison
+
+- **Les entrées depuis les états vides et les premiers pas** : chantier B1 (même adresse, `go('exemple')`).
+- **Un exemple qui suit les écrans réels quand ils changent** (espace partenaire réduit de B3, « Voir ce que verra… ») :
+  l'écran du partenaire de l'exemple est une image fixe, décrite par les données ; à reprendre si B3 change ce que voit
+  le partenaire.
+- **La date limite** n'est pas affichée : une date fixe deviendrait une échéance passée ; le délai de réponse du calcul
+  est compté à 60 jours.
+- **`demo_seed.py` n'est pas réécrit** (étude, § 9 : « réécriture de `demo_seed.py` ») : la démo de pitch reste
+  identique ; son analyse de Kerhel garde « La bonne stratégie est claire : répondre en GROUPEMENT… » (une injonction,
+  étude § 2.10). À décider à part (Eliot), avec le pitch.
+
+---
+
+## B3. L'espace du partenaire
+
+Étude : § 6 (lignes « Avant d'inviter » et « Le partenaire reçoit l'invitation »), § 7.6 (côté partenaire), § 9 (vague
+2b, deux dernières lignes), § 11 (décision 15 a). Tests : `tests/test_reorganisation_v2b_espace_partenaire.py` (20
+tests). Postgres : `scratchpad/b3/run_b3_pg.py` de la session (§ B3.7). **Aucune migration** ; **une route nouvelle, en
+lecture** : `GET /api/projects/{id}/apercu-partenaire` (§ B3.4) ; `GET /api/public-config` gagne `essai_jours`.
+
+### B3.1 « Votre part dans [marché] », dans les deux mises en œuvre
+
+Le partenaire a le même écran, qu'il ait un compte (vue `sharedao` de l'application, `/app/marches/partenaire/<id>`) ou
+non (`invite.html`, `/invite/<jeton>`) :
+
+| | Avant | Après |
+|---|---|---|
+| En-tête | « Partagé par [chef de file] », nom du marché | « Chef de file : [nom] » puis le titre « Votre part dans « [marché] » » (titre de l'onglet du navigateur dans `invite.html`), l'acheteur, les faits du marché et, dans `invite.html` seulement, le compte à rebours tant qu'une part reste à soumettre (ni après la part soumise, ni pour un lien en lecture seule : § S.4 et S.13 ; la vue `sharedao` n'en a pas) |
+| Étapes | Le stepper des 5 étapes du groupement (« Étape 2 sur 5 · … ») | **La même barre que la page du marché du chef de file** (`.mk-etapes`), avec les tâches du partenaire : **Accepter · Ma part · Donner mon accord · Déposé par le chef de file** |
+| Titre de l'écran (application) | « Dossier partagé » | « Votre part » ; bulle : « Le marché d'une autre entreprise, où vous apportez votre part » |
+| Ordre (les deux) | — | en-tête et faits · barre · « Comment vous serez noté » · « Pourquoi vous dans ce groupement » · convention · rédaction · pièces partagées · ma part · tableau de prix · coffre-fort croisé · journal · décliner |
+
+**La barre** : une seule fonction pure, `barrePartenaire(d)`, **mot pour mot la même** dans `app.js` et dans
+`invite.html` (vérifié par les tests). Trois statuts, comme la barre du chef de file : Terminé · En cours · À faire.
+Elle ne lit que ce que l'écran du partenaire a déjà reçu :
+
+| Étape | Terminée quand | Absente |
+|---|---|---|
+| Accepter | l'invitation n'est pas en aperçu limité (réseau accepté depuis le compte, ou lien direct) | — |
+| Ma part | sa part est soumise (la barre suit chaque enregistrement) | lien en lecture seule (aucune part demandée) |
+| Donner mon accord | convention validée par tous, ou à valider avec son accord donné (en ligne ou hors ligne) ; une convention périmée la remet « En cours » | sous-traitant (il ne valide pas la convention) ; lien en lecture seule (il ne soumet aucune part, donc ne signe jamais : § S.4) |
+| Déposé par le chef de file | le chef de file a marqué le dépôt (étape « depose » du groupement) : tout passe à « Terminé » | — |
+
+Un clic sur une étape amène à son bloc et y met le focus (l'en-tête, « Ma contribution », la convention) : des ancres,
+sans blocage, comme chez le chef de file. Les libellés du partenaire étant plus longs, chaque étape est en colonne
+(numéro, mot, statut) à toutes les largeurs ; 3 colonnes quand il y a 3 étapes. Le stepper des 5 étapes du groupement
+quitte ses deux dernières places (`grpSteps`, `grpEtapeNow`, `renderEtapes`, `SOON_STEPS`, `.cv-steps`).
+
+**Toutes les fonctions du partenaire restent** et marchent comme avant (vérifié dans le navigateur, § B3.7) : la part
+(entreprise, partie, identité pour les formulaires, références, qualifications, prix de vente de sa partie), le détail du
+chiffrage chiffré dans son navigateur avec le code de vérification et le code de récupération, les pièces
+administratives (dépôt privé), le tableau de prix, la rédaction de ses parties du dossier de présentation et l'entretien
+(`redaction-partenaire.js`, monté tel quel), la convention et son accord, le coffre-fort croisé, le journal vérifiable,
+« Accepter depuis mon compte » et « Ouvrir dans mon Adjugo », « Décliner l'invitation ».
+
+**Dans `invite.html`**, « Pourquoi vous dans ce groupement » et les membres du groupement passent dans leur propre carte,
+sous la barre (ils étaient dans l'en-tête, avant les faits du marché) ; contenu inchangé.
+
+**Constaté dans le navigateur et corrigé** : dans le dossier partagé de l'application, après « Soumettre au chef de
+file », la page entière glissait de 121 px vers le haut (une bande noire en bas) : un texte pour lecteur d'écran
+positionné hors de la zone qui défile allongeait la page (déjà vrai en production). Les deux écrans de ce chantier
+contiennent maintenant leurs éléments positionnés (`.pa-vue { position:relative; }`) : la page ne déborde plus.
+
+### B3.2 `invite.html` : un seul écran, un seul encart (décision 15 a)
+
+**Retirés** : le menu latéral et ses groupes (« Votre invitation », « Avec un compte Adjugo », « Réglages »), le menu
+fermé à cadenas (`renderBlocked`, « « … » est réservé aux membres »), l'entrée « Projets à venir », qui affichait en
+fait la recherche de marchés (étude, § 7.6), la recherche de marchés elle-même (`renderSourcing`, son bandeau « Analyser
+ce marché »), le bouton « Créer mon compte Adjugo » de l'en-tête et la bulle « débloquer tout l'espace ».
+
+**L'en-tête** : la marque et « Espace partenaire », à droite l'entreprise invitée et son rôle (« Partenaire invité »,
+« Sous-traitant invité », « … · lecture seule »). Marge de 16 px sur téléphone.
+
+**Un seul encart « Créer mon compte Adjugo »** (`renderCompte`), en bas de la page, après la part et le journal :
+
+> Votre part à ce marché ne demande pas de compte. Avec un compte, vous cherchez aussi les marchés publiés, vous
+> préparez vos propres réponses, seul ou à plusieurs, et vous gardez vos pièces au même endroit.
+> **Essai gratuit de N jours, sans carte bancaire.** — bouton « Créer mon compte » (`/app?inscription`, nouvel onglet)
+
+- **N est lu dans le code**, jamais écrit dans la page : `GET /api/public-config` renvoie `essai_jours`
+  (`app/core/quota.py`, `TRIAL_DAYS`, 30 aujourd'hui). Sans réponse du serveur, la ligne de l'essai n'apparaît pas.
+- Bulle (i) : « À la fin de l'essai, les fonctions d'IA se mettent en pause tant qu'aucun forfait n'est choisi. Vos
+  marchés, vos documents et vos dossiers restent accessibles. » (la règle de `quota.MSG_ESSAI_TERMINE`).
+- Pas d'encart pour une invitation du réseau en aperçu limité (elle est envoyée à un compte Adjugo, qui l'accepte depuis
+  son compte) ni quand un compte Adjugo est ouvert dans ce navigateur (« Ouvrir dans mon Adjugo » est proposé).
+- Un seul lien vers l'inscription dans toute la page ; aucune offre, aucun prix (D14 réservée).
+
+### B3.3 « Voir ce que verra [partenaire] » (étude, § 6, « Avant d'inviter »)
+
+**Les entrées**, avant et après l'invitation :
+
+| Où | Libellé | Ouvre |
+|---|---|---|
+| Page du marché, sous « Inviter un partenaire » | « Voir ce que verra votre partenaire » | l'invitation encore ouverte la plus récente, sinon un partenaire pas encore invité |
+| Page du marché, liste des invitations | icône œil, « Voir ce que voit [entreprise] » (sauf révoquée ou déclinée) | cette invitation |
+| Fenêtre d'invitation, avant l'envoi | « Voir ce que verra [nom saisi] » | un partenaire pas encore invité, **avec les choix de la fenêtre** (rôle, réseau Adjugo, pièces du marché, part) ; « Revenir à l'invitation » rouvre la fenêtre telle qu'on l'a laissée |
+| Fenêtre d'invitation, invitation créée | « Voir ce que voit [nom] » | l'invitation créée |
+
+**Les adresses** : `/app/marches/<id>/apercu-partenaire` (pas encore invité) et
+`/app/marches/<id>/apercu-partenaire/<n° de l'invitation>` (jamais son jeton). Un écran de la rubrique Mes marchés (titre
+« Ce que verra votre partenaire »), compté par la mesure d'usage (`apercu`). « Retour au marché » fait comme le bouton du
+navigateur ; ouvert par un lien, il ouvre la page du marché. Le choix « Aperçu pour » (un partenaire pas encore invité,
+ou une invitation du marché) change l'adresse sans nouvelle entrée d'historique ; pour un partenaire pas encore invité,
+on choisit : partenaire du groupement ou sous-traitant, invité par le réseau Adjugo, dossier du marché téléchargeable
+(le dossier de l'acheteur, seul partagé : § S.1).
+
+**L'écran**, dans un cadre « Son écran, en lecture » : son en-tête (« Chef de file : … », « Votre part dans « … » »,
+l'acheteur), l'aperçu limité d'une invitation du réseau pas encore acceptée, le compte à rebours (comme sur son écran :
+tant qu'il a une part à soumettre, § S.13), les faits du marché, sa
+barre (une liste en lecture seule, sans bouton), la grille « Comment vous serez noté », **« Ce qui est attendu de
+vous »** (accepter depuis son compte pour le réseau ; sa part : le prix de vente de sa partie, ses références et son
+paragraphe ; ses pièces administratives, la liste de son coffre-fort croisé ; son accord sur la convention, ou « Vous
+intervenez en sous-traitance : vous n'avez pas à valider la convention de groupement », ou pour un lien en lecture seule
+« Ce lien est en lecture seule : aucune part à renseigner ni convention à valider » ; depuis la relecture, chaque tâche
+porte le statut de son étape de la barre, et « quand le chef de file l'aura générée » n'est dit qu'avant la génération :
+§ S.13), **le total de l'offre commune
+quand il le voit**, les pièces partagées (leurs noms) et une note sur sa part (« le détail de son chiffrage est chiffré
+dans son navigateur : ni vous, ni Adjugo, ni l'IA ne pouvez le lire »). Une seule bulle (i). Une invitation révoquée,
+déclinée ou expirée : « [entreprise] ne voit plus ce marché » et la raison, rien d'autre.
+
+### B3.4 Le cloisonnement : rien de plus que ce que reçoit le partenaire
+
+`GET /api/projects/{id}/apercu-partenaire?invite_id=<n°>`, ou, pour un partenaire pas encore invité,
+`?role=cotraitant|sous_traitant&reseau=…&can_view_docs=…&can_contribute=…&nom=…`.
+
+- **Réservée à l'organisation du marché** (`_owned_project`, comme la liste des invitations) : le partenaire, un tiers
+  reçoivent 404 ; une invitation d'un autre marché, 404 ; sans session, 401.
+- **Tirée de la vue du partenaire** : la même fonction que `GET /api/invite/{jeton}` (`_invite_public`, avec les mêmes
+  pièces, `_documents_partages`), puis une **liste fermée** de champs (`_apercu_de`) :
+
+| Champ | Ce que c'est |
+|---|---|
+| `project` : `name`, `client`, `deadline`, `source_url`, `analysis` | le marché tel que le partenaire le voit (aperçu limité : ni acheteur, ni lien de l'avis, ni grille) |
+| `mandataire` | le nom du chef de file |
+| `invited` : `company`, `role` | l'entreprise invitée et son rôle (le chef de file les a saisis) — **jamais son adresse** |
+| `can_view_docs`, `can_contribute`, `apercu_minimal`, `apercu_message` | les droits du lien, l'aperçu limité |
+| `documents` : `name`, `folder` | les pièces du marché qu'il peut télécharger — **le dossier de l'acheteur (dossier « DCE ») seulement** (§ S.1) —, nommées — ni identifiant ni lien |
+| `for_member.state` : `state`, `offer_frozen`, `total_offre_ht`, `frozen_at` ; `warning_two_members` | l'étape du groupement et **le total de l'offre commune, seulement quand le partenaire le reçoit** (membre du groupement, signataire de la convention générée ; jamais un sous-traitant) |
+| `etat` : `part`, `convention`, `signature` | l'état de SA part (une part du réseau sans réponse reste cachée, `_owner_hides_part`), le statut de la convention et son accord : ce que le chef de file voit déjà |
+| `pieces_attendues` | la liste des pièces de son coffre-fort croisé (`_pieces_attendues`, la même fonction que `coffre_croise`) ; aucune pendant l'aperçu limité ni pour un lien en lecture seule (`_pieces_attendues_de`, § S.4) |
+
+- **Jamais** : la décomposition du prix du chef de file (chiffrage, lignes, part du chef de file), la matière d'un
+  autre membre (composition du groupement, parts, prix, capacités, score commun, apports), ni une donnée du partenaire
+  que le chef de file ne voit pas déjà (son adresse, son brouillon pendant l'aperçu limité, son prix et ses capacités ne
+  sont pas repris), ni aucun jeton.
+- **Lecture seule** : ni compteur de vues, ni journal, ni invitation créée (une invitation pas encore envoyée est
+  calculée sur un objet jamais ajouté à la session). Une invitation neuve n'a ni part ni accord et défige une offre :
+  l'aperçu ne montre alors aucun total.
+- **L'écran ne lit que cette réponse** : le gabarit ne lit rien de la page du marché du chef de file (vérifié sur ses
+  expressions) ; la seule autre route lue est la liste des invitations du marché (le choix « Aperçu pour »).
+
+### B3.5 Le code
+
+- `app/routers/invites.py` : `apercu_partenaire` (route), `_apercu_de`, `_APERCU_PROJET`, `_pieces_attendues`,
+  `_raison_sans_acces`, `_documents_partages` (extraite de `guest_view`, inchangée) ; `coffre_croise` lit
+  `_pieces_attendues`.
+- `app/main.py` : `essai_jours` dans `/api/public-config`.
+- `app/services/mesure_usage.py` : écran `apercu`.
+- `app/static/app.js` : `barrePartenaire` (fonction pure), `ADRESSE_APERCU`, `adresseDe` / `etatDeAdresse`,
+  `adresseCourante`, `_appliquerAdresse` (écran `apercu`, retour à la page du marché sans tout recharger), `_apercuInit`,
+  `apercuOuvrir`, `apercuDepuisMarche`, `apercuInvitation`, `rinvApercu`, `apercuCharger`, `_apercuInvitations`,
+  `apercuChoisir`, `apercuOption`, `apercuRetour`, `apercuReprendre`, `apercuBarre`, `apercuPieces`, `apercuTotal`,
+  `apercuRaison`, `paJours`, `paDelai`, `sharedBarre`, `sharedBarreAller` ; `rinv.inviteId` ; titres et bulles ;
+  `grpSteps` et `grpEtapeNow` retirés.
+- `app/static/app.html` : en-tête et barre du dossier partagé (`partage-barre`), lien de l'en-tête du marché
+  (`marche-apercu`), œil de la liste des invitations, deux liens de la fenêtre d'invitation, écran de l'aperçu
+  (`vue-apercu-partenaire`, `apercu-choix`, `apercu-ecran`, `apercu-attendu`, `apercu-offre`, `apercu-sans-acces`).
+- `app/static/invite.html` : un seul écran (`renderMonAO`), `barrePartenaire`, `renderBarre`, `barreAller`,
+  `renderCompte`, `ESSAI_JOURS` ; « Pourquoi vous » dans sa carte ; menu, `renderBlocked`, `renderSourcing`, `nav`,
+  `setActive`, `renderEtapes` retirés.
+- `app/static/styles.css` : bloc « L'espace du partenaire » (`.pa-*`, `.mk-apercu`, `.rinv-apercu`).
+- `app/static/i18n.js` : 636 → 687 clés (néerlandais et espagnol) ; `sri-manifest.json` et empreintes de `app.html`.
+
+### B3.6 Tests
+
+Nouveau : `tests/test_reorganisation_v2b_espace_partenaire.py` (20 tests) — aperçu d'une invitation inclus valeur pour
+valeur dans la vue du partenaire, avant et après sa part, sans compteur ni journal ni création ; avant l'invitation
+(partenaire, sous-traitant, réseau), puis comparé à la vue de l'invitation réellement créée ; réseau : ni adresse ni
+brouillon pendant l'aperçu limité, puis dossier complet une fois accepté ; total de l'offre commune seulement quand le
+partenaire le voit ; réservé au chef de file, lien révoqué ou décliné ; démonstration (Kerhel) ; le gabarit de l'aperçu
+ne lit que la réponse de l'aperçu ; les entrées ; la fenêtre d'invitation passe ses choix (sous Node) ; adresses et
+retour (sous Node) ; même barre dans les deux espaces, ses états (sous Node) ; dossier partagé réduit à « Votre part »
+avec toutes ses fonctions ; `invite.html` réduit à sa part avec un seul encart, même ordre que l'application ; durée de
+l'essai du serveur ; vocabulaire, mots bannis, zéro émoji, « vérifié » absent ; traductions ; 375 px et accessibilité ;
+repères.
+
+Mis à jour, chacun avec sa raison en commentaire : `test_reorganisation_v1_reunion.py` (le test du menu fermé à
+cadenas devient « espace partenaire sans menu, réduit à sa part »), `test_reorganisation_v1_socle.py` (repères de B3 ;
+un seul lien vers l'inscription ; plus de menu), `test_reorganisation_v1_menu.py` (écran `apercu`, page de détail du
+marché ; titre « Votre part »), `test_reorganisation_v1_marche.py` (le stepper a quitté aussi le dossier partagé),
+`test_reorganisation_v2a_adresses_etapes.py` (adresse de l'aperçu), `test_correctifs_urgents.py` (durée de l'essai lue
+dans la configuration ; plus d'entrée « Projets à venir »), `test_secu_cotraitance.py` (la recherche, troisième lien
+construit depuis une donnée, a quitté la page : tout lien passe par `safeUrl` ou est un chemin interne fixe).
+
+### B3.7 Vérifications
+
+- **Suite complète** verte (SQLite, `TZ=UTC`) : 2 225 tests ; `scripts/sri_update.py --check` ; `node --check` de `app.js` et du script
+  d'`invite.html` ; gabarit Vue compilé (test existant) ; `scripts/i18n_ajouter.py --check` (687 clés).
+- **Les nouveaux tests sur le code de production `0afc1ed`** (copie par `git archive`) : le fichier ne se charge pas
+  (le repère de l'écran de l'aperçu n'existe pas) ; ses 20 tests échouent donc tous.
+- **Postgres 16.2 depuis l'état exact de la production** (`scratchpad/b3/run_b3_pg.py`) : base montée par le code
+  `0afc1ed` (tête `c4montantseul`) et remplie par lui (chef de file, partenaire avec compte, deux marchés, une pièce du
+  marché, un chiffrage détaillé du chef de file, invitations d'un partenaire, d'un sous-traitant et d'un lien en lecture
+  seule, deux parts soumises, offre commune figée) ; code nouveau : une seule tête, « upgrade head » ne change rien,
+  schéma identique ; sur ces données : chaque aperçu inclus valeur pour valeur dans la vue du partenaire, aucune clé ni
+  valeur interdite, pièces attendues = son coffre-fort croisé, total pour le partenaire et pas pour le sous-traitant,
+  aperçus « pas encore invité » (partenaire, sous-traitant sans pièces, réseau limité sans acheteur), aucun compteur ni
+  journal ni invitation créés, 404 au partenaire et pour une invitation d'un autre marché, `essai_jours` = 30, page du
+  partenaire servie sans menu ; le code de production relancé lit et écrit ; tests communs sur Postgres : mêmes échecs
+  avec le code de production et le code nouveau ; le fichier du chantier, sur une base à part. **29 contrôles sur 29** ;
+  16 fichiers communs : mêmes échecs des deux côtés (15 contre 15, tous dans `test_secu_rgpd.py` : son
+  `PRAGMA foreign_keys=ON` propre à SQLite, déjà noté en vague 2a et en B4) ; le fichier du chantier : 20 sur 20.
+- **Navigateur réel** (serveur local sur le code du chantier, base jetable, réseau sortant, courriels et IA coupés,
+  comptes de test locaux créés par un script, jetons jamais affichés ; démonstration par lien privé avec une clé jetable
+  de 48 caractères écrite dans un fichier, `DEMO_PUBLIC=0`) :
+  - chef de file : « Voir ce que verra votre partenaire » depuis la page du marché, « Aperçu pour » (sous-traitant :
+    3 étapes et pas de pièces ; partenaire sans compte : pièces partagées ; pas encore invité, puis « Invité par le
+    réseau Adjugo » : aperçu limité), « Retour au marché », fenêtre d'invitation « Un partenaire que je connais » →
+    « Voir ce que verra Menuiserie… » → « Revenir à l'invitation » (choix retrouvés) → « Créer le lien » → « Voir ce
+    que voit … », précédent du navigateur, ouverture directe par l'adresse `/apercu-partenaire/<n°>` ;
+  - partenaire avec compte : Mes marchés › Où je suis partenaire › « Votre part dans … », barre, « Donner mon accord »
+    mène à la convention, saisie du prix et « Soumettre au chef de file » : la barre passe « Ma part » à Terminé et
+    « Donner mon accord » à En cours ; la page ne glisse plus (§ B3.1) ;
+  - partenaire sans compte (`invite.html`) : un seul écran, la barre, « Ma part » mène à sa part, « Enregistrer le
+    brouillon », l'encart « Créer mon compte » en bas avec « Essai gratuit de 30 jours » lu du serveur, un seul lien
+    vers l'inscription, aucun appel à la recherche de marchés ; sous-traitant : 3 étapes ;
+  - démonstration (vitrine) : « Espace entreprises », page de Kerhel, « Voir ce que verra votre partenaire » (Breizh
+    Désamiantage : 4 étapes, 3 terminées, offre commune figée 1 250 000 € HT, pièce du marché), sans erreur de script ;
+  - 1 024, 1 280 et 375 px (aucun défilement horizontal, la page ne déborde pas), sombre et clair.
+
+### B3.8 Pour la réunion des chantiers
+
+- **B4 (courriel d'invitation)** : le courriel mène à « Votre part dans « [marché] » » (titre retenu ici, inchangé) ; sa
+  liste « Ce que vous verrez » (« le résumé du marché, les pièces que [chef de file] partage avec vous et votre part ») dit
+  la même chose que l'écran et que l'aperçu.
+- **B2 (marché d'exemple)** : l'écran du partenaire de l'exemple peut reprendre la même structure (« Votre part dans … »,
+  `barrePartenaire`, « Ce qui est attendu de vous »), sans appeler la route de l'aperçu (l'exemple n'a pas de marché en
+  base).
+- **Zones communes à fusionner bloc par bloc** : `RUBRIQUES` (liste `vues` de Mes marchés : `apercu`), `titles` et
+  `subtitles`, `ECRANS` de `mesure_usage.py`, `adresseDe` / `etatDeAdresse` / `_appliquerAdresse` (écran `apercu` à côté
+  d'`exemple`), `/api/public-config` (`essai_jours`, peut-être aussi lu par la confirmation d'email), `i18n.js` (une
+  seule ligne : réunir les clés, puis `scripts/i18n_ajouter.py --check`), `sri-manifest.json` et les empreintes
+  d'`app.html` (à recalculer après la réunion), `styles.css` (bloc en fin de fichier).
+
+### B3.9 Pour Eliot
+
+Rien à régler : pas de variable, pas de migration. La durée d'essai affichée au partenaire suit `TRIAL_DAYS` ; si elle
+change, l'encart suit.
+
+### B3.10 Laissé, avec sa raison
+
+- **`POST /api/invite/{jeton}/search`** (la recherche de l'ancien menu) : gardée côté serveur. Une page de partenaire
+  ouverte avant la mise en ligne l'appelle encore jusqu'à son rechargement ; l'inventaire de `test_demo_sans_cout.py` la
+  liste. À retirer dans un second temps, avec son test.
+- **Le prix du partenaire dans l'aperçu** : l'étude (§ 6) évoque « son prix chez lui » ; la consigne du chantier limite
+  l'aperçu au marché, au chef de file, à la date limite, à ce qui est attendu et au total commun. Le chef de file voit
+  déjà ce prix dans la carte des parts ; l'aperçu ne l'ajoute pas.
+- **Le compte à rebours** : écrit ici à tort « affiché une fois la part soumise, comme sur l'écran du partenaire » —
+  `invite.html` le retire dès la part soumise (`showSubmittedBanner`). La relecture aligne l'aperçu sur son écran
+  (§ S.13).
+- **« Chargement du dossier partagé… » / « Dossier inaccessible »** (attente et erreur de la vue `sharedao`) : libellés
+  inchangés.
+
+---
+
+## B4. Le courriel d'invitation
+
+Étude : § 6 (ligne « Le partenaire reçoit l'invitation » : « un courriel qui nomme le chef de file, le marché, la date
+limite, ce qui est attendu et ce qu'il verra ; il arrive sur « Votre part dans [marché] » »), § 7.6 (vocabulaire du
+partenaire), § 7.7 (les textes des courriels mis à jour avec l'écran qu'ils citent). Tests :
+`tests/test_reorganisation_v2b_courriel_invitation.py` (13 tests). Postgres : `scratchpad/b4/run_b4_pg.py` de la session
+(§ B4.7). Aucune migration, aucune route nouvelle, aucun texte de l'interface changé.
+
+### B4.1 Ce qui part, et quand
+
+Les courriels d'invitation à un groupement partent en **HTML avec leur version texte** (les deux dans le même envoi :
+`send_email(…, html=…)`, Brevo `htmlContent` + `textContent`, ou SMTP `multipart/alternative`), dans le style des
+courriels existants (carte de `app/services/email_templates.py`). Une seule composition :
+`app/services/email_invitation.py`.
+
+| Courriel | Quand | Route (inchangée) | Objet |
+|---|---|---|---|
+| Invitation d'un **partenaire connu** | Fenêtre d'invitation, cas « partenaire connu », avec un email | `POST /api/projects/{id}/invites` | « Invitation à répondre ensemble à un marché — [marché] » (celui de la vague 1) |
+| Invitation d'un **membre du réseau Adjugo** | Fenêtre d'invitation, cas « réseau » ; Adjugo remplit l'adresse | `POST /api/projects/{id}/reseau/invitations` | « Une entreprise vous propose un groupement — [marché] » (celui d'avant) ; pour un sous-traitant, « Une entreprise vous propose d'intervenir comme sous-traitant — [marché] » (contrôle des bugs, deuxième passe : l'objet disait un groupement que le corps démentait) |
+| **Renvoi** par le chef de file | « Renvoyer l'invitation par email » (même lien) | `POST /api/projects/{id}/invites/{inv}/resend` | « Rappel : invitation à répondre ensemble à un marché — … » ou « Rappel : une entreprise vous propose un groupement — … » (« … d'intervenir comme sous-traitant — … » pour un sous-traitant du réseau) |
+| **Rappel planifié** de la part | J-3 puis J-1 de la date limite, part non soumise | `POST /api/admin/run-cotraitance-reminders` (cron) | « Rappel — il vous reste N jours pour votre part ([marché]) » (celui d'avant) ; le jour même de la date limite, « Rappel — dernier jour pour votre part ([marché]) » (contrôle des bugs, deuxième passe) |
+
+L'entreprise du registre officiel ne reçoit toujours rien (la PME copie le lien).
+
+### B4.2 Ce que dit le courriel
+
+**L'invitation et son renvoi** (`invitation(…)`) :
+
+1. « Bonjour, » puis une phrase qui nomme le chef de file et le marché : « Breizh Couverture vous invite à rejoindre son
+   groupement pour répondre ensemble au marché « … ». » ; sous-traitant : « … vous invite à intervenir comme
+   sous-traitant sur le marché « … ». » ; réseau : « … a trouvé votre profil sur le réseau Adjugo et vous propose de… » ;
+   renvoi : « … vous renvoie son invitation à… » / « …, qui a trouvé votre profil sur le réseau Adjugo, vous renvoie sa
+   proposition : … ».
+2. **L'essentiel**, un fait par ligne (libellé au-dessus de sa valeur, lisible à 375 px) : Chef de file · Marché · Date
+   limite · Votre rôle (« Partenaire du groupement » ou « Sous-traitant ») · Partie proposée · Entreprise invitée.
+3. **Ce qui est attendu de vous** — ce que la page du partenaire permet de faire, rien de plus :
+   - part à apporter : « Renseigner votre part : la partie du marché que vous prenez et son prix, l'identité de votre
+     entreprise pour les formulaires officiels, vos références et vos attestations. » puis « La soumettre à [chef de
+     file], avant la date limite. » ; partenaire connu : « Si vous ne souhaitez pas y aller, déclinez l'invitation depuis
+     la même page. » ; réseau : d'abord « Accepter ou décliner l'invitation, depuis le lien ci-dessous. » ;
+     sous-traitant : « Comme sous-traitant, vous ne signez pas la convention de groupement. » ;
+   - lien en lecture seule : « Prendre connaissance du dossier que [chef de file] partage avec vous. Ce lien est en
+     lecture seule : aucune part à renseigner. »
+4. **Ce que vous verrez** — ce que la page lui montre (`_invite_public`) : « Le résumé du marché, les pièces que [chef de
+   file] partage avec vous et votre part. » (sans pièces si le lien ne les montre pas) ; réseau : « Avant votre réponse :
+   un aperçu du marché. » puis « Une fois l'invitation acceptée : … » ; toujours « Jamais le détail des prix des autres
+   entreprises. » et, s'il apporte une part, « Votre chiffrage détaillé (coûts, marges, méthode) reste chez vous :
+   [chef de file] reçoit le prix de vente de votre partie et, si vous le déposez, votre tableau de prix de vente. » (le
+   détail chiffré n'est lu que par lui, `guest_save_detail` ; le tableau de prix déposé part au chef de file, ses prix
+   de vente ligne par ligne : § S.2 — l'ancienne phrase le niait, faux dès ce dépôt).
+5. **« Votre part dans « [marché] » »** et le bouton « Ouvrir votre part » (lien en lecture seule : « Le dossier
+   partagé », « Ouvrir le dossier partagé »), vers `/invite/<jeton>` ; « Ce lien est réservé à votre entreprise et valable
+   jusqu'au JJ/MM/AAAA. » (date de fin du lien s'il en a une), puis l'adresse à copier-coller.
+6. Réseau : « Votre adresse n'est pas communiquée au chef de file tant que vous n'avez pas accepté. » ; pied : pourquoi on
+   le reçoit (profil publié) et où retirer la publication (« Partenaires › Réseau Adjugo › Mon profil partenaire »).
+   Partenaire connu : « Vous recevez ce message parce que [chef de file] a indiqué votre adresse pour vous inviter sur
+   Adjugo. Si vous ne connaissez pas cette entreprise, ignorez simplement ce message. »
+
+**Le rappel planifié** (`rappel_part(…)`) : « Il vous reste 3 jours pour ajouter votre part au groupement de [chef de
+file] sur le marché « … » (date limite : JJ/MM/AAAA). », « Complétez votre part et soumettez-la à [chef de file]. Sans
+elle, votre entreprise ne figurera pas dans la réponse commune. », ce qu'il voit (même phrase que l'invitation), ses
+attestations à mettre à jour et ses parties du dossier de présentation attendues (jointes à ce rappel, comme avant : un
+seul courriel), puis « Votre part dans « [marché] » » et le lien. Avant, ce rappel disait « via votre lien Adjugo » sans
+donner le lien, et commençait par une minuscule (« il vous reste… »).
+
+**La version texte** porte les mêmes faits, dans le même ordre (`test_la_version_texte_dit_ce_que_dit_le_html`).
+
+### B4.3 Les règles tenues
+
+- **Échappement** : toute donnée saisie (nom de l'entreprise du chef de file, de l'entreprise invitée, du marché, partie
+  proposée, lignes d'attestations et de parties) est aplatie (`net` : retours à la ligne, caractères de contrôle, de
+  format et de sens d'écriture retirés, blancs réunis) puis échappée (`html.escape`, guillemets compris) dans le HTML,
+  pré-en-tête et lien compris. L'objet ne porte jamais de retour à la ligne (aucun en-tête glissé par un nom de marché).
+- **Aucun pixel de suivi** : aucune image, aucun `background`/`url(` ; un seul lien, celui de l'invitation (bouton et
+  adresse à copier). Le logo reste le mot « adjugo » en texte. (Le suivi que Brevo ajouterait au niveau du compte : § B4.9.)
+- **Aucune adresse** dans le courriel : ni celle du destinataire, ni celle du chef de file ; l'adresse d'un membre du
+  réseau reste remplie par le serveur et jamais renvoyée au chef de file (inchangé, testé de bout en bout).
+- **Aucun fait inventé** : sans nom d'entreprise, le chef de file est « Une entreprise » / « le chef de file » / « au chef
+  de file » (jamais « à le ») et la ligne « Chef de file » n'apparaît pas ; une date limite inconnue est « pas encore
+  indiquée sur ce marché » ; la partie n'est dite que si elle est connue.
+- **L'acheteur n'est jamais cité** : pour le réseau, l'aperçu le cache tant que l'invitation n'est pas acceptée
+  (`_network_pending`) ; une seule règle pour les deux cas.
+- **Vocabulaire** : « partenaire », « partie », « groupement » ; aucun mot banni (garde-fou : `tests/textes_visibles.py`
+  sur le rendu, et sur toutes les chaînes du module), aucun « vérifié », zéro émoji.
+- **Les liens des courriels déjà envoyés marchent toujours** : même chemin `/invite/<jeton>` ; le renvoi garde le jeton.
+- **Quotas et anti-spam inchangés** : `DAILY_INVITE_CAP` (30 par organisation et par 24 h), `RESEND_MIN_INTERVAL`
+  (15 minutes), `@limiter.limit("20/hour")` du renvoi, `NETWORK_INVITES_PER_PROFILE_DAY` (10), `NOTIFY_MIN_INTERVAL_S`,
+  expéditeur à l'adresse confirmée, verrou « déjà invité » (`test_quotas_et_anti_spam_d_invitation_inchanges`).
+- **Jamais d'envoi depuis la démonstration** : refus de la démo inchangés (`_refuse_demo_sender`, `_demo_user_ids` du
+  rappel planifié), testés sur l'invitation, l'invitation réseau, le renvoi et le rappel planifié d'une invitation de la
+  démo à J-2 (`test_jamais_d_envoi_depuis_la_demo`).
+- Les autres courriels gardent leur pied d'avant, à l'octet près (`_shell(…, pied=None)`).
+
+### B4.4 Les courriels qui citaient l'ancien espace du partenaire (§ 7.7)
+
+L'espace du partenaire devient « Votre part dans [marché] » (étude, § 7.6). Relevé de toutes les chaînes des fonctions
+qui envoient un courriel (`tests/textes_visibles.py`, `textes_courriels`) :
+
+| Courriel | Avant | Après |
+|---|---|---|
+| Invitation (`invites.py`) | « Accédez à votre espace dédié (cloisonné à ce seul dossier) », « jamais les données des autres partenaires » | § B4.2 (« les données des autres » était faux : il voit le nom des membres et leur partie dans le dossier commun) |
+| Convention à valider (`convention.py`) | « donnez votre accord depuis votre espace » | « … depuis votre part dans ce marché » |
+| Offre commune figée (`invites.py`) | « Retrouvez le détail dans votre espace » | « Votre part dans ce marché : » (le partenaire voit le total, jamais le détail des autres) |
+| Attestations à mettre à jour (`alerts.py`) | « Déposez-les depuis votre espace Adjugo (votre lien d'invitation). » | « Déposez-les depuis votre part dans ce marché : » et le lien |
+| Rappel de part (`alerts.py`) | « via votre lien Adjugo » (sans lien) | § B4.2 |
+
+Relus et justes, inchangés : « menu Réglages, puis Mon compte » (collègue invité), « Adjugo (Mes documents) » (pièces à
+renouveler), « Trouver des marchés, onglet « Projets à venir » » (veille amont, si `PROJETS_A_VENIR=1`), « l'atelier,
+onglet « Qui écrit quoi » » (partie envoyée), « la page de ce marché » (déclin, attestations des partenaires, convention
+validée), « menu Réglages › Administration › Profils du réseau à valider » (administrateur), « Votre lien Adjugo »
+(parties du dossier de présentation).
+
+### B4.5 Le code
+
+- `app/services/email_invitation.py` (nouveau) : `invitation(…)`, `rappel_part(…)`, `net`, `jour`, `ROLES`,
+  `CHEMIN_PROFIL_RESEAU`.
+- `app/services/email_templates.py` : `_shell(…, pied=None)` ; sans `pied`, le pied d'avant (`_PIED`), inchangé.
+- `app/routers/invites.py` : `_send_invite_email(inv, project, base_url, relance=False)` compose par `invitation` ;
+  `chef_de_file_nom` (profil entreprise du propriétaire de l'organisation, comme la vue du partenaire) ; `_partie_invitee`
+  (rattachement au marché) ; le renvoi passe `relance=True` ; texte de l'offre figée.
+- `app/routers/reseau.py` : `_network_mailer(lot, chef, relance=False)` compose par `invitation(reseau=True)`.
+- `app/services/alerts.py` : le rappel planifié par `rappel_part`, avec le lien (`APP_BASE_URL`) ; le lien dans l'alerte
+  des attestations.
+- `app/services/atelier_groupement.py` : `lignes_relance` (les parties sans tiret) ; `liste_relance` rend le même texte.
+- `app/routers/convention.py` : « depuis votre part dans ce marché ».
+
+### B4.6 Tests
+
+Nouveau : `tests/test_reorganisation_v2b_courriel_invitation.py` — partenaire connu de bout en bout (HTML et texte,
+chef de file, marché, date limite, attendu, vu, « Votre part dans … », lien qui s'ouvre), échappement (nom du marché, du
+chef de file, de l'invitée, retour à la ligne dans l'objet), rien d'inventé sans nom ni date, attendu selon le rôle et les
+droits du lien, parité texte et HTML, membre du réseau (adresse jamais révélée, aperçu, acheteur absent, renvoi), renvoi
+d'un partenaire connu (même jeton, 429 avant 15 minutes), quotas inchangés, rappel planifié (HTML, lien, échappement),
+démonstration, mots bannis du module, « votre part » au lieu de « votre espace », pied des autres courriels inchangé.
+
+Mis à jour, chacun avec sa raison en commentaire : `test_cotraitance_v4.py` (2 relevés de `send_email` acceptent
+`html=`), `test_vocabulaire_chef_de_file.py` (idem), `test_reorganisation_v1_socle.py` (l'objet se lit dans le module
+de composition), `test_reorganisation_v1_relecture.py` (le chemin « Partenaires › Réseau Adjugo › Mon profil
+partenaire » aussi).
+
+### B4.7 Vérifications
+
+- **Suite complète** verte (SQLite, TZ=UTC) : 2 218 tests ; `scripts/sri_update.py --check` et
+  `scripts/i18n_ajouter.py --check` (636 clés) inchangés : aucun fichier servi ni libellé de l'interface n'a changé
+  (pas de `node --check` ni de gabarit à recompiler).
+- **Les nouveaux tests sur le code de production `0afc1ed`** (copie par `git archive`) : 11 sur 13 échouent, chacun sur
+  ce qu'il décrit ; les 2 autres gardent un comportement inchangé et passent des deux côtés (quotas et anti-spam,
+  aucun envoi depuis la démonstration).
+- **Postgres 16.2 depuis l'état exact de la production** (`scratchpad/b4/run_b4_pg.py`, 21 contrôles sur 21) : base
+  montée par le code `0afc1ed` (tête `c4montantseul`) et remplie par lui (chef de file, marché « Réfection de la toiture
+  <école> & préau » avec date limite, invitation d'un partenaire avec adresse, invitation en lecture seule sans pièces,
+  invitation d'un sous-traitant) ; code nouveau : une seule tête, « upgrade head » ne change rien, schéma identique ;
+  sur ces données : renvoi refusé avant 15 minutes (429) puis accepté, objet « Rappel : … », HTML et texte, un seul lien
+  (celui de l'invitation, jeton inchangé), nom du marché échappé, aucune adresse ni image, chef de file, marché, date
+  limite, « Votre part dans … » ; le lien du courriel ouvre la part (page 200, API) ; lecture seule et sous-traitant
+  disent ce qui est attendu de chacun ; rappel planifié à J-2 en HTML avec le lien ; le code de production relancé lit
+  et écrit. Vrais tests sur Postgres : 12 fichiers communs, mêmes échecs avec le code de production et le code nouveau
+  (15 contre 15, tous dans `test_secu_rgpd.py` : son `PRAGMA foreign_keys=ON` propre à SQLite, déjà noté en vague 2a) ;
+  le fichier du chantier, sur une base à part : 13 sur 13.
+- **Navigateur réel** (serveur local sur le code du chantier, base jetable, démonstration par lien privé avec une clé
+  jetable de 48 caractères écrite dans un fichier, jamais affichée, `DEMO_PUBLIC=0`, réseau sortant, courriels et IA
+  coupés) : les trois courriels rendus (partenaire connu à 800 px, réseau et rappel à 375 px : aucun défilement
+  horizontal, aucune image, un seul lien, `<script>` du nom du marché affiché comme du texte) ; la démonstration
+  (« Espace entreprises », accueil, page de Kerhel à 1 280 et 375 px, aucun défilement horizontal) : « Inviter un
+  partenaire » › « Un partenaire que je connais » avec une adresse, puis « Renvoyer l'invitation par email » : refus
+  de la démonstration affichés, aucun envoi tenté (journal du serveur sans ligne d'envoi), console sans erreur de script
+  (les deux 403 des refus).
+
+### B4.8 Pour la réunion des chantiers
+
+- **Le titre de la page du partenaire** (« Votre part dans [marché] ») vient du chantier de l'espace partenaire
+  (`sharedao` et `invite.html`) : le courriel y mène par le même lien `/invite/<jeton>`. Si ce chantier retient un autre
+  titre, le changer dans `_bloc_part` (un seul endroit) et dans les tests.
+- **« Voir ce que verra [partenaire] »** : la liste « Ce que vous verrez » du courriel décrit la même page ; les deux
+  doivent rester d'accord.
+- **Confirmation d'email vivante** : `email_templates.py` est aussi touché par ce chantier-là ; ici seul `_shell` reçoit
+  un paramètre (`pied`), sans changer le rendu des courriels existants.
+
+### B4.9 Pour Eliot
+
+- **Brevo** : vérifier dans le compte Brevo (Transactionnel › Paramètres) que le suivi des ouvertures et des clics est
+  coupé. Le gabarit n'a ni image ni pixel, mais Brevo peut en ajouter un et réécrire les liens au niveau du compte : le
+  code ne peut pas le garantir.
+- Rien d'autre à régler : pas de variable, pas de migration.
+
+### B4.10 Laissé, avec sa raison
+
+- **La partie proposée au premier envoi d'un partenaire connu** : le rattachement au marché qui la porte est posé après
+  l'envoi (`create_invite` : `lien_a_inviter` après `_create_invite`) ; changer cet ordre toucherait la création d'une
+  invitation. Le renvoi la dit ; l'invitation réseau aussi.
+- **Les courriels de suivi** (part soumise, accusé de réception, convention à valider ou validée, offre figée, partie du
+  dossier de présentation, accès retiré, code de vérification) restent en texte : ce ne sont pas des invitations ; leurs
+  mots sont relus (§ B4.4).
+- **Langues** : les courriels d'Adjugo sont en français ; aucun libellé de l'interface ne change (traductions inchangées).
+
+---
+
+## R. Réunion des chantiers
+
+Base : `feat/produit-acheteur-collectivites` = `0afc1ed` (production). La réunion part de B4 (`917c5ac`, un commit
+au-dessus de `0afc1ed`), puis fusionne, dans cet ordre, B1 (`c37e51c`), B2 (`163686e`) et B3 (`d784c88`), chacun par
+`git merge` avec son commit de fusion. Tests de la
+réunion : `tests/test_reorganisation_v2b_reunion.py` (9 tests, sans réseau ; fonctions de `app.js` sous Node).
+
+### R.1 Les fusions
+
+Conflits résolus **bloc par bloc** (jamais un fichier entier pris d'un côté) :
+
+| Fichier | Résolution |
+|---|---|
+| `docs/REORGANISATION_V2B.md` | un seul en-tête (la convention commune, la table des chantiers), puis les sections B1, B2, B3 et B4 reprises telles quelles, puis § R |
+| `app/static/app.js` | noms et phrases des vues (`titles`, `subtitles`) : « Votre part » et l'aperçu de B3, « Marché d'exemple » de B2 ; l'état `exemple` de B2 gardé |
+| `app/services/mesure_usage.py` | `ECRANS` reçoit `exemple` (B2) et `apercu` (B3) |
+| `app/static/styles.css` | les blocs de B1, B2 puis B3, chacun avec sa media query |
+| `tests/test_reorganisation_v1_menu.py` | l'aperçu est une page de détail du marché (B3), l'exemple une page à part (B2) |
+| `tests/test_reorganisation_v1_socle.py` | les repères des trois chantiers (`vague2b_b1`, `vague2b_exemple`, `vague2b_b3`) |
+| `app/static/i18n.js` | **clé par clé** (fusion à trois sur le dictionnaire de la production) : 636 + 53 (B1) + 35 (B2) + 51 (B3, dont une commune) = **774 clés** ; la seule clé ajoutée par deux chantiers, « Chef de file : », avait deux traductions espagnoles (« Empresa principal: » chez B2, « Mandatario: » chez B3) : « Mandatario: », le mot du reste du dictionnaire |
+| `app/static/app.html`, `app/static/sri-manifest.json` | empreintes SRI recalculées par `scripts/sri_update.py` après chaque fusion |
+
+Fusions automatiques relues : `email_templates.py` (le pied au choix de B4 et la phrase de la suite de B1 dans
+`verify_email_html` se cumulent), `invites.py` (B1 : `claim_invite` ; B3 : l'aperçu ; B4 : le courriel), `main.py`
+(routeur de B1, `essai_jours` de B3), `adresseDe` / `etatDeAdresse` / `_appliquerAdresse` (écrans `exemple` et
+`apercu` côte à côte). **Une seule tête Alembic** : `c5priseenmain` (B1), après `c4montantseul` ; aucune autre
+migration dans la vague.
+
+### R.2 Ce que la réunion ajoute
+
+- **L'écran du partenaire de l'exemple a la barre de son espace réel** (laissé par B2, § B2.8, et proposé par B3,
+  § B3.8) : sous « Votre part dans « … » », la barre de « Votre part dans [marché] » en lecture (une liste, aucun bouton,
+  comme dans l'aperçu de B3), calculée par **la même fonction**, `barrePartenaire`, à partir de l'état que l'exemple
+  décrit déjà (`barreExemple` : parts reçues 1 sur 1, accords des membres 2 sur 2, dépôt pas encore fait) : Accepter,
+  Ma part et Donner mon accord « Terminé », Déposé par le chef de file « En cours ». Méthode `exBarre`, sans appel à
+  l'API ; aucun texte nouveau (les libellés de la barre sont ceux de B3, déjà traduits) ; une règle de marge
+  (`.ex .ex-ecran .ex-barre`).
+- **Test de B1 mis à jour** (raison en commentaire) : `test_exemple_en_ligne_seulement_quand_l_adresse_ouvre_l_ecran_sous_node`
+  simulait l'absence du chantier B2 ; avec lui, « Voir un exemple » s'affiche, et ne s'afficherait pas sans l'adresse
+  de l'exemple.
+
+### R.3 Ce que les tests de la réunion vérifient
+
+1. La barre de l'exemple : celle de `barrePartenaire`, cohérente avec les chiffres du fichier, à sa place (sous le
+   titre, avant « Pourquoi vous dans ce groupement »), en lecture.
+2. Adresses : `/app/exemple` → un marché → son aperçu `/apercu-partenaire/<n°>` ; précédent deux fois, suivant deux
+   fois (méthodes réelles, navigateur simulé) ; rechargement de l'exemple et des deux adresses de l'aperçu : l'écran
+   s'ouvre sans attente du serveur (`_adresseAttente` reste faux) et jamais l'accueil d'abord.
+3. Premiers pas × aperçu × courriel (API locale) : regarder ce que verrait un partenaire pas encore invité ne crée
+   aucune invitation, n'envoie aucun courriel et laisse la tâche « Seul ou à plusieurs » à « Pas commencé » ;
+   l'invitation envoyée la termine ; le courriel, l'aperçu de cette invitation et l'écran du partenaire nomment le même
+   chef de file et le même marché, sous le même titre « Votre part dans « … » » (aussi celui d'`invite.html`, de la
+   vue `sharedao` et de l'exemple) ; le lien du courriel ouvre l'écran du partenaire.
+4. Les trois boutons « Voir un exemple » de B1 et le lien de B2 mènent à `go('exemple')`, `/app/exemple`.
+5. Une seule tête `c5priseenmain` ; `exemple` et `apercu` mesurés et nommés ; traductions complètes (774 clés,
+   « Chef de file : » = « Mandatario: ») ; ce contrat (sections B1 à B4 puis R, un seul en-tête).
+
+### R.4 Vérifications
+
+- **Suite complète** (SQLite, `TZ=UTC`, sur une copie du commit par `git archive`) : **2 302 réussis sur 2 302** le
+  jour de la réunion (le 21/10/2026, 2 301 sur 2 302 : un test dépendait de la date, déjà en échec avec la production ce
+  jour-là ; corrigé à la relecture, § S.14) ;
+  `scripts/sri_update.py --check` ; `node --check` de tous les fichiers JS servis et du script d'`invite.html` ;
+  `scripts/i18n_ajouter.py --check` (774 clés) ; gabarit de `app.html` compilé par le Vue du dépôt (tests existants) ;
+  `tests/test_demo_*.py` et `tests/test_demo_sans_cout.py` verts.
+- **Postgres 16.2** depuis l'état exact de la production (`scratchpad/r2b/run_r2b_pg.py` de la session : code `0afc1ed`
+  extrait par `git archive`, tête `c4montantseul`, base montée et remplie par ce code — chef de file avec critères et
+  montant porté seul, partenaire avec compte qui a soumis sa part, sous-traitant sans compte, invitation en attente,
+  3 marchés dont un lu et un avec son dossier rangé, compte non confirmé, compte de 40 jours) : une seule tête
+  `c5priseenmain`, colonnes de B1 avec leurs valeurs par défaut, rien d'autre ne bouge, schéma égal à celui d'une base
+  neuve ; sur ces données, B1 (premiers pas lus, replié gardé, analyse toujours refusée sans adresse confirmée, plus de
+  liste après 30 jours), B3 (aperçus inclus valeur pour valeur dans la vue du partenaire, rien d'interdit, ni compteur ni
+  journal ni invitation créée, 404 au partenaire, essai de 30 jours lu dans la configuration), B4 (renvoi en HTML et
+  texte, « Rappel : », même jeton, lien vers « Votre part dans « … » » ; rappel planifié seulement à la part non soumise)
+  et leurs points de contact (un aperçu ne termine pas « Seul ou à plusieurs », l'invitation envoyée la termine ;
+  l'acceptation d'une invitation propose la carte « Faites-vous trouver », gardée en base ; l'exemple et l'aperçu
+  comptés par la mesure anonyme, qui n'a aucune colonne personnelle) ; code de production relancé sur la base migrée,
+  puis après le retour arrière réel : il lit et écrit ; remontée et rejeu forcé sans effet : **31 contrôles sur 31**.
+  27 fichiers de tests communs, code de production puis code réuni : **mêmes échecs** (20 contre 20, tous dans
+  `test_secu_rgpd.py` et `test_secu2_donnees.py`, déjà en échec avec la production) ; les 5 fichiers de la vague 2b,
+  sur une base à part : **96 sur 96**.
+- **Navigateur réel** (Chromium, serveur local sur le code réuni, base jetable, réseau sortant et IA coupés, aucun
+  courriel envoyé : `send_email` remplacé par un relevé dans le seul processus du serveur ; comptes de test locaux
+  créés par la vraie route d'inscription, identifiants dans un fichier de la session, jamais affichés ; démonstration
+  par **lien privé** avec une clé jetable écrite dans un fichier, `DEMO_PUBLIC=0`) :
+  - **compte neuf** : écran « Confirmez votre adresse email » avec la phrase de la suite ; « Renvoyer » et « J'ai cliqué
+    sur le lien » répondent dans l'écran (« Email de confirmation renvoyé. », « Pas encore confirmée… ») ; le courriel
+    relevé dit la même phrase ; adresse confirmée en base pendant que l'écran est ouvert : il s'ouvre seul, la fenêtre
+    du SIRET suit avec « Jusqu'à quel montant répondez-vous seul ? » et « Je ne sais pas », sans le bandeau des cookies ;
+    puis « Vos premiers pas » (0 sur 5, chaque tâche avec son action), « Voir un exemple », la carte « Faites-vous
+    trouver » ; états vides de « À faire », « À plusieurs » et Mes marchés avec le rappel de leur tâche et « Voir un
+    exemple » ; « Voir un exemple » → `/app/exemple`, précédent → l'accueil ;
+  - **chef de file** : page du marché, « Voir ce que verra votre partenaire » → `/app/marches/<id>/apercu-partenaire/<n°>`
+    (en-tête, faits, barre en lecture), précédent → le marché ; « voir un exemple » de « Répondre à plusieurs ? » →
+    l'exemple, dont l'écran du partenaire porte la barre (Accepter, Ma part, Donner mon accord « Terminé », Déposé par
+    le chef de file « En cours ») et la mention « Exemple · entreprises et client fictifs » sur chacun de ses 6 blocs ;
+    précédent → le marché ;
+  - **rechargement d'adresse profonde**, chaque image notée par un iframe du même domaine : `/app/exemple`,
+    `/app/marches/<id>/apercu-partenaire`, `…/apercu-partenaire/<n°>`, `/app/marches/<id>` (chef de file),
+    `/app/marches/partenaire/<id>/<repère>`, `/app/marches/partenaire` (partenaire) : gabarit caché, attente, puis
+    l'écran demandé, **jamais l'accueil** ;
+  - **partenaire sans compte** (`invite.html`) : « Votre part dans « … » », la barre, un seul écran sans menu, l'encart
+    « Créer mon compte Adjugo » avec « Essai gratuit de 30 jours » lu du serveur, un seul lien vers l'inscription ;
+    **partenaire avec compte** : Mes marchés › Où je suis partenaire, la carte « Faites-vous trouver » proposée après
+    l'acceptation (gardée sur le serveur), « Votre part dans « … » » et sa barre ;
+  - **courriel d'invitation** relevé tel que la vraie route l'a composé (fenêtre d'invitation du chef de file) : HTML
+    (chef de file, marché, date limite, rôle, entreprise invitée, « Ce qui est attendu de vous », « Ce que vous
+    verrez », « Ouvrir votre part », pied qui dit pourquoi on le reçoit) et version texte qui dit la même chose ;
+  - **adresses et retour arrière de la vague 2a** : Mes marchés › « À plusieurs » → Mon entreprise › Ce que je cherche,
+    précédent trois fois puis suivant : chaque écran et son titre retrouvés ;
+  - **démonstration comme un pitcheur** : `/demo` → Espace entreprises : ni premiers pas ni carte « Faites-vous
+    trouver », « À faire » et « À plusieurs » ; Kerhel : « Voir ce que verra votre partenaire » (Breizh Désamiantage,
+    même barre que l'exemple), « voir un exemple » (deux requêtes seulement : le fichier de l'exemple et le relevé
+    anonyme, ignoré pour la démo), précédent ; aucun courriel tenté ;
+  - **1 280 et 375 px, clair et sombre** : aucun défilement horizontal (largeur du document = largeur de la fenêtre) ;
+    console sans erreur de script (seules erreurs : la réponse 404 attendue de `…/redaction` quand aucune partie du
+    dossier de présentation n'est confiée au partenaire, déjà vraie en production et traitée par la page).
+
+### R.5 Laissé, avec sa raison
+
+- **`demo_seed.py` n'est pas réécrit** (étude, § 9) : la démo de pitch reste identique (§ B2.8) ; son analyse de Kerhel
+  garde une injonction (« La bonne stratégie est claire… »). À décider avec Eliot, avec le pitch.
+- **`POST /api/invite/{jeton}/search`** gardée côté serveur pour les pages de partenaire ouvertes avant la mise en ligne
+  (§ B3.10).
+- **Tests Postgres** : les échecs de `test_secu_rgpd.py` (son `PRAGMA foreign_keys=ON` propre à SQLite) et de
+  `test_secu2_donnees.py` sont ceux du code de production, à l'identique.
+- **D14** (offres, tarifs) : rien n'a changé (aucun contrôle d'offre, aucun prix, aucune carte d'offre, ni la vitrine).
+
+### R.6 Pour Eliot
+
+Une seule migration à la mise en ligne, `c5priseenmain` (B1, trois colonnes avec leurs valeurs par défaut, retour
+arrière réel vérifié sur Postgres) : `alembic upgrade head`, comme à chaque vague. Aucune variable nouvelle.
+
+---
+
+## S. Relecture
+
+Base : la réunion (`bd61476`), au-dessus de la production `0afc1ed` (inchangée depuis : rien à fusionner). Quinze
+remarques, **toutes reproduites** (sondes sur l'API, sous Node, dans le navigateur ou par la suite complète), **toutes
+corrigées, aucune rejetée**. Tests : `tests/test_reorganisation_v2b_relecture.py` (20 tests ; 19 échouent sur
+`bd61476`, chacun sur ce qu'il décrit ; le témoin d'un compte confirmé, S5, passe des deux côtés). Aucune migration ;
+aucune route nouvelle ; aucun contrôle d'offre, prix ni carte d'offre touchés (D14), ni la vitrine.
+
+| Remarque | Gravité | Corrigé | Test qui échouait avant |
+|---|---|---|---|
+| S1 cloisonnement : pièces partagées | majeur (défaut de la production) | § S.1 | `test_s1_*` |
+| S2 courriel « pas son détail » | majeur | § S.2 | `test_s2_*`, test B4 mis à jour |
+| S3 bulle de l'aperçu | mineur | § S.3 | `test_s3_*` |
+| S4 lien en lecture seule | mineur | § S.4 | `test_s4_*`, barre B3 mise à jour |
+| S5 rappel planifié d'un compte non confirmé | majeur | § S.5 | `test_s5_*[False]` |
+| S6 « Rien n'attend » avant la lecture | majeur | § S.6 | `test_s6_*` |
+| S7 dossiers : organisation contre compte | mineur | § S.7 | `test_s7_*` |
+| S8 « Modifier ma zone » | mineur | § S.8 | `test_s8_*` |
+| S9 « Suivre 3 marchés » | mineur | § S.9 | `test_s9_*` |
+| S10 traductions des lignes d'état | mineur | § S.10 | `test_s10_*` |
+| S11 montant trop grand dans la fenêtre du SIRET | mineur | § S.11 | `test_s11_*` |
+| S12 chiffre d'affaires de l'exemple | mineur | § S.12 | `test_s12_*` |
+| S13 compte à rebours et accord dans l'aperçu | majeur | § S.13 | `test_s13_*` (dont la démonstration de Kerhel) |
+| S14 test dépendant de la date | mineur (déjà en échec avec la production) | § S.14 | `test_le_controle_du_compteur_ignore_les_dates` |
+| S15 `aria-controls` vers une liste absente | mineur | § S.15 | test B1 mis à jour |
+
+### S.1 Le partenaire ne télécharge que le dossier de l'acheteur
+
+**Constaté** (sur `bd61476` et sur la production `0afc1ed`, même résultat : défaut antérieur à la vague) : « Pièces
+partagées » listait **toutes** les pièces rangées dans le marché. Après « Préparer mes documents », un sous-traitant —
+à qui la convention refuse l'annexe des prix — y téléchargeait `ATTRI1.pdf` (l'acte d'engagement, avec le prix de
+vente de chaque membre : « 283 456 » d'un partenaire), et tout partenaire `DC2.pdf` (le chiffre d'affaires du chef de
+file), le dossier de présentation assemblé (dossier « Mémoire technique ») et, dans la démonstration, le tableau de
+prix du chef de file (dossier « Chiffrage » de Toiture, qui n'a pas d'invitation). La liste (vue du partenaire, aperçu)
+et le téléchargement ne filtraient que sur le marché.
+
+**Corrigé** : une seule règle, `DOSSIER_PARTAGE = "DCE"` (`app/routers/invites.py`), pour `_documents_partages` (vue du
+partenaire et aperçu du chef de file) et `guest_download` (une pièce d'un autre dossier répond 404, même en devinant son
+numéro). Le partenaire ne reçoit que le dossier de l'acheteur, rangé à l'import (« Dossier du marché ») ; rien ne
+change pour la démonstration (Kerhel ne partage que son dossier « DCE »). Les libellés disent ce qui part :
+« Dossier du marché téléchargeable » (aperçu, au lieu de « Pièces du marché téléchargeables ») et « Autoriser le
+téléchargement du dossier du marché » (fenêtre d'invitation). La bulle d'`invite.html` (« jamais … les fichiers des
+autres entreprises ») et celle de l'aperçu (§ S.3) deviennent vraies. Le test `test_secu_cotraitance.py` range sa
+pièce de marché dans « DCE » (raison en commentaire : aucune route ne rattache une pièce hors dossier à un marché).
+
+### S.2 Le courriel dit ce que reçoit le chef de file
+
+« Le détail de vos prix reste chez vous : [chef de file] reçoit le prix de votre partie, pas son détail. » était faux
+dès que le partenaire dépose son tableau de prix (le chef de file en télécharge les prix de vente, ligne par ligne :
+reproduit). Une seule phrase, `_chiffrage_chez_vous` (`app/services/email_invitation.py`), dans l'invitation, son renvoi
+et le rappel planifié : « Votre chiffrage détaillé (coûts, marges, méthode) reste chez vous : [chef de file] reçoit le
+prix de vente de votre partie et, si vous le déposez, votre tableau de prix de vente. » — les mots de la bulle « Mon
+tableau de prix ». L'exemple dit la même chose (`preparer.cloisonnement`), et, sous « Votre prix » de son écran du
+partenaire, « Le détail de votre chiffrage (coûts, marges, méthode), vous seul le voyez. » au lieu de « Le détail de vos
+postes, vous seul le voyez. » (même promesse fausse, trouvée en vérifiant celle-ci). § B4.2 mis à jour.
+
+### S.3 La bulle de l'aperçu
+
+« Jamais le détail de votre prix, ni la part des autres partenaires » était faux : une fois la convention générée,
+chaque signataire y lit la partie et le prix de vente de chacun (reproduit sur `/api/invite/{jeton}/convention`). La
+bulle dit : « Jamais le détail de votre chiffrage, ni les pièces des autres partenaires. Une fois la convention
+générée, chaque membre qui la signe y lit la partie et le prix de vente de chacun, et le total. » Le test lie la phrase
+à la vue convention de deux signataires (et à celle d'un sous-traitant, qui ne la lit pas).
+
+### S.4 Un lien en lecture seule : aucune tâche qu'il ne peut pas faire
+
+Un lien « peut contribuer » décoché ne peut rien déposer (403) et ne sera jamais signataire. La barre
+(`barrePartenaire`, même texte dans `app.js` et `invite.html`) ne lui donne plus ni « Ma part » ni « Donner mon
+accord » (Accepter · Déposé par le chef de file) ; l'aperçu ne lui annonce plus de pièces administratives
+(`_pieces_attendues_de` : aucune pour un lien en lecture seule ni pendant l'aperçu limité) ni d'accord (la ligne
+« Votre accord » n'apparaît que si sa barre a l'étape) et dit « Ce lien est en lecture seule : aucune part à renseigner
+ni convention à valider. » ; son écran (`invite.html`) et l'aperçu n'affichent plus « Il vous reste N jours pour
+soumettre votre part ». **Laissé** à cette relecture, **corrigé depuis** (contrôle des bugs du 22/10/2026) : un lien
+en lecture seule « partenaire du groupement » bloquait la génération de la convention (« … n'a pas encore soumis sa
+part »). Il n'est plus traité comme un membre qui doit une part (`apporte_une_part`,
+`app/services/groupement_members.py`) : ni manque de la convention, ni signataire, ni ligne de « Prêt à déposer »,
+ni attestation réclamée dans le coffre-fort croisé (vu du chef de file comme des autres membres), ni compte
+« parts reçues X sur Y » (étape du groupement, suivi, « À plusieurs », courriel « Partenaires prêts »). Le créer ou le
+retirer après la génération ne rend plus la convention caduque (`concerns_convention`, comme un sous-traitant), et il
+ne porte plus le rattachement d'un partenaire hors ligne, qui reste candidat de la convention. Seul, il ne fait pas un
+groupement (« Prêt à déposer » de l'entreprise seule). Tests : `tests/test_controle_bugs_cotraitance.py`.
+
+### S.5 Aucune tâche planifiée n'écrit pour un compte non confirmé
+
+Le rappel planifié (B4) portait le lien et le HTML : pour une invitation créée par un compte dont l'adresse n'est pas
+confirmée — l'invitation elle-même ne part pas —, il devenait l'invitation complète envoyée à sa place, sous 1 à 3
+jours (reproduit). `run_cotraitance_reminders` et l'alerte d'attestations (`_piece_alerts_due`) ignorent maintenant
+les invitations d'un chef de file non confirmé (`_comptes_non_confirmes`, `app/services/alerts.py`) ; le récapitulatif
+d'attestations ne part plus vers une adresse non confirmée. Les comptes d'avant la vérification d'email ont été
+confirmés par sa migration : rien ne change pour eux. Le commentaire d'`auth.py` le dit. Complété par la
+contre-relecture (§ T.1 et T.2) : la relance planifiée des parties du dossier de présentation et « Votre partie est à
+valider » ne partaient pas par ces deux tâches et écrivaient encore au tiers. *Réunion du 22/10, décision 2 d'Eliot* :
+la même fonction vaut désormais pour tous les courriels planifiés vers le compte lui-même (alertes de marchés,
+« Demandez vos notes », « pièces à renouveler », veille amont) ; voir `docs/MISE_EN_LIGNE_22_10.md`, section 3.
+
+### S.6 « Rien n'attend de réponse » seulement une fois lu
+
+Au chargement, l'accueil et la cloche disaient « Rien n'attend de réponse de votre part. » avant d'avoir lu les pièces
+à renouveler et les invitations reçues (lues après l'ouverture de l'écran). Elles sont lues **avant** (`boot`, dans le
+`Promise.allSettled`), et la phrase ne s'affiche qu'une fois les deux lues (`aFaireLu` : `expiringLu`, posé seulement
+quand la liste a été reçue, et `reseau.recues.loaded`) ; si l'une n'a pas pu être lue, la phrase ne s'affiche pas.
+
+### S.7 La tâche « dossiers » compte ceux du compte
+
+Mon savoir-faire liste les documents du compte connecté ; la tâche comptait ceux de l'organisation (un collègue lisait
+« 3 sur 3 dans Mon savoir-faire » devant un écran vide). Elle compte maintenant ceux du compte
+(`KnowledgeDoc.user_id == user.id`), comme l'écran où elle se fait et où son rappel s'affiche.
+
+### S.8 « Modifier ma zone » (Trouver › À venir)
+
+La recherche des fins de contrat n'envoie que le champ « Départements » de l'onglet (`srcDeps`) ; « Modifier ma zone »
+menait à Ce que je cherche, dont la zone n'est pas lue ici. Le bouton met le focus sur ce champ (`srcRenZone`, texte
+sélectionné) : le geste change bien la zone de cette recherche.
+
+### S.9 « Ajouter 3 marchés à Mes marchés »
+
+« Suivre 3 marchés » nommait un geste absent (une carte de recherche n'offre que « Analyser ce marché ») : la tâche
+s'appelle « Ajouter 3 marchés à Mes marchés » (clé `suivre` inchangée), dans le bloc et dans son rappel de Trouver ;
+la bulle du bloc dit déjà comment un marché y entre.
+
+### S.10 Les lignes d'état de « Vos premiers pas » se traduisent
+
+`translateDOM` ne traduit qu'un nœud texte entier. Les lignes composées (« Reste à dire : … », « N sur 3 dans Mes
+marchés. », « N sur 3 dans Mon savoir-faire. ») et le compte du bloc sont rendus **en morceaux** (`morceaux`, chacun dans
+son élément) : chaque libellé fixe est une clé (« Reste à dire : », « votre métier », « votre zone », « le montant que
+vous portez seul (ou « Je ne sais pas ») », « sur », « dans Mes marchés. », « dans Mon savoir-faire. »), les nombres et la
+ponctuation restent tels quels ; `detail` garde la ligne entière, en français. Les 16 lignes possibles sont vérifiées
+sous Node contre le dictionnaire.
+
+### S.11 La fenêtre du SIRET contrôle le montant
+
+Un montant porté seul au-delà de `MONTANT_SEUL_MAX` faisait refuser tout l'enregistrement des critères, en silence
+(spécialité et département tirés du SIRET perdus). Le champ est borné (`max`), `welcomeStart` contrôle avant l'envoi
+(`montantSeulValide`, même borne que le serveur, vérifiée par les tests) : la fenêtre reste ouverte et le dit ; un refus
+du serveur n'est plus avalé (« Votre métier, votre zone et votre montant n'ont pas été enregistrés : … »).
+
+### S.12 L'exemple ne conclut pas une conformité qu'il n'établit pas
+
+Le règlement cité exige une moyenne sur trois exercices ; la page additionnait les chiffres du seul dernier exercice
+et concluait « au-dessus des 3 000 000 € exigés ». Elle dit : « au dernier exercice, 1 250 000 € + 2 100 000 € =
+3 350 000 € de chiffre d'affaires, pour 3 000 000 € exigés en moyenne sur trois exercices ; la moyenne des trois
+exercices de chacun reste à confirmer » ; le manque dit « 1 250 000 € au dernier exercice » ; la présentation de Breizh
+Désamiantage cite ses deux qualifications (comme `demo_seed.py` et le calcul). Les pourcentages (43 et 100) ne changent
+pas : ils viennent du moteur, sur les mêmes données.
+
+### S.13 L'aperçu suit l'état réel de sa part et de la convention
+
+L'aperçu affichait « Il vous reste N jours pour soumettre votre part » après la part soumise (son écran le retire) et
+« quand le chef de file l'aura générée » après la convention validée — dans la démonstration de Kerhel, à côté de
+« Ma part : Terminé ». Le compte à rebours suit son écran (`apercuDelaiVisible` : une part à soumettre, pas encore
+soumise) ; « Ce qui est attendu de vous » porte, pour sa part et son accord, le statut de l'étape de sa barre
+(`apercuEtape`), et la convention n'est dite « à générer » qu'avant sa génération (`apercuConventionGeneree`). § B3.1,
+B3.3 et B3.10 corrigés.
+
+### S.14 Le test dépendant de la date
+
+`test_compte_rendu_de_la_demonstration` refusait « 1/1 » dans le PDF, qui porte « édité le 21/10/2026 » : il échouait
+chaque jour dont la date contient « 1/1 » (même échec avec la production, le 21/10). Le contrôle (et celui de « 1/2 »)
+cherche un compteur, jamais un morceau de date (`_compteur`), avec son propre test sur six dates.
+
+### S.15 `aria-controls`
+
+Replié, la liste de « Vos premiers pas » quitte la page ; le bouton désignait encore `pp-liste`. Il ne la désigne plus
+que dépliée (`:aria-controls="pp.d.replie ? null : 'pp-liste'"`).
+
+### S.16 Traductions, fichiers servis
+
+789 clés néerlandaises et espagnoles (774 + 15 libellés nouveaux) ; `sri-manifest.json` et les empreintes d'`app.html`
+recalculées.
+
+### S.17 Vérifications
+
+- **Suite complète** (SQLite, `TZ=UTC`, sur une copie du code relu) : **2 323 réussis sur 2 323** (2 302 + les 20 tests de
+  la relecture + le test du contrôle « 1/1 ») ; avant, sur `bd61476` le 21/10 : 2 301 sur 2 302. Les nouveaux tests sur
+  `bd61476` (copie par `git archive`) : 19 sur 20 échouent, chacun sur ce qu'il décrit (le témoin d'un compte confirmé
+  passe). `scripts/sri_update.py --check` ; `node --check` de tous les fichiers JS servis et du script d'`invite.html` ;
+  `scripts/i18n_ajouter.py --check` (789 clés) ; gabarit d'`app.html` compilé par le Vue du dépôt (tests existants) ;
+  `tests/test_demo_*.py` et `tests/test_demo_sans_cout.py` verts.
+- **Postgres 16.2 depuis l'état exact de la production** (`scratchpad/rel2b/run_s2b_pg.py` de la session : code
+  `0afc1ed` extrait par `git archive`, tête `c4montantseul`, base montée et remplie par ce code — chef de file confirmé,
+  dossier de l'acheteur rangé, partenaire qui soumet 283 456 €, sous-traitant, convention générée, « Préparer mes
+  documents », invitation en attente et lien en lecture seule sur un marché à J+2, compte non confirmé avec une
+  invitation vers un tiers à J+2, propriétaire et collègue avec 3 dossiers de présentation du propriétaire) : le défaut
+  S1 constaté avec le code de production (le sous-traitant liste `ATTRI1.pdf`, `DC2.pdf`…) ; code relu : une seule tête
+  `c5priseenmain`, schéma égal à celui d'une base neuve, rien ne bouge ; sur ces données : S1 (partenaire et
+  sous-traitant ne listent que `RC.pdf` du dossier « DCE », 404 sur chaque formulaire, 200 sur le dossier de
+  l'acheteur, aperçu identique), S4, S13, S5 (rappel au partenaire du chef confirmé, rien vers le tiers du compte non
+  confirmé), S2 (le renvoi dit la phrase nouvelle), S7, S12 ; code de production relancé sur la base migrée : il lit et
+  écrit. **20 contrôles sur 20.** 28 fichiers de tests communs, code de production puis code relu : **mêmes échecs**
+  (20, tous dans `test_secu_rgpd.py` et `test_secu2_donnees.py`, comme en § R.4), plus, côté production seulement, le
+  test de la date (§ S.14) ; les 6 fichiers de la vague 2b (relecture comprise), sur une base à part : **116 sur 116**.
+- **Navigateur réel** (Chromium, serveur local sur le code relu, base jetable, réseau sortant et IA coupés, courriels
+  relevés en mémoire ; comptes de test locaux créés par la vraie route d'inscription, identifiants dans un fichier de
+  la session ; démonstration par **lien privé** avec une clé jetable écrite dans un fichier, `DEMO_PUBLIC=0`) :
+  - **chef de file** : aperçu d'un lien en lecture seule (barre Accepter · Déposé par le chef de file, « Ce lien est en
+    lecture seule… », ni pièces attendues ni compte à rebours, « Pièces partagées » : le seul règlement de la
+    consultation alors que le marché a ses formulaires officiels rangés) ; aperçu d'une part soumise (pas de compte à
+    rebours, « Terminé » sur sa part, « En cours » sur l'accord, « quand le chef de file l'aura générée ») ;
+  - **partenaires** : `invite.html` en lecture seule (2 étapes, pas de compte à rebours), du sous-traitant (part
+    soumise, 3 étapes, une seule pièce : le dossier de l'acheteur), d'un partenaire sans compte (compte à rebours tant
+    que sa part n'est pas soumise) ; partenaire avec compte : « Pièces partagées » = le dossier de l'acheteur ;
+  - **démonstration comme un pitcheur** : Espace entreprises ; l'accueil relevé toutes les 2 ms dans un iframe du même
+    domaine, trois rechargements : « À faire » passe d'absent à sa liste (2 pièces à renouveler), **jamais « Rien
+    n'attend… »** ; Kerhel › « Voir ce que verra votre partenaire » : ni « Il vous reste … », « Votre accord sur la
+    convention de groupement. » avec « Terminé », la bulle nouvelle ; l'exemple (`/app/exemple`) : la phrase du chiffre
+    d'affaires, « 1 250 000 € au dernier exercice », les deux qualifications de Breizh Désamiantage, « Le détail de
+    votre chiffrage (coûts, marges, méthode), vous seul le voyez. » ;
+  - **compte neuf confirmé** : fenêtre du SIRET avec un montant de 20 milliards : elle reste ouverte, le message
+    s'affiche, le focus revient au champ ; « Vos premiers pas » (« Ajouter 3 marchés à Mes marchés », « 0 sur 3 dans
+    Mes marchés. ») ; `translateDOM('nl')` : toutes les lignes d'état traduites (« Nog te zeggen: uw vak, uw gebied, … »,
+    « 0 van 3 in Mijn aanbestedingen. ») ; « Replier » : `aria-controls` retiré avec la liste, rétabli en dépliant ;
+    Trouver › À venir › « Modifier ma zone » : le focus va au champ « Départements », l'écran reste ;
+  - **1 280 et 375 px, sombre et clair** : aucun défilement horizontal (largeur du document = largeur de la fenêtre) ;
+    console sans erreur de script (seules erreurs réseau : la 404 attendue de `…/redaction` quand aucune partie n'est
+    confiée au partenaire, déjà vraie en production, et une 500 du script d'essai local, corrigée avant les relevés).
+
+### S.18 Laissé, avec sa raison
+
+- **Un lien en lecture seule « partenaire du groupement » bloque la génération de la convention** (§ S.4) : règle de
+  la convention, défaut de la production, hors de cette relecture. Corrigé depuis, au contrôle des bugs du
+  22/10/2026 (§ S.4).
+- **Le compte « N sur M » ailleurs dans l'application** (`{{ a }} sur {{ b }}` en un seul nœud) reste en français en
+  néerlandais et en espagnol : la remarque portait sur « Vos premiers pas » ; la clé « sur » existe maintenant pour qui
+  reprendra les autres comptes.
+- **D14** : rien n'a changé (aucun contrôle d'offre, aucun prix, aucune carte d'offre, ni la vitrine).
+
+---
+
+## T. Contre-relecture de la vague 2b
+
+Base : la relecture (`47a0983`). Quatre remarques (deux lentilles : cloisonnement et liens ; données, démonstration et
+suite), dont trois sur la même correction (S5) : deux défauts distincts, plus le commentaire d'`auth.py`. Chacune a été
+**reproduite** avant d'être corrigée (tests des relecteurs relancés, puis tests écrits ici) ; **aucune n'est rejetée**.
+Tests : `tests/test_reorganisation_v2b_contre_relecture.py` (7 tests ; 5 échouent sur `47a0983`, chacun sur ce qu'il
+décrit ; les deux témoins d'un compte confirmé passent des deux côtés). Aucune migration ; aucune route nouvelle ;
+aucun libellé nouveau à l'écran ; aucun contrôle d'offre, prix ni carte d'offre touchés (D14), ni la vitrine.
+
+| Remarque | Gravité | Corrigé | Test qui échouait avant |
+|---|---|---|---|
+| 1 et 3 (en partie) : relance planifiée des parties d'un compte non confirmé | majeur (défaut de la production) | § T.1 | `test_t1_*[False]` |
+| 2 et 3 (en partie) : « Votre partie est à valider » d'un compte non confirmé ; commentaire d'`auth.py` | majeur (défaut de la production) | § T.2 | `test_t2_*[False]`, `test_t2_le_compte_qui_agit_*`, `test_t2_le_commentaire_*` |
+| 4 : une relecture en échec fait dire « Rien n'attend » (S6) | mineur | § T.3 | `test_t3_*` |
+
+### T.1 La relance planifiée des parties ne part que d'un compte confirmé (remarques 1 et 3)
+
+**Reproduit** (sur `47a0983`, tout par l'API d'un compte jamais confirmé, et sur Postgres avec le code de production) :
+marché sans dossier de l'acheteur ni date limite, plan libre, une partie, un partenaire invité par adresse (le lien
+reste à copier : `emailed` faux), la partie lui est confiée avec une date limite interne à J+2 ; aucune de ces routes ne
+lit l'adresse. La tournée planifiée (`run_cotraitance_reminders`) rendait `parts_relancees: 1` : « Rappel — votre partie
+du dossier de présentation », avec « Votre lien Adjugo : …/invite/<jeton> », partait au tiers. S5 avait écarté ces
+invitations du rappel de la part ; leurs parties n'étaient donc plus ajoutées à ce rappel, et `relancer_parts`, qui ne
+filtrait que la démonstration, leur écrivait à part (`app.services.email.send_email`, que le test S5 ne remplaçait
+pas). Le même compte reçoit 403 sur « Demander les parts ».
+
+**Corrigé** : `relancer_parts` (`app/services/atelier_groupement.py`) ignore les invitations dont le chef de file
+(`inv.owner_id`) n'a pas confirmé son adresse ; la tournée lui passe l'ensemble qu'elle a déjà lu
+(`non_confirmes`, `alerts._comptes_non_confirmes`), un appel direct le relit. Rien n'est marqué envoyé : une fois
+l'adresse confirmée, le palier encore dû part à la tournée suivante (testé). Le témoin d'un compte confirmé reçoit la
+relance, comme en production. Le titre du § S.5 devient vrai.
+
+### T.2 « Votre partie est à valider » ne part que d'un compte confirmé (remarques 2 et 3)
+
+**Reproduit** (sur `47a0983`, même parcours) : quand ce compte écrit la partie du partenaire
+(`PUT /api/atelier/{pid}/repartition/{sid}/texte`, 200), `_notifier_partenaire` envoyait aussitôt au tiers « Votre
+partie est à valider », avec le lien de l'invitation ; `chef_modifier_part` ne refuse que la démonstration. Le
+commentaire d'`auth.py` (« il n'envoie aucun courriel au nom d'Adjugo vers un tiers ») était donc faux. Défaut antérieur
+à la vague.
+
+**Corrigé** : `_notifier_partenaire` n'envoie rien quand le chef de file (propriétaire de l'invitation) ou le compte qui
+agit n'a pas confirmé son adresse (`adresse_confirmee`, paramètre `user` passé par « écrire à la place » et par
+l'harmonisation du ton, `app/services/atelier_assemblage.py`) ; le texte reste enregistré, comme pour « Demander les
+parts ». Le commentaire d'`auth.py` dit ce qui part réellement : ni l'invitation, ni le rappel de la part, ni l'alerte
+d'attestations, ni la relance des parties, ni « Votre partie est à valider » ; seule exception, à la demande de qui
+ouvre le lien, le code qui vérifie l'adresse du partenaire (sans le lien ; 8 par jour au plus pour une organisation non
+confirmée, `invites._otp_cap_reached`, inchangé), puis, une fois cette adresse vérifiée, l'accusé de sa part envoyée.
+Revu au passage, sans changement : les autres envois vers un partenaire vérifient déjà l'expéditeur (renvoi,
+convention à valider, retrait, invitation réseau, invitation d'un collègue) ou suivent une part soumise, donc une
+adresse vérifiée par ce code (offre figée, accusé) ; les envois au chef de file ne partent que vers une adresse
+confirmée (`_mandataire_email`).
+
+### T.3 Une relecture des pièces à renouveler qui échoue garde la liste (remarque 4)
+
+**Reproduit** (sous Node avec les méthodes réelles d'`app.js`) : lue une fois, puis relue en échec (chaque retour sur
+l'accueil, une mise à la corbeille ou une restauration de document relit la liste), `loadExpiring` vidait la liste et
+laissait `expiringLu` vrai : l'accueil et la cloche disaient « Rien n'attend de réponse de votre part. » alors qu'une
+pièce était à renouveler. **Corrigé** : une relecture en échec garde la liste déjà lue (aucune phrase vide sur une
+panne du réseau) ; une liste vide bien relue rend la phrase vraie. Vérifié aussi dans le navigateur (§ T.4).
+
+### T.4 Vérifications
+
+- **Tests de la contre-relecture** : `tests/test_reorganisation_v2b_contre_relecture.py`, 8 tests (7 sur le code, 1 sur
+  ce contrat) ; 5 des 7 échouent sur `47a0983`, chacun sur ce qu'il décrit ; les deux témoins d'un compte confirmé passent
+  des deux côtés.
+- **Suite complète SQLite** (TZ=UTC, `ADJUGO_TEST_DB=moi2b_full.db`, code final) : 2 329 réussis sur 2 331. Les deux
+  échecs : le test de ce contrat (le § T.4 attendait ces résultats ; il passe depuis) et
+  `tests/test_corrections_v34_b.py::test_dpgf_csv_volumineux_borne`, un test de chronométrage que la vague ne touche pas
+  (`_check_dpgf_csv` inchangé depuis `0afc1ed`), joué pendant que trois autres chantiers faisaient tourner leurs suites
+  (charge de la machine entre 12 et 23) ; relancé seul sous la même charge, il passe 2 fois sur 3.
+- **SRI, JavaScript, traductions** : `scripts/sri_update.py --check` à jour ; `node --check` sur `app.js`, `i18n.js`,
+  `cotraitance-crypto.js`, `redaction-partenaire.js`, `carnet-notes.js` ; `scripts/i18n_ajouter.py --check` : 789 clés.
+- **Postgres** 16.2 depuis l'état exact de la production (`scratchpad/cr2b_fix/run_cr2b_pg.py`, TZ=UTC) : base montée et
+  remplie par le code `0afc1ed` (tête `c4montantseul`) ; le défaut est constaté avec le code de production (la tournée
+  écrit au tiers du compte non confirmé, avec le lien) ; code corrigé : une seule tête `c5priseenmain`, schéma égal à
+  celui d'une base neuve, aucun compte ne bouge ; T1 (la tournée n'écrit qu'au partenaire du témoin), T2 (« écrire à la
+  place » enregistre le texte dans les deux cas, « Votre partie est à valider » part pour le témoin seulement), T1 bis
+  (une fois l'adresse confirmée, le palier dû part) ; le code de production relancé sur la base migrée lit et écrit.
+  Fichiers communs : mêmes échecs qu'avec la production (20, tous dans `test_secu_rgpd.py` et `test_secu2_donnees.py`,
+  propres à SQLite), la production a en plus le test de la date corrigé par S14. Les 7 fichiers de la vague 2b sur une
+  base à part : 123 sur 124, le seul échec étant ce contrat avant ces résultats.
+- **Navigateur réel** (serveur local sur ce code, base jetable, démonstration par lien privé avec une clé de test locale,
+  un compte de test local) : accueil de la démonstration sans « Rien n'attend » et avec « 2 pièces à renouveler », sans
+  premiers pas ; `/app/exemple` (6 mentions « Exemple · entreprises et client fictifs », « Seul 43 % », moyenne des trois
+  exercices « à confirmer ») ; `/app/marches/2/apercu-partenaire` ouvert directement par son adresse (« Il vous reste 60
+  jours », barre Accepter · Ma part · Donner mon accord · Déposé) ; compte neuf non confirmé : écran « Confirmez votre
+  adresse email » avec la suite, puis, l'adresse confirmée en base, l'écran se ferme seul en quelques secondes et la
+  fenêtre du SIRET s'ouvre ; premiers pas « 0 sur 5 » ; 1 280 et 375 px sans défilement horizontal ; aucune erreur de
+  script de l'application en console.
+
+### T.5 Laissé, avec sa raison
+
+- **Le code de vérification envoyé à l'adresse du partenaire** pour un chef de file non confirmé (8 par jour au plus
+  pour son organisation) : il ne porte pas le lien et c'est le seul moyen pour le partenaire de prouver son adresse
+  avant de soumettre sa part ; comportement de la production, dit dans le commentaire d'`auth.py`.
+- **D14** : rien n'a changé (aucun contrôle d'offre, aucun prix, aucune carte d'offre, ni la vitrine).

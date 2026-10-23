@@ -1,13 +1,12 @@
 """
-Router BASE DE CONNAISSANCES + génération assistée (parité TenderCrunch).
+Router « MON SAVOIR-FAIRE » : la bibliothèque de documents de l'entreprise.
 
 - Base de connaissances : l'entreprise dépose ses documents (mémoires passés, RSE,
-  méthodologies…) → indexés (RAG) pour servir de SEULE source au contenu généré.
-- Mémoire IA : pipeline multi-agents (extraction critères → plan → rédaction citée →
-  contrôle conformité), 100% sourcé sur la base de connaissances.
+  méthodologies…) → indexés (RAG) pour servir de SEULE source au contenu rédigé.
+- Le dossier de présentation ne se rédige PLUS ici (rédaction, vague 2) : il se rédige dans
+  l'atelier, sur la page du marché (app/routers/atelier.py), section par section, à partir de
+  ces documents. Les anciennes routes /memoire et /memoire-upload répondent 410.
 - Questionnaire : auto-complétion cellule par cellule (RFP/RFI/DDQ) avec sources.
-
-Onboarding "Do It For You" : import en masse pour construire la base rapidement.
 """
 import logging
 
@@ -22,8 +21,9 @@ from app.core.quota import consume_analysis
 from app.core.org import member_ids
 from app.models import User, KnowledgeDoc, KnowledgeChunk
 from app.services.analysis import extract_dce_text
+from app.core.uploads import aread_upload_limited
+from starlette.concurrency import run_in_threadpool
 from app.services import rag
-from app.services.agents.memoire import generate_memoire
 from app.services.agents.questionnaire import answer_questions
 
 logger = logging.getLogger("adjugo")
@@ -50,13 +50,11 @@ def list_docs(current_user: User = Depends(get_current_user), db: Session = Depe
 @limiter.limit("60/hour")
 async def upload_doc(request: Request, file: UploadFile = File(...), kind: str = Form("autre"),
                      current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    content = await file.read()
-    if not content:
-        raise HTTPException(400, "Fichier vide.")
-    if len(content) > 50 * 1024 * 1024:
-        raise HTTPException(413, "Fichier trop volumineux (50 Mo max).")
+    from app.core.demo_guard import refuser_demo
+    refuser_demo(current_user, "enrichir votre savoir-faire")   # défense en profondeur (middleware démo)
+    content = await aread_upload_limited(file)   # lecture bornée : 413 au-delà de 50 Mo
     try:
-        text = extract_dce_text(file.filename, content, max_chars=400000)
+        text = await run_in_threadpool(extract_dce_text, file.filename, content, max_chars=400000)
     except ValueError as e:
         raise HTTPException(422, str(e))
     if len((text or "").strip()) < 40:
@@ -75,6 +73,8 @@ class TextDoc(BaseModel):
 @router.post("/text")
 @limiter.limit("60/hour")
 def add_text(request: Request, req: TextDoc, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    from app.core.demo_guard import refuser_demo
+    refuser_demo(current_user, "enrichir votre savoir-faire")   # défense en profondeur (middleware démo)
     if len((req.text or "").strip()) < 40:
         raise HTTPException(422, "Texte trop court.")
     k = req.kind if req.kind in _KINDS else "autre"
@@ -88,10 +88,15 @@ def delete_doc(doc_id: int, current_user: User = Depends(get_current_user), db: 
                                         KnowledgeDoc.user_id == current_user.id).first()
     if not doc:
         raise HTTPException(404, "Document introuvable.")
+    # « Mes preuves » (vague 3) : les fiches dont le passage vient de ce document perdent leur
+    # source (Adjugo ne s'en sert plus tant qu'une autre source n'est pas donnée) — on le dit.
+    from app.core.org import data_owner_id
+    from app.services.preuves import preuves_du_document
+    sans_source = preuves_du_document(db, data_owner_id(current_user, db), doc.id)
     db.query(KnowledgeChunk).filter(KnowledgeChunk.doc_id == doc.id).delete()
     db.delete(doc)
     db.commit()
-    return {"ok": True}
+    return {"ok": True, "preuves_sans_source": sans_source}
 
 
 class SearchReq(BaseModel):
@@ -103,55 +108,23 @@ class SearchReq(BaseModel):
 @limiter.limit("120/hour")
 def search(request: Request, req: SearchReq, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Recherche traçable dans la base : renvoie les extraits sources (clic-vers-source)."""
-    res = rag.retrieve(db, current_user.id, req.query or "", k=max(1, min(req.k, 12)))
+    res = rag.retrieve(db, current_user.id, req.query or "", k=max(1, min(req.k, 12)), pour_ia=False)
     return {"results": res, "count": len(res)}
 
 
-# ── Mémoire IA (multi-agents, sourcé) ────────────────────────────────────────
-def _gen_memoire(text: str, current_user: User, db: Session) -> dict:
-    # Base COMMUNE de l'organisation (chaque base perso reste inchangée ; on les met en commun
-    # pour la génération). Vide → on NE débite PAS un quota pour un livrable 100% « [À compléter] ».
-    uids = member_ids(current_user, db)
-    if db.query(KnowledgeChunk.id).filter(KnowledgeChunk.user_id.in_(uids)).first() is None:
-        raise HTTPException(422, "La base de connaissances de votre organisation est vide : ajoutez au moins "
-                                 "un document (dossier de présentation, fiche RSE, méthodologie) avant de générer.")
-    # Génération longue → asynchrone (anti-timeout). Le client interroge /api/jobs/{id}.
-    consume_analysis(current_user, db)
-    from app.services.jobs import create_job, run_in_thread, job_out
-    job = create_job(db, current_user.id, "memoire", "Mémoire technique")
-    uid = current_user.id
-    run_in_thread(job.id, lambda jdb: generate_memoire(jdb, uid, text, kb_user_ids=uids))
-    return job_out(job)
+# ── Dossier de présentation : remplacé par l'atelier (page du marché) ───────────────
+MSG_ATELIER = ("Le dossier de présentation se rédige maintenant sur la page du marché, carte « Dossier de "
+               "présentation ». Vos documents restent ici et servent de source.")
 
 
 @router.post("/memoire-upload")
-@limiter.limit("20/hour")
-async def memoire_upload(request: Request, file: UploadFile = File(...),
-                         current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    content = await file.read()
-    if not content:
-        raise HTTPException(400, "Fichier vide.")
-    if len(content) > 50 * 1024 * 1024:
-        raise HTTPException(413, "Fichier trop volumineux (50 Mo max).")
-    try:
-        text = extract_dce_text(file.filename, content)
-    except ValueError as e:
-        raise HTTPException(422, str(e))
-    if len((text or "").strip()) < 60:
-        raise HTTPException(422, "DCE trop court pour générer un mémoire.")
-    return _gen_memoire(text, current_user, db)
-
-
-class MemoireText(BaseModel):
-    dce_text: str
+def memoire_upload(current_user: User = Depends(get_current_user)):
+    raise HTTPException(410, MSG_ATELIER)
 
 
 @router.post("/memoire")
-@limiter.limit("20/hour")
-def memoire_text(request: Request, req: MemoireText, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    if len((req.dce_text or "").strip()) < 60:
-        raise HTTPException(422, "DCE trop court pour générer un mémoire.")
-    return _gen_memoire(req.dce_text, current_user, db)
+def memoire_text(current_user: User = Depends(get_current_user)):
+    raise HTTPException(410, MSG_ATELIER)
 
 
 # ── Questionnaire (RFP/RFI/DDQ) ──────────────────────────────────────────────
@@ -169,7 +142,8 @@ def questionnaire(request: Request, req: QuestionnaireReq, current_user: User = 
     if db.query(KnowledgeChunk.id).filter(KnowledgeChunk.user_id.in_(uids)).first() is None:
         raise HTTPException(422, "La base de connaissances de votre organisation est vide : ajoutez au moins "
                                  "un document avant de répondre à un questionnaire.")
-    consume_analysis(current_user, db)
+    from app.services.budget_ia import estimer
+    consume_analysis(current_user, db, "questionnaire", estimer("questionnaire", n=len(qs)))
     # Asynchrone (anti-timeout) : jusqu'à 40 questions × LLM, traitées en tâche de fond.
     from app.services.jobs import create_job, run_in_thread, job_out
     job = create_job(db, current_user.id, "questionnaire", f"Questionnaire ({len(qs)} questions)")

@@ -58,7 +58,7 @@ Renvoie EXACTEMENT ce JSON :
 }}
 Entreprises autorisées pour « attribue_a » : {", ".join(names)}. N'invente aucun lot ni montant."""
     try:
-        data = complete_json(_SYS, user, max_tokens=2200, temperature=0.2)
+        data = complete_json(_SYS, user, max_tokens=2200, temperature=0.2, tache="repartition")
     except Exception as e:
         logger.warning("warroom.propose en échec : %s", e)
         return {"marche_objet": "", "lots": [], "montant_total_estime": None,

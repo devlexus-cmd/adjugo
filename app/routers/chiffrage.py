@@ -52,6 +52,17 @@ class ReviewRequest(BaseModel):
     note: str = ""
 
 
+
+def _unfreeze_after_estimate(db, p, current_user) -> None:
+    """Le chiffrage du mandataire = sa part de l'offre commune : s'il change, un total figé
+    devient faux → on défige (avec trace offer.unfrozen). Best-effort."""
+    try:
+        from app.routers.invites import _unfreeze_offer_if_needed
+        _unfreeze_offer_if_needed(db, p.id, "chiffrage du chef de file modifié",
+                                  actor=f"user:{current_user.id}", actor_kind="owner")
+    except Exception:
+        pass
+
 @router.get("/{project_id}")
 def get_estimate(project_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     return _project(project_id, current_user, db).estimate or {}
@@ -67,6 +78,8 @@ def make_estimate(project_id: int, req: EstimateRequest, request: Request,
         raise HTTPException(400, "Analysez d'abord le DCE pour pouvoir le chiffrer.")
     rates, th, su, rates_default = _rates(current_user, db)
     from app.services.llm import LLMUnavailable, tenant_scope
+    from app.services.budget_ia import verifier
+    verifier(current_user, db, "chiffrage")      # essai gratuit : 402 avant l'appel si la limite d'usage est atteinte
     try:
         with tenant_scope(current_user.id):
             tasks = propose_tasks(details, [r.get("label") for r in rates])
@@ -79,6 +92,7 @@ def make_estimate(project_id: int, req: EstimateRequest, request: Request,
     est["rates_default"] = rates_default   # tarifs GÉNÉRIQUES non personnalisés → à signaler à l'user
     p.estimate = est
     db.commit()
+    _unfreeze_after_estimate(db, p, current_user)
     return est
 
 
@@ -92,7 +106,8 @@ def download_dpgf(project_id: int, current_user: User = Depends(get_current_user
     from app.services.dpgf import generate_dpgf_pdf
     pdf = generate_dpgf_pdf(p.estimate, (company.name if company else "Entreprise"), p.name,
                             tva_rate=getattr(p, "tva_rate", 0) or 0)
-    fn = "DPGF-" + (re.sub(r"[^A-Za-z0-9]+", "-", p.name or "marche").strip("-")[:40] or "marche") + ".pdf"
+    # Nom juste : l'estimation d'Adjugo mise en forme (PDF), pas la pièce de prix de l'acheteur.
+    fn = "Estimation-detaillee-" + (re.sub(r"[^A-Za-z0-9]+", "-", p.name or "marche").strip("-")[:40] or "marche") + ".pdf"
     return Response(content=pdf, media_type="application/pdf",
                     headers={"Content-Disposition": f'attachment; filename="{fn}"'})
 
@@ -107,6 +122,7 @@ def save_estimate(project_id: int, req: SaveRequest,
     est["rates_used"] = rates
     p.estimate = est   # toute modification invalide une validation précédente
     db.commit()
+    _unfreeze_after_estimate(db, p, current_user)
     return est
 
 
@@ -121,6 +137,6 @@ def review_estimate(project_id: int, req: ReviewRequest,
     est = dict(p.estimate)
     est["review"] = {"status": status, "by": current_user.full_name or current_user.email,
                      "note": (req.note or "")[:500], "at": utcnow().isoformat()}
-    p.estimate = est
+    p.estimate = est          # revue seulement : le montant ne change pas → l'offre figée reste valable
     db.commit()
     return est

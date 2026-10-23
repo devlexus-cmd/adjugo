@@ -42,6 +42,11 @@ else:
         pool_recycle=1800,   # recycle les connexions > 30 min (évite les conn. mortes)
         pool_size=10,
         max_overflow=20,
+        # Session Postgres TOUJOURS en UTC : les dates sont rangées dans des colonnes sans fuseau.
+        # Avec une session dans un autre fuseau, un datetime « avec fuseau » était converti à
+        # l'écriture et relu décalé (journal chaîné qui semble altéré, délais de relance faux).
+        # Sans effet si la base est déjà en UTC.
+        connect_args={"options": "-c timezone=UTC"},
     )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

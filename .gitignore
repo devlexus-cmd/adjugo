@@ -34,6 +34,12 @@ __pycache__/
 # Artefacts générés
 *.zip
 test_adjugo.db
+test_*.db
+
+# Mémoires de calibration des PME et mesures (accord écrit, durée limitée) : jamais dans git
+# (scripts/mesure_fausses_alertes.py refuse d'ailleurs un dossier situé dans le dépôt)
+calibration/
+mesure/
 
 # Claude Code local settings
 .claude/settings.local.json

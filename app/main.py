@@ -39,6 +39,11 @@ if settings.ENVIRONMENT == "production":
         raise RuntimeError("DEMO_MODE=True interdit en production (endpoints sans auth). Mettez DEMO_MODE=false.")
     if not settings.CRON_SECRET:
         raise RuntimeError("CRON_SECRET requis en production (protège /api/admin/run-*). Définissez-le.")
+    # L'endpoint acheteur /api/dce/generate appelle le LLM ; en prod il doit être protégé
+    # par un code d'accès (sinon endpoint coûteux ouvert). Fail-closed, comme ci-dessus.
+    if not os.getenv("DCE_ACCESS_CODE", "").strip():
+        raise RuntimeError("DCE_ACCESS_CODE requis en production (protège /api/dce/generate, "
+                           "endpoint LLM du produit acheteur). Définissez-le.")
 # Rate-limit en mémoire = compteur PAR worker : avec >1 worker, la limite réelle est
 # multipliée par le nombre de workers → protection illusoire. L'enforcement FAIL-SAFE
 # est dans entrypoint.sh : sans RATELIMIT_STORAGE_URI=redis://, il ramène le nombre de
@@ -59,10 +64,20 @@ if _mem_rl and _workers > 1:
 if _is_sqlite:
     Base.metadata.create_all(bind=engine)
     # Ajoute les colonnes de modèle manquantes sur une base déjà créée (idempotent).
-    from app.core.dbsync import ensure_sqlite_columns
+    from app.core.dbsync import ensure_sqlite_columns, ensure_sqlite_statuts
     ensure_sqlite_columns(engine, Base)
+    ensure_sqlite_statuts(engine)          # vague 2a : « envoye » → « depose » (comme la migration c4axeetapes)
 
-app = FastAPI(title=settings.APP_NAME, version=settings.APP_VERSION, description="API pour la gestion des marches publics", docs_url="/docs")
+# Documentation interactive (Swagger /docs, ReDoc /redoc, schéma /openapi.json) : utile en
+# dev, mais en PRODUCTION c'est une carte complète de l'API (routes admin/cron, schémas
+# Stripe/RGPD/invitations) offerte sans authentification → coupée. Même détection de la prod
+# que les garde-fous ci-dessus (settings.ENVIRONMENT, normalisé en minuscules dans config).
+_IS_PROD = settings.ENVIRONMENT == "production"
+app = FastAPI(title=settings.APP_NAME, version=settings.APP_VERSION,
+              description="API pour la gestion des marches publics",
+              docs_url=None if _IS_PROD else "/docs",
+              redoc_url=None if _IS_PROD else "/redoc",
+              openapi_url=None if _IS_PROD else "/openapi.json")
 
 # Rate limiting
 from slowapi.errors import RateLimitExceeded
@@ -84,19 +99,201 @@ app.add_middleware(GZipMiddleware, minimum_size=800)
 from app.core.idempotency import IdempotencyMiddleware
 app.add_middleware(IdempotencyMiddleware)
 
+# Taille maximale des corps de requête (audit cyber oct. 2026, faille 2). Middleware ASGI
+# pur, ajouté APRÈS l'idempotence donc exécuté AVANT elle (Starlette : dernier ajouté =
+# premier traversé) et avant tout ce qui lit le corps (routes, formulaires, webhook Stripe).
+# Deux contrôles : Content-Length annoncé (refus immédiat, rien n'est lu) ET octets
+# réellement reçus (transfert « chunked » ou client qui ment). Le corps n'est ni copié ni
+# modifié : le webhook Stripe reçoit ses octets bruts intacts pour vérifier la signature.
+import re as _re
+from starlette.exceptions import HTTPException as _StarletteHTTPException
+
+_MB = 1024 * 1024
+BODY_LIMIT_UPLOAD = 60 * _MB     # routes d'envoi de fichiers (multipart)
+BODY_LIMIT_DEFAULT = 2 * _MB     # tout le reste (JSON, formulaires, webhook)
+_UPLOAD_ROUTES = [(m, _re.compile(rx)) for m, rx in (
+    ("POST", r"^/api/documents/?$"),
+    ("PUT",  r"^/api/documents/[^/]+/replace/?$"),
+    ("POST", r"^/api/sourcing/analyze-upload/?$"),
+    ("POST", r"^/api/amont/analyze-upload/?$"),
+    ("POST", r"^/api/knowledge/upload/?$"),
+    ("POST", r"^/api/invite/[^/]+/contribution/piece/?$"),
+)]
+_MSG_TOO_BIG_UPLOAD = "Fichier trop volumineux : 60 Mo maximum."
+_MSG_TOO_BIG = "Les données envoyées sont trop volumineuses."
+
+
+def _routed_path(scope) -> str:
+    """Chemin réellement routé (scope ASGI, root_path retiré) — jamais l'en-tête Host."""
+    path = scope.get("path") or ""
+    root = scope.get("root_path") or ""
+    if root and path.startswith(root):
+        path = path[len(root):] or "/"
+    return path
+
+
+def body_limit_for(scope) -> tuple:
+    """(limite en octets, message) pour cette requête."""
+    method = (scope.get("method") or "").upper()
+    # Starlette (request.form, Headers.get) lit le PREMIER Content-Type : on fait de même.
+    # Plusieurs Content-Type = requête ambiguë → limite basse (sinon « urlencoded » puis
+    # « multipart » obtenait la limite des fichiers pour un formulaire analysé en mémoire).
+    ctypes = [v for k, v in (scope.get("headers") or []) if k.lower() == b"content-type"]
+    if len(ctypes) != 1:
+        return BODY_LIMIT_DEFAULT, _MSG_TOO_BIG
+    ctype = ctypes[0]
+    if ctype.strip().lower().startswith(b"multipart/"):
+        path = _routed_path(scope)
+        if any(m == method and rx.match(path) for m, rx in _UPLOAD_ROUTES):
+            return BODY_LIMIT_UPLOAD, _MSG_TOO_BIG_UPLOAD
+    return BODY_LIMIT_DEFAULT, _MSG_TOO_BIG
+
+
+class _BodyTooLarge(_StarletteHTTPException):
+    """Levée par receive() au-delà de la limite. Sous-classe d'HTTPException : FastAPI la
+    relaie telle quelle (413 en français) au lieu d'un 400 « error parsing the body »."""
+    def __init__(self, detail: str):
+        super().__init__(status_code=413, detail=detail)
+
+
+async def _send_413(send, detail: str):
+    import json as _json
+    body = _json.dumps({"detail": detail}, ensure_ascii=False).encode("utf-8")
+    await send({"type": "http.response.start", "status": 413, "headers": [
+        (b"content-type", b"application/json"), (b"content-length", str(len(body)).encode()),
+        (b"connection", b"close")]})
+    await send({"type": "http.response.body", "body": body, "more_body": False})
+
+
+class BodySizeLimitMiddleware:
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope.get("type") != "http":
+            return await self.app(scope, receive, send)
+        limit, detail = body_limit_for(scope)
+        for k, v in scope.get("headers") or []:
+            if k.lower() == b"content-length":
+                try:
+                    declared = int(v.decode("latin-1").strip())
+                except ValueError:
+                    declared = 0      # le serveur HTTP rejette déjà un Content-Length invalide
+                if declared > limit:
+                    return await _send_413(send, detail)
+        received = 0
+        started = False
+
+        async def _receive():
+            nonlocal received
+            message = await receive()
+            if message.get("type") == "http.request":
+                received += len(message.get("body", b""))
+                if received > limit:
+                    raise _BodyTooLarge(detail)
+            return message
+
+        async def _send(message):
+            nonlocal started
+            if message.get("type") == "http.response.start":
+                started = True
+            await send(message)
+
+        try:
+            await self.app(scope, _receive, _send)
+        except _BodyTooLarge as e:
+            if not started:
+                await _send_413(send, e.detail)
+
+
+app.add_middleware(BodySizeLimitMiddleware)
+
 
 app.middleware("http")(request_logger)
+
+# Compte démo public = vitrine en LECTURE GUIDÉE : 403 explicite sur l'envoi d'emails, les
+# téléversements, les appels IA payants et la gestion du compte/abonnement/équipe (liste
+# explicite dans app/core/demo_guard.py). Enregistré AVANT security_headers → la réponse
+# 403 reçoit quand même les en-têtes de sécurité.
+from app.core.demo_guard import demo_guard_middleware
+app.middleware("http")(demo_guard_middleware)
 
 # CSP — verrouille les origines. 'unsafe-eval'/'unsafe-inline' requis car Vue (CDN)
 # compile les templates à l'exécution et l'app utilise des styles inline (pas de build).
 # Un build front permettrait de les retirer plus tard.
+# Si un outil de mesure d'audience est configuré (ANALYTICS_SRC), on autorise SON origine
+# dans script-src ET connect-src — sinon le script et son beacon étaient bloqués par la CSP
+# (fonctionnalité activable par variable d'env mais silencieusement inopérante).
+def _analytics_origin() -> str:
+    src = (settings.ANALYTICS_SRC or "").strip()
+    if not src:
+        return ""
+    try:
+        from urllib.parse import urlparse
+        u = urlparse(src)
+        return f"{u.scheme}://{u.netloc}" if u.scheme and u.netloc else ""
+    except Exception:
+        return ""
+
+
+_ANALYTICS_ORIGIN = _analytics_origin()
+_SCRIPT_EXTRA = (" " + _ANALYTICS_ORIGIN) if _ANALYTICS_ORIGIN else ""
+_CONNECT_EXTRA = (" " + _ANALYTICS_ORIGIN) if _ANALYTICS_ORIGIN else ""
+# cdn.jsdelivr.net / fastapi.tiangolo.com ne servent QU'À Swagger/ReDoc (le front auto-héberge
+# ses libs) : autorisés seulement hors production, là où la doc interactive existe encore.
+_DOCS_SCRIPT = "" if _IS_PROD else " https://cdn.jsdelivr.net"
+_DOCS_IMG = "" if _IS_PROD else " https://cdn.jsdelivr.net https://fastapi.tiangolo.com"
+
+
+def _inline_script_hashes() -> str:
+    """Empreintes sha256 (base64) des scripts EN LIGNE de toutes les pages HTML servies, pour la
+    CSP (script-src). C'est ce qui permet de RETIRER 'unsafe-inline' : seuls les scripts dont le
+    contenu correspond EXACTEMENT à l'une de ces empreintes s'exécutent. Calculé au démarrage à
+    partir des fichiers (toujours à jour : un script en ligne modifié met à jour son empreinte au
+    prochain démarrage). Les pages sont servies telles quelles — le SRI ne touche que les
+    <script src>, jamais les scripts en ligne, et aucun routeur ne génère de script en ligne — donc
+    l'empreinte du fichier correspond à ce que hache le navigateur. (Les pages légales n'ont aucun
+    script en ligne : la substitution {{AI_}} au service ne change donc aucune empreinte.)
+    'unsafe-eval' est retiré séparément : le front Vue est servi en build runtime-only avec des
+    gabarits PRÉCOMPILÉS (scripts/precompile_vue.mjs), donc plus aucune compilation (new Function)."""
+    import base64 as _b64, hashlib as _hl, re as _re2
+    static = os.path.join(os.path.dirname(__file__), "static")
+    tag = _re2.compile(r"<script\b([^>]*)>(.*?)</script>", _re2.IGNORECASE | _re2.DOTALL)
+    has_src = _re2.compile(r"\bsrc\s*=", _re2.IGNORECASE)
+    hashes = set()
+    for base in (static, os.path.join(static, "legal")):
+        try:
+            names = os.listdir(base)
+        except OSError:
+            continue
+        for fn in names:
+            if not fn.endswith(".html"):
+                continue
+            try:
+                with open(os.path.join(base, fn), encoding="utf-8") as _f:
+                    html = _f.read()
+            except OSError:
+                continue
+            for m in tag.finditer(html):
+                if has_src.search(m.group(1)):
+                    continue
+                body = m.group(2)
+                if not body.strip():
+                    continue
+                hashes.add("'sha256-" + _b64.b64encode(_hl.sha256(body.encode("utf-8")).digest()).decode("ascii") + "'")
+    return " ".join(sorted(hashes))
+
+
+_INLINE_SCRIPT_HASHES = _inline_script_hashes()
+# script-src SANS 'unsafe-inline' ni 'unsafe-eval' (note A+ Mozilla Observatory) : les scripts en
+# ligne sont autorisés par empreinte (ci-dessus), et Vue ne compile plus dans le navigateur.
 _CSP = (
     "default-src 'self'; "
-    "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net; "
-    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; "
+    f"script-src 'self' {_INLINE_SCRIPT_HASHES}{_DOCS_SCRIPT}{_SCRIPT_EXTRA}; "
+    f"style-src 'self' 'unsafe-inline' https://fonts.googleapis.com{_DOCS_SCRIPT}; "
     "font-src 'self' data: https://fonts.gstatic.com; "
-    "img-src 'self' data: blob: https://cdn.jsdelivr.net https://fastapi.tiangolo.com; "
-    "connect-src 'self'; worker-src 'self' blob:; "
+    f"img-src 'self' data: blob:{_DOCS_IMG}; "
+    f"connect-src 'self'{_CONNECT_EXTRA}; worker-src 'self' blob:; "
     "frame-ancestors 'self'; base-uri 'self'; form-action 'self'; object-src 'none'"
 )
 
@@ -114,11 +311,12 @@ async def security_headers(request, call_next):
     # Cache des assets :
     #  • /static/vendor/* : libs épinglées par VERSION dans le nom → immuables, cache long
     #    (un bump = nouveau nom de fichier = nouvelle URL, donc jamais de version périmée).
-    #  • le reste (/app, /, app.js, styles.css) : no-store, pour ne jamais exécuter un build périmé.
+    #  • le reste (/app et ses adresses /app/…, /, app.js, styles.css) : no-store, pour ne jamais exécuter un
+    #    build périmé (réorganisation, vague 2a : une adresse par écran, docs/REORGANISATION_V2A.md, A1).
     p = request.url.path
     if p.startswith("/static/vendor/"):
         resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
-    elif p == "/app" or p == "/" or p.startswith("/static"):
+    elif p == "/app" or p.startswith("/app/") or p == "/" or p.startswith("/static"):
         resp.headers["Cache-Control"] = "no-store, must-revalidate"
         resp.headers["Pragma"] = "no-cache"
     return resp
@@ -136,6 +334,12 @@ app.include_router(criteria_v2_router)
 app.include_router(cerfa.router)
 app.include_router(stripe_pay.router)
 app.include_router(cotraitants.router)
+from app.routers.groupement import router as groupement_router   # « Répondre à plusieurs ? »
+app.include_router(groupement_router)
+# « Monter le groupement » (co-traitance v2, vague 2) : convention + accords des membres.
+from app.routers.convention import owner_router as convention_owner_router, guest_router as convention_guest_router
+app.include_router(convention_owner_router)
+app.include_router(convention_guest_router)
 app.include_router(export_dossier.router)
 app.include_router(checklist.router)
 app.include_router(chiffrage.router)
@@ -149,10 +353,48 @@ from app.routers.amont import router as amont_router
 app.include_router(amont_router)
 from app.routers.knowledge import router as knowledge_router
 app.include_router(knowledge_router)
+# Rédaction, vague 3 : « Mes preuves » (faits de l'entreprise, chacun avec sa source typée).
+# Les routes des écrans (reprise de l'existant, insertion dans l'atelier) passent AVANT le socle :
+# « /api/preuves/reprise » ne doit pas être lu comme la preuve n° « reprise ».
+from app.routers.preuves_ecrans import router as preuves_ecrans_router
+app.include_router(preuves_ecrans_router)
+# Rédaction, vague 5 (E2) : « Retrouver mes marchés publics » (DECP) et mes qualifications RGE (ADEME), dans
+# « Mes preuves » et dans la part d'un partenaire du groupement. Avant le socle, comme les écrans.
+from app.routers.preuves_publiques import router as preuves_publiques_router
+app.include_router(preuves_publiques_router)
+from app.routers.preuves import router as preuves_router
+app.include_router(preuves_router)
+# Rédaction, vague 3 (chantier I) : fiches PROPOSÉES à partir des anciens documents de « Mon savoir-faire ».
+from app.routers.fiches_import import router as fiches_import_router
+app.include_router(fiches_import_router)
+# Rédaction, vague 2 : l'atelier du dossier de présentation (sections, versions, validation,
+# rédaction en tâche de fond, « à relire », export Word et PDF bloqué sauf dérogation).
+# Rédaction, vague 4 : le dossier de groupement cloisonné (« Qui écrit quoi », parts des partenaires,
+# validation du dossier assemblé). Avant l'atelier : ses chemins sont plus précis.
+from app.routers.atelier_groupement import router as atelier_groupement_router
+app.include_router(atelier_groupement_router)
+# Rédaction, vague 5 (D) : l'entretien chantier (questions motivées par le dossier, fiche chantier, questions
+# posées à un partenaire dans son espace). Avant l'atelier : ses chemins sont plus précis.
+from app.routers.entretien import router as entretien_router
+app.include_router(entretien_router)
+from app.routers.atelier import router as atelier_router
+app.include_router(atelier_router)
+# Rédaction, vague 6 (F) : le carnet de notes (« Demandez vos notes », notes validées critère par critère,
+# « Où vous perdez des points », dossier gagné ajouté au savoir-faire).
+from app.routers.carnet import router as carnet_router
+app.include_router(carnet_router)
 from app.routers.rgpd import router as rgpd_router
 app.include_router(rgpd_router)
 from app.routers.feedback import router as feedback_router
 app.include_router(feedback_router)
+# Réorganisation de l'interface, vague 1 (1.1) : mesure d'usage, un compteur par écran et par jour, sans donnée
+# personnelle (docs/REORGANISATION_V1.md).
+from app.routers.mesure import router as mesure_router
+app.include_router(mesure_router)
+# Réorganisation de l'interface, vague 2b (B1) : la prise en main — « Vos premiers pas » et la carte « Faites-vous
+# trouver », état gardé sur le serveur (docs/REORGANISATION_V2B.md).
+from app.routers.prise_en_main import router as prise_en_main_router
+app.include_router(prise_en_main_router)
 # « Merged Brain » (CoSpace) ARCHIVÉ : doublon du Réseau Adjugo (lien d'invitation +
 # contribution cloisonnée). Routeur non monté ; modèles conservés (pas de migration).
 # from app.routers.cospace import router as cospace_router
@@ -161,6 +403,24 @@ from app.routers.jobs import router as jobs_router
 app.include_router(jobs_router)
 from app.routers.invites import router as invites_router
 app.include_router(invites_router)
+from app.routers.reseau import router as reseau_router     # réseau de partenaires (vague 3)
+app.include_router(reseau_router)
+# Co-traitance v2, vague 4 : journal vérifiable par chaque membre (intégrité + exports),
+# dépôt (« Marquer déposé ») et tableau de bord des groupements.
+from app.routers.journal_membre import router as journal_membre_router
+app.include_router(journal_membre_router)
+from app.routers.groupement import dashboard_router as groupement_dashboard_router
+app.include_router(groupement_dashboard_router)
+# Produit ACHETEUR (collectivités) — Pilier 1 : rédacteur de DCE. Cloisonné du logiciel
+# PME (génération pure, aucune donnée tenant) ; page autonome /acheteur.
+from app.routers.dce import router as dce_router
+app.include_router(dce_router)
+# Espace ACHETEUR (collectivités) : comptes cloisonnés (table séparée, JWT typ=acheteur)
+# + DCE sauvegardés. Aucune donnée PME.
+from app.routers.acheteur import router as acheteur_router
+app.include_router(acheteur_router)
+from app.routers import contact as _contact_router
+app.include_router(_contact_router.router)
 
 # Fichiers statiques du logiciel (SPA)
 _static_dir = os.path.join(os.path.dirname(__file__), "static")
@@ -180,30 +440,194 @@ def root():
         return HTMLResponse(f.read())
 
 
+# « Lecture et analyse » : lire un document et en extraire des éléments (dossiers des acheteurs, et
+# anciens documents de l'entreprise pour proposer des fiches de preuves, rédaction vague 3).
+_TACHES_LECTURE = {"analyse", "lecture_pieces", "exigences", "veille", "deliberation", "renouvellements",
+                   "fiches_preuves"}
+
+
+def _h(texte: str) -> str:
+    """Apostrophes échappées comme dans les pages juridiques générées."""
+    return texte.replace("'", "&#x27;")
+
+
+def _role_ia(taches) -> str:
+    t = set(taches or [])
+    lect, autres = bool(t & _TACHES_LECTURE), bool(t - _TACHES_LECTURE)
+    if lect and autres:
+        return "lecture des dossiers, questions et rédaction"
+    if lect:
+        return "lecture et analyse des dossiers"
+    return "questions sur les dossiers et rédaction"
+
+
+def _role_transfert(taches) -> str:
+    """Même découpage que _role_ia, avec les articles (phrase sur les transferts)."""
+    t = set(taches or [])
+    lect, autres = bool(t & _TACHES_LECTURE), bool(t - _TACHES_LECTURE)
+    if lect and autres:
+        return "la lecture des dossiers, les questions et la rédaction"
+    if lect:
+        return "la lecture et l'analyse des dossiers"
+    return "les questions sur les dossiers et la rédaction"
+
+
+def _usage_transfert(principal, secours) -> str:
+    """« pour … », « pour …, et en relais pour … » ou « en relais pour … », d'après les tâches
+    RÉELLEMENT confiées au fournisseur (principal) et celles qu'il reprend en cas de panne (secours)."""
+    parts = []
+    if principal:
+        parts.append("pour " + _role_transfert(principal))
+    if secours:
+        parts.append(("et " if principal else "") + "en relais pour " + _role_transfert(secours))
+    return ", ".join(parts)
+
+
+# Mistral AI : la liste de SES sous-traitants n'a pas pu être vérifiée (12/10/2026). Aucun nom ici,
+# seulement le renvoi vers la liste qu'il publie lui-même.
+_MISTRAL_SOUS_TRAITANTS_URL = "https://trust.mistral.ai/subprocessors"
+_MISTRAL_SOUS_TRAITANTS = ("Mistral AI s'appuie sur ses propres sous-traitants techniques, dont la liste à jour est "
+                           "publiée sur son centre de confiance "
+                           f"(<a href=\"{_MISTRAL_SOUS_TRAITANTS_URL}\">{_MISTRAL_SOUS_TRAITANTS_URL}</a>)")
+_MISTRAL_SOUS_TRAITANTS_COURT = "sous-traitants de Mistral AI : liste publiée sur trust.mistral.ai/subprocessors"
+# Entraînement et conservation, par fournisseur (faits vérifiés le 12/10/2026). Mistral AI : « jusqu'à »
+# 30 jours, jamais « aucune conservation » (la non-conservation n'est pas confirmée pour le compte).
+_ANTH_ENTRAINEMENT = "Anthropic : jamais sans autorisation"
+_MISTRAL_ENTRAINEMENT = "Mistral AI : utilisation pour l'amélioration des modèles désactivée sur le compte de l'Éditeur"
+_MISTRAL_ENTRAINEMENT_NON_CONFIRME = ("Mistral AI : utilisation pour l'amélioration des modèles active par défaut, "
+                                      "sa désactivation sur le compte de l'Éditeur n'étant pas encore confirmée")
+_ANTH_CONSERVATION = ("Anthropic : 30 jours en règle générale, jusqu'à 2 ans pour les contenus signalés pour "
+                      "non-respect de ses règles d'usage")
+_MISTRAL_CONSERVATION = "Mistral AI : jusqu'à 30 jours glissants, pour la surveillance des abus"
+
+
+def _phrase_roles(intervenants) -> str:
+    """Qui fait quoi, d'après les tâches RÉELLEMENT confiées à chacun (principal) et celles qu'il reprend
+    en cas de panne (secours). intervenants : [(libellé, principal, secours), …].
+    Cas habituel (chacun est le relais exact de l'autre) : « A intervient pour … ; B, pour … ; chacun
+    prend le relais de l'autre en cas de panne ou d'erreur. » Sinon, le détail de chacun."""
+    actifs = [(lib, list(p or []), list(s or [])) for lib, p, s in intervenants if p or s]
+    if len(actifs) == 2:
+        (la, pa, sa), (lb, pb, sb) = actifs
+        if pa and pb and set(sa) == set(pb) and set(sb) == set(pa):
+            return (f"{la} intervient {_usage_transfert(pa, None)} ; {lb}, {_usage_transfert(pb, None)} ; "
+                    "chacun prend le relais de l'autre en cas de panne ou d'erreur.")
+    phrase = " ; ".join(f"{lib} intervient {_usage_transfert(p, s)}" for lib, p, s in actifs)
+    if any(s for _lib, _p, s in actifs):
+        phrase += " ; un relais ne joue qu'en cas de panne ou d'erreur de l'autre fournisseur"
+    return phrase + "."
+
+
 def _ai_subprocessor_fragments():
-    """Fragments décrivant le sous-traitant IA RÉELLEMENT actif, injectés dans les pages
-    légales (confidentialité + DPA). Ainsi le doc reflète toujours la vérité : Anthropic (US)
-    tant que c'est Anthropic, Mistral (FR/UE) dès qu'on bascule — aucune mise à jour manuelle,
-    aucun risque que la politique « mente » sur la localisation des données."""
-    try:
-        from app.services.llm import active_provider
-        if active_provider().get("provider") == "mistral":
-            return {
-                "{{AI_PROVIDER}}": "Mistral AI",
-                "{{AI_PRODUCT}}": "La Plateforme",
-                "{{AI_LOCATION_FULL}}": "<strong>Union européenne</strong> (France — api.mistral.ai)",
-                "{{AI_LOCATION_SHORT}}": "Union européenne (France)",
-                "{{AI_TRANSFER_MENTION}}": "",   # IA hébergée en UE → plus de transfert pays tiers pour ce traitement
-            }
-    except Exception:
-        pass
-    # Défaut sûr : Anthropic (état de production actuel).
-    return {
+    """Fragments décrivant les fournisseurs d'IA RÉELLEMENT sollicités avec la configuration du serveur
+    (routage par tâche ET secours, app.services.llm), injectés dans les pages légales (confidentialité,
+    DPA, sécurité). Exacts dans TOUTES les configurations : Anthropic seul (Mistral non activé, ou
+    LLM_PROVIDER=anthropic), Anthropic et Mistral AI (point d'accès UE ou mondial), Mistral AI seul
+    (LLM_PROVIDER=mistral). Anthropic : stockage aux États-Unis, calcul possiblement hors des États-Unis
+    par son routage mondial, CCT ; jamais d'entraînement sans autorisation ; conservation de 30 jours en
+    règle générale. Mistral AI, dès qu'il est ACTIVÉ (clé, MISTRAL_ACTIF et désinscription de
+    l'entraînement confirmée) : lieu de calcul du point d'accès RÉELLEMENT utilisé (UE et AELE par
+    api.eu.mistral.ai, ou sans engagement de lieu par le point d'accès mondial), désinscription,
+    conservation jusqu'à 30 jours glissants, renvoi vers la liste de SES sous-traitants (aucun nom).
+    Le rôle de chacun (et les relais) est tiré du routage effectif, jamais écrit en dur. Repères et textes
+    publiés : docs/IA_FOURNISSEURS_PAGES_JURIDIQUES.md."""
+    anth_full = ("<strong>États-Unis</strong> pour le stockage (API standard api.anthropic.com) ; calcul "
+                 "possiblement hors des États-Unis (routage mondial d'Anthropic) — encadré par CCT")
+    anth_court = "États-Unis pour le stockage, calcul possiblement hors des États-Unis (CCT)"
+    anth_transfert = "États-Unis ; calcul possiblement dans d'autres pays"
+    defaut = {
         "{{AI_PROVIDER}}": "Anthropic, PBC",
         "{{AI_PRODUCT}}": "Claude API",
-        "{{AI_LOCATION_FULL}}": "<strong>États-Unis</strong> (API standard api.anthropic.com — encadré par CCT)",
-        "{{AI_LOCATION_SHORT}}": "États-Unis (CCT)",
-        "{{AI_TRANSFER_MENTION}}": "le fournisseur d&#x27;IA (Anthropic, États-Unis) pour l&#x27;analyse et la génération de documents, ",
+        "{{AI_LOCATION_FULL}}": _h(anth_full),
+        "{{AI_LOCATION_SHORT}}": _h(anth_court),
+        "{{AI_TRANSFER_MENTION}}": _h(f"le fournisseur d'IA (Anthropic, {anth_transfert}) pour l'analyse et la génération de "
+                                      "documents, "),
+        "{{AI_ROLES}}": _h("Anthropic (Claude API) intervient pour la lecture des dossiers, les questions et la rédaction."),
+        "{{AI_ENTRAINEMENT}}": _h(_ANTH_ENTRAINEMENT),
+        "{{AI_ENTRAINEMENT_FOURNISSEURS}}": _h("de notre fournisseur, Anthropic"),
+        "{{AI_CONSERVATION}}": _h(_ANTH_CONSERVATION),
+        "{{AI_SOUS_TRAITANTS_MISTRAL}}": "",
+        "{{AI_CCT_MISTRAL}}": "",
+    }
+    try:
+        from app.services.llm import etat_juridique
+        e = etat_juridique()
+    except Exception:
+        return defaut
+    if not e.get("mistral"):
+        return defaut
+    taches = e.get("taches") or {}
+    t_m = taches.get("mistral") or {}
+    t_a = taches.get("anthropic") or {}
+    role_m = _role_ia(t_m.get("principal") or t_m.get("secours"))
+    role_a = _role_ia(t_a.get("principal") or t_a.get("secours"))
+    ue = e.get("mistral_zone") == "ue"
+    if ue:
+        lieu_m = ("calcul dans des centres de données de l'<strong>Union européenne et de l'AELE</strong> "
+                  "(point d'accès régional api.eu.mistral.ai), les données de fonctionnement du compte "
+                  "(facturation, configuration) pouvant être traitées hors de cette zone")
+        lieu_m_court = "Union européenne et AELE pour le calcul (api.eu.mistral.ai)"
+        transfert_m = "calcul dans l'Union européenne et l'AELE"
+    else:
+        lieu_m = ("point d'accès mondial (api.mistral.ai) <strong>sans engagement de lieu de calcul</strong> : "
+                  "centres de données de ses sous-traitants, possiblement hors de l'Union européenne ; "
+                  "stockage dans l'Union européenne par défaut")
+        lieu_m_court = "lieu de calcul non garanti, possiblement hors Union européenne"
+        transfert_m = "calcul possiblement hors de l'Union européenne"
+    # Phrase complète (avec le lien) sous le tableau : ici, la forme courte.
+    sous_traitants = f"{_MISTRAL_SOUS_TRAITANTS_COURT} ; transferts encadrés par CCT"
+    desinscrit = bool(e.get("mistral_entrainement_desactive"))
+    if desinscrit:
+        entr = ("utilisation des contenus pour l'amélioration des modèles de Mistral AI désactivée par "
+                "l'Éditeur sur son compte")
+    else:
+        entr = ("utilisation des contenus pour l'amélioration des modèles de Mistral AI : active par défaut "
+                "chez ce fournisseur, sa désactivation étant à la charge du titulaire du compte (l'Éditeur), "
+                "non encore confirmée")
+    entr_m = _MISTRAL_ENTRAINEMENT if desinscrit else _MISTRAL_ENTRAINEMENT_NON_CONFIRME
+    relais_m = " ; relais d'Anthropic en cas de panne" if t_m.get("secours") else ""
+    relais_a = " ; relais de Mistral AI en cas de panne" if t_a.get("secours") else ""
+    mistral_full = f"<strong>Mistral AI</strong> ({role_m}{relais_m}) : {lieu_m} ; {sous_traitants} ; {entr}."
+    communs_mistral = {
+        "{{AI_SOUS_TRAITANTS_MISTRAL}}": _h(f" {_MISTRAL_SOUS_TRAITANTS}."),
+        "{{AI_CCT_MISTRAL}}": _h(" (pour Mistral AI : celles prévues par son accord de sous-traitance)"),
+    }
+    if not e.get("anthropic"):
+        return {
+            "{{AI_PROVIDER}}": "Mistral AI",
+            "{{AI_PRODUCT}}": "La Plateforme",
+            "{{AI_LOCATION_FULL}}": _h(mistral_full),
+            "{{AI_LOCATION_SHORT}}": _h(f"{lieu_m_court} ; {_MISTRAL_SOUS_TRAITANTS_COURT} (CCT)"),
+            "{{AI_TRANSFER_MENTION}}": _h(f"le fournisseur d'IA Mistral AI et ses propres sous-traitants techniques "
+                                          f"— {transfert_m} —, "),
+            "{{AI_ROLES}}": _h(_phrase_roles([("Mistral AI (La Plateforme)", t_m.get("principal"),
+                                               t_m.get("secours"))])),
+            "{{AI_ENTRAINEMENT}}": _h(entr_m),
+            "{{AI_ENTRAINEMENT_FOURNISSEURS}}": _h("de notre fournisseur, Mistral AI"
+                                                   + (" (nous avons désactivé cette utilisation sur notre compte)"
+                                                      if desinscrit else "")),
+            "{{AI_CONSERVATION}}": _h(_MISTRAL_CONSERVATION),
+            **communs_mistral,
+        }
+    usage_a = _usage_transfert(t_a.get("principal"), t_a.get("secours"))
+    usage_m = _usage_transfert(t_m.get("principal"), t_m.get("secours"))
+    return {
+        "{{AI_PROVIDER}}": "Anthropic, PBC et Mistral AI",
+        "{{AI_PRODUCT}}": "Claude API ; La Plateforme de Mistral AI",
+        "{{AI_LOCATION_FULL}}": _h(f"<strong>Anthropic</strong> ({role_a}{relais_a}) : {anth_full}. ") + _h(mistral_full),
+        "{{AI_LOCATION_SHORT}}": _h(f"Anthropic : {anth_court} ; Mistral AI : {lieu_m_court} ; "
+                                    f"{_MISTRAL_SOUS_TRAITANTS_COURT} (CCT)"),
+        "{{AI_TRANSFER_MENTION}}": _h(f"le fournisseur d'IA Anthropic ({anth_transfert}) {usage_a}, le fournisseur "
+                                      f"d'IA Mistral AI et ses propres sous-traitants techniques {usage_m} "
+                                      f"— {transfert_m} —, "),
+        "{{AI_ROLES}}": _h(_phrase_roles([("Anthropic (Claude API)", t_a.get("principal"), t_a.get("secours")),
+                                          ("Mistral AI (La Plateforme)", t_m.get("principal"), t_m.get("secours"))])),
+        "{{AI_ENTRAINEMENT}}": _h(f"{_ANTH_ENTRAINEMENT} ; {entr_m}"),
+        "{{AI_ENTRAINEMENT_FOURNISSEURS}}": _h("de nos fournisseurs, Anthropic et Mistral AI"
+                                               + (" (chez Mistral AI, nous avons désactivé cette utilisation sur "
+                                                  "notre compte)" if desinscrit else "")),
+        "{{AI_CONSERVATION}}": _h(f"{_ANTH_CONSERVATION} ; {_MISTRAL_CONSERVATION}"),
+        **communs_mistral,
     }
 
 
@@ -242,11 +666,41 @@ def securite():
     return _legal_page("securite.html")
 
 
+@app.get("/demande-acces", tags=["Site"], include_in_schema=False)
+def demande_acces_page():
+    """Demander un accès / réserver une démonstration (remplace la démo publique)."""
+    from fastapi.responses import HTMLResponse
+    with open(os.path.join(_static_dir, "demande-acces.html"), encoding="utf-8") as f:
+        return HTMLResponse(f.read())
+
+
+@app.get("/demo", tags=["Site"], include_in_schema=False)
+def demo_lien_page():
+    """Lien privé de démonstration (https://adjugo.pro/demo#<clé>, docs/DEMO_LIEN_PRIVE.md).
+    La clé est dans le fragment : elle n'atteint jamais le serveur dans l'adresse. Cette route
+    ne sert que la page ; son script envoie la clé dans le corps d'un POST. Jamais indexée,
+    jamais en cache, aucun lien vers elle depuis le site."""
+    from fastapi.responses import HTMLResponse
+    with open(os.path.join(_static_dir, "demo.html"), encoding="utf-8") as f:
+        return HTMLResponse(f.read(), headers={"X-Robots-Tag": "noindex, nofollow",
+                                               "Cache-Control": "no-store"})
+
+
 @app.get("/app", tags=["Logiciel"], include_in_schema=False)
 def software():
     from fastapi.responses import HTMLResponse
-    with open(os.path.join(_static_dir, "app.html"), encoding="utf-8") as f:
-        return HTMLResponse(f.read())
+    from app.core.sri import page_html      # empreintes SRI garanties à jour (vague 4)
+    return HTMLResponse(page_html("app.html"))
+
+
+# Réorganisation, vague 2a (A1) : une adresse par écran (/app/marches, /app/marches/12, /app/reglages/compte…).
+# Le serveur sert la MÊME page à chacune (en-tête no-store, middleware ci-dessus) ; c'est l'application qui lit le
+# chemin et rouvre l'écran (app.js, ADRESSES). Le chemin n'est jamais lu ici : rien ne s'ouvre sans session, et
+# chaque donnée reste protégée par sa route /api (un marché d'une autre organisation répond 404). Les liens déjà
+# envoyés (/app, /app?verify=…, /app?reset=…, /app?shared=…, /app#gcode=…) ne changent pas.
+@app.get("/app/{chemin:path}", tags=["Logiciel"], include_in_schema=False)
+def software_ecran(chemin: str):
+    return software()
 
 
 @app.get("/invite/{token}", tags=["Co-traitance"], include_in_schema=False)
@@ -254,8 +708,31 @@ def invite_page(token: str):
     """Page d'accès co-traitant (vue bridée). Le jeton est lu côté client puis
     validé par l'API ; cette route ne sert que la coquille HTML."""
     from fastapi.responses import HTMLResponse
-    with open(os.path.join(_static_dir, "invite.html"), encoding="utf-8") as f:
+    from app.core.sri import page_html
+    return HTMLResponse(page_html("invite.html"))
+
+def _serve(name: str):
+    from fastapi.responses import HTMLResponse
+    from app.core.sri import PAGES, page_html
+    if name in PAGES:
+        return HTMLResponse(page_html(name))
+    with open(os.path.join(_static_dir, name), encoding="utf-8") as f:
         return HTMLResponse(f.read())
+
+
+@app.get("/acheteur", tags=["Acheteur"], include_in_schema=False)
+def acheteur_landing():
+    """Landing acheteur (collectivités) : présentation + connexion/inscription/démo.
+    Même design system et même ton qu'Adjugo. Les CTA pointent vers /acheteur/app."""
+    return _serve("acheteur-landing.html")
+
+
+@app.get("/acheteur/app", tags=["Acheteur"], include_in_schema=False)
+def acheteur_app():
+    """Application acheteur (collectivités) — même design system que le logiciel PME,
+    distincte de ses données ; toute la logique tape /api/dce/* et /api/acheteur/*."""
+    return _serve("acheteur.html")
+
 
 @app.get("/api/health", tags=["Sante"])
 def health():
@@ -278,17 +755,38 @@ def health():
 
 @app.get("/api/llm/info", tags=["Sante"])
 def llm_info():
-    """Fournisseur IA actif (sans secret). Prouve que l'architecture est découplée :
-    bascule Anthropic ↔ Mistral (souverain FR/EU) par simple variable d'environnement."""
+    """Fournisseurs d'IA sollicités (sans secret ni détail du routage) : le détail par tâche est dans
+    le diagnostic d'administration (GET /api/admin/ia/diagnostic)."""
     from app.services.llm import active_provider
     return active_provider()
 
 
 @app.get("/api/public-config", tags=["Sante"], include_in_schema=False)
 def public_config():
-    """Config publique (sans secret) pour le front : analytics activé par env, etc."""
+    """Config publique (sans secret) pour le front : analytics activé par env, fonctions activées
+    (« Projets à venir » masqué tant que PROJETS_A_VENIR=0)."""
+    from app.core.interrupteurs import projets_a_venir_actif
+    from app.core.quota import TRIAL_DAYS
     s = settings
-    return {"analytics_src": s.ANALYTICS_SRC or "", "analytics_domain": s.ANALYTICS_DOMAIN or ""}
+    # essai_jours : la durée de l'essai gratuit, lue dans le code (app/core/quota.py), jamais écrite en dur dans une
+    # page (encart « Créer mon compte » de l'espace du partenaire, réorganisation vague 2b).
+    return {"analytics_src": s.ANALYTICS_SRC or "", "analytics_domain": s.ANALYTICS_DOMAIN or "",
+            "projets_a_venir": projets_a_venir_actif(), "essai_jours": int(TRIAL_DAYS)}
+
+
+@app.get("/api/securite/empreintes-scripts", tags=["Sante"])
+@limiter.limit("60/minute")
+def empreintes_scripts(request: Request):
+    """Empreintes (SRI sha384 + sha256) des scripts RÉELLEMENT servis, calculées à chaud, pour
+    la page sécurité : chacun peut comparer ce que son navigateur reçoit à ce qui est publié et
+    versionné (app/static/sri-manifest.json). Aucune donnée personnelle, aucun secret."""
+    from app.core import sri
+    m = sri.compute_manifest()
+    rep = sri.stale_report()
+    m["manifeste_publie"] = "/static/" + sri.MANIFEST_NAME
+    m["manifeste_publie_a_jour"] = bool(rep["manifeste_a_jour"])
+    m["pages_a_jour"] = not rep["pages"]
+    return m
 
 
 @app.get("/api/health/ready", tags=["Sante"])
@@ -310,10 +808,27 @@ def metrics(request: Request):
     if token:
         auth = request.headers.get("authorization", "")
         provided = auth[7:] if auth.lower().startswith("bearer ") else request.query_params.get("token", "")
-        if provided != token:
+        # Comparaison à TEMPS CONSTANT sur des octets (comme le secret cron / le code DCE) :
+        # un « != » fuite la longueur du préfixe correct par le temps de réponse.
+        import secrets as _secrets
+        ok = bool(provided) and _secrets.compare_digest(
+            provided.encode("utf-8", "surrogateescape"), token.encode("utf-8", "surrogateescape"))
+        if not ok:
             return JSONResponse(status_code=401, content={"error": "jeton metrics requis"})
     from app.core.metrics import render
     return PlainTextResponse(render(), media_type="text/plain; version=0.0.4")
+
+
+# ── Routage de l'IA : résumé au démarrage (aucune clé, aucun appel réseau) ──
+@app.on_event("startup")
+def _journaliser_routage_ia():
+    try:
+        from app.services.llm import resume_routage, forcage
+        log = _logging.getLogger("adjugo")
+        for ligne in resume_routage():
+            (log.warning if (forcage() or "ATTENTION" in ligne) else log.info)(ligne)
+    except Exception as e:      # noqa: BLE001 — jamais bloquant
+        _logging.getLogger("adjugo").warning("résumé du routage IA indisponible : %s", type(e).__name__)
 
 
 # ── Récupération des jobs orphelins au démarrage ────────────────────────────
@@ -328,19 +843,91 @@ def _recover_orphan_jobs():
     db = SessionLocal()
     try:
         for j in db.query(Job).filter(Job.status.in_(["pending", "running"])).all():
-            # Claim ATOMIQUE : seul le worker qui change réellement la ligne rembourse
-            # (évite le double-remboursement quand 4 workers démarrent ensemble).
-            res = db.execute(_update(Job).where(Job.id == j.id, Job.status.in_(["pending", "running"]))
-                             .values(status="error", error="Interrompu par un redémarrage du serveur."))
-            db.commit()
-            if res.rowcount == 1:
-                u = db.get(User, j.user_id)
-                if u:
-                    refund_analysis(u, db)
-    except Exception:
-        pass
+            # try PAR job : une panne sur un job (ex. utilisateur supprimé) ne doit pas
+            # abandonner silencieusement la récupération de TOUS les jobs suivants.
+            try:
+                # Claim ATOMIQUE : seul le worker qui change réellement la ligne rembourse
+                # (évite le double-remboursement quand 4 workers démarrent ensemble).
+                res = db.execute(_update(Job).where(Job.id == j.id, Job.status.in_(["pending", "running"]))
+                                 .values(status="error", error="Interrompu par un redémarrage du serveur."))
+                db.commit()
+                if res.rowcount == 1:
+                    from app.services import atelier as _atelier
+                    from app.services import fiches_import as _fiches
+                    if j.kind in _fiches.JOB_KINDS:
+                        # Fiches proposées (rédaction, vague 3) : lecture gratuite, rien n'a été débité ;
+                        # passée en erreur, elle n'est plus comptée dans le plafond du mois.
+                        continue
+                    if j.kind in _atelier.JOB_KINDS:
+                        # Atelier : rend EXACTEMENT ce que la tâche a débité (rien pour une refonte
+                        # gratuite) et libère les parties qu'elle rédigeait.
+                        db.refresh(j)
+                        _atelier.rembourser(db, j)
+                        _atelier.liberer_job(db, j.id)
+                        continue
+                    from app.services import atelier_groupement as _groupement
+                    if j.kind in _groupement.JOB_KINDS:
+                        # Aide de l'IA d'un PARTENAIRE (rédaction, vague 4) : rend au chef de file ce que la
+                        # tâche a débité (relevé : payeur_id), libère la partie et rend l'aide au partenaire.
+                        db.refresh(j)
+                        _atelier.rembourser(db, j)
+                        _groupement.liberer_job(db, j.id, rendre_aide=True)
+                        continue
+                    u = db.get(User, j.user_id) if j.user_id else None
+                    if u:
+                        refund_analysis(u, db)
+            except Exception as e:
+                db.rollback()
+                _logging.getLogger("adjugo").warning(
+                    "récupération du job orphelin %s échouée : %s", getattr(j, "id", "?"), e)
+    except Exception as e:
+        _logging.getLogger("adjugo").warning("récupération des jobs orphelins interrompue : %s", e)
     finally:
         db.close()
+
+
+# ── Réparation : jobs des membres retirés AVANT le correctif (faille 8) ─────
+@app.on_event("startup")
+def _repair_removed_member_jobs():
+    """Avant le correctif, retirer un membre ne réassignait pas ses jobs (résultats IA bâtis
+    sur la base de l'organisation) : ils restaient à son nom, donc lisibles par lui dans son
+    nouvel espace. On les rend à l'organisation, d'après le journal : pour chaque entrée
+    `team.member_removed` (owner_id = propriétaire au moment du retrait, target_id = membre),
+    les jobs du membre créés AVANT le retrait passent au propriétaire. Idempotent (un 2e
+    passage ne trouve plus rien), best-effort, jamais bloquant au démarrage. Le journal
+    n'est que LU (son owner_id entre dans le hash de la chaîne : on n'y touche pas)."""
+    log = _logging.getLogger("adjugo")
+    from app.core.database import SessionLocal
+    from app.models import AuditLog, Job, User
+    from sqlalchemy import update as _update
+    db = SessionLocal()
+    moved = 0
+    try:
+        rows = (db.query(AuditLog.id, AuditLog.owner_id, AuditLog.target_id, AuditLog.created_at)
+                .filter(AuditLog.action == "team.member_removed").order_by(AuditLog.id).all())
+        for aid, owner_id, member_id, removed_at in rows:
+            try:
+                if not owner_id or not member_id or owner_id == member_id or removed_at is None:
+                    continue
+                if db.get(User, owner_id) is None:      # propriétaire supprimé : rien à rendre
+                    continue
+                res = db.execute(_update(Job)
+                                 .where(Job.user_id == member_id, Job.created_at <= removed_at)
+                                 .values(user_id=owner_id)
+                                 .execution_options(synchronize_session=False))
+                db.commit()
+                moved += res.rowcount or 0
+            except Exception as e:
+                db.rollback()
+                log.warning("réparation des jobs (journal %s) échouée : %s", aid, e)
+        if moved:
+            log.info("jobs d'anciens membres rendus à leur organisation : %d", moved)
+    except Exception as e:
+        db.rollback()
+        log.warning("réparation des jobs d'anciens membres interrompue : %s", e)
+    finally:
+        db.close()
+    return moved
 
 
 # ── Capacité du pool de threads (endpoints sync) ────────────────────────────
@@ -366,6 +953,8 @@ def _ensure_demo_account():
     try:
         from app.services.demo_seed import ensure_demo
         ensure_demo(db, force=True)   # repart propre à chaque démarrage (anti-dérive)
+        from app.services.demo_remise import noter_remise
+        noter_remise()                # vitrine neuve : pas de remise à neuf à la première ouverture
     except Exception as e:
         _logging.getLogger("adjugo").warning("seed démo ignoré : %s", e)
     finally:

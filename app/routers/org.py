@@ -5,6 +5,7 @@ projets, contacts et co-traitants), renommer l'organisation, retirer un membre.
 import secrets
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Request
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, EmailStr
 
@@ -32,10 +33,12 @@ def _reassign_models():
     mods = []
     try:
         from app.models import (Project, Contact, Document, Invoice, KnowledgeDoc,
-                                KnowledgeChunk, Signal)
+                                KnowledgeChunk, Signal, Job)
         # KnowledgeChunk DOIT suivre KnowledgeDoc sinon le RAG du membre parti devient
         # orphelin (l'index interroge KnowledgeChunk.user_id).
-        mods += [Project, Contact, Document, Invoice, KnowledgeDoc, KnowledgeChunk, Signal]
+        # Job : les résultats IA (mémoires, questionnaires, war rooms) sont bâtis sur le
+        # savoir-faire COMMUN de l'org → ils restent à l'org ; sinon l'ex-membre les relisait.
+        mods += [Project, Contact, Document, Invoice, KnowledgeDoc, KnowledgeChunk, Signal, Job]
     except Exception:
         pass
     try:
@@ -135,6 +138,11 @@ def invite_member(data: InviteIn, request: Request, current_user: User = Depends
                   db: Session = Depends(get_db)):
     """Invite un collègue dans l'organisation. Crée son compte avec un mot de passe
     provisoire (retourné une seule fois) à lui transmettre, et envoie un email si SMTP."""
+    # Défense en profondeur (en plus du garde central) : la démo n'envoie JAMAIS d'email.
+    from app.services.demo_search import is_demo
+    if is_demo(current_user):
+        raise HTTPException(403, "La démo est en lecture guidée : commencez votre essai gratuit de 30 jours "
+                                 "pour inviter un collègue.")
     org = _org(current_user, db)
     if org.owner_id != current_user.id and (current_user.org_role or "") != "admin":
         raise HTTPException(403, "Seul un administrateur peut inviter des membres")
@@ -142,6 +150,17 @@ def invite_member(data: InviteIn, request: Request, current_user: User = Depends
     # Verrou de ligne sur l'org : sérialise les invitations concurrentes pour que le
     # contrôle de limite (count) ne soit pas contournable par deux POST simultanés.
     db.query(Organization).filter(Organization.id == org.id).with_for_update().first()
+    # (Testé AVANT la limite d'offre : message exact même quand l'équipe est pleine.)
+    # Forme canonique (minuscules, partie locale incluse) comme à l'inscription/connexion, et
+    # doublon testé INSENSIBLE à la casse : sinon « TARGET@x.fr » créait un 2e compte pour une
+    # adresse déjà inscrite (« target@x.fr ») → connexion/réinitialisation imprévisibles.
+    email_norm = str(data.email).strip().lower()
+    existing = db.query(User).filter(func.lower(User.email) == email_norm).first()
+    if existing:
+        if existing.org_id == org.id:
+            raise HTTPException(400, "Cette personne fait déjà partie de l'organisation")
+        raise HTTPException(400, "Cet email est déjà associé à un autre compte")
+
     # Limite de membres selon l'offre du propriétaire (appliquée, plus seulement affichée).
     limit = _plan_member_limit(db, org)
     n_members = db.query(User).filter(User.org_id == org.id).count()
@@ -149,18 +168,23 @@ def invite_member(data: InviteIn, request: Request, current_user: User = Depends
         raise HTTPException(402, f"Votre offre est limitée à {limit} membre(s). "
                                  f"Passez à une offre supérieure pour agrandir l'équipe.")
 
-    existing = db.query(User).filter(User.email == data.email).first()
-    if existing:
-        if existing.org_id == org.id:
-            raise HTTPException(400, "Cette personne fait déjà partie de l'organisation")
-        raise HTTPException(400, "Cet email est déjà associé à un autre compte")
-
     temp_password = secrets.token_urlsafe(9)
+    from datetime import datetime, timedelta, timezone
+    from app.core.quota import TRIAL_DAYS
+    from app.routers.auth import clean_full_name
     member = User(
-        email=str(data.email),
+        email=email_norm,
         hashed_password=hash_password(temp_password),
-        full_name=data.full_name or str(data.email).split("@")[0],
+        # Nom nettoyé et borné comme à l'inscription (clean_full_name) : il s'affiche dans l'équipe et entre dans des
+        # courriels et des noms d'organisation. Avant : caractères de contrôle gardés, et au-delà de 255 caractères
+        # (largeur de la colonne) l'invitation échouait sur PostgreSQL (500).
+        full_name=clean_full_name(data.full_name) or email_norm.split("@")[0],
         org_id=org.id, org_role="membre",
+        # Tout NOUVEAU compte a une date de fin d'essai, quel que soit le mode de création (app/core/quota.py ; CGV
+        # 3.5 ; comme l'inscription par mot de passe ou par Google). Tant qu'il est membre, seul le forfait du
+        # propriétaire compte (quota._billing_user) ; retiré de l'organisation, il n'est pas un compte « historique »
+        # sans fin d'essai (5 analyses gratuites par mois sans fin, IA jamais en pause, aucune limite d'usage).
+        trial_ends_at=datetime.now(timezone.utc) + timedelta(days=TRIAL_DAYS),
     )
     db.add(member)
     db.commit()
@@ -175,11 +199,18 @@ def invite_member(data: InviteIn, request: Request, current_user: User = Depends
     emailed = False
     try:
         from app.services.email import send_email
+        # Un email part au nom d'Adjugo vers un tiers : l'expéditeur doit avoir prouvé sa
+        # propre adresse. Sinon, le mot de passe provisoire est affiché à transmettre.
+        if not getattr(current_user, "email_verified", False):
+            raise RuntimeError("expéditeur non confirmé")
+        # Un compte peut n'avoir aucun nom (champ facultatif à l'inscription, compte Google sans nom) : la phrase garde
+        # un sujet (contrôle des bugs, deuxième passe : « Bonjour,  vous invite à rejoindre… »).
+        qui = (current_user.full_name or "").strip() or "Un collègue"
         emailed = send_email(member.email, f"Invitation à rejoindre {org.name} sur Adjugo",
-                   f"Bonjour,\n\n{current_user.full_name} vous invite à rejoindre l'espace "
+                   f"Bonjour,\n\n{qui} vous invite à rejoindre l'espace "
                    f"« {org.name} » sur Adjugo.\n\nIdentifiant : {member.email}\n"
                    f"Mot de passe provisoire : {temp_password}\n\nConnectez-vous puis "
-                   f"changez votre mot de passe.\n\n— Adjugo")
+                   f"changez votre mot de passe (menu Réglages, puis Mon compte).\n\n— Adjugo")
     except Exception as e:
         import logging
         logging.getLogger("adjugo").warning("Email d'invitation non envoyé à %s : %s", member.email, e)
@@ -253,6 +284,51 @@ def set_member_role(member_id: int, data: RoleIn, request: Request,
     return {"ok": True, "id": member.id, "role": role}
 
 
+def _transferer_facturation(db, ancien: User, nouveau: User) -> None:
+    """Le compte de facturation est le propriétaire de l'organisation (quota._billing_user : quota, écran Abonnement,
+    /api/stripe/status ; docs/ESSAI_GARDE_FOU.md) : au transfert, ce qui se facture passe de l'ancien au nouveau.
+    Déplacés (l'ancien retombe sans forfait) : forfait, client Stripe (le webhook retrouve le compte par lui),
+    paiement à l'usage et son compteur, compteurs d'analyses du mois, unités de dépassement envoyées à Stripe (lignes
+    `jobs`, annulables si l'analyse est remboursée). Copiés (l'ancien garde les siens : s'il quitte un jour
+    l'organisation, il reste soumis à son essai, jamais un compte sans fin d'essai) : fin d'essai, analyses de
+    l'essai. Le relevé du coût de l'IA (usage_ia : limite d'usage de l'essai, alerte des forfaits) suit lui aussi."""
+    import logging
+    from app.models import Job, PlanType, UsageIA
+    from app.services.billing_usage import UNITE_KIND
+    if nouveau.stripe_customer_id and nouveau.stripe_customer_id != ancien.stripe_customer_id:
+        # Client Stripe propre au nouveau propriétaire (paiement fait par un collègue avant le 22/10) : remplacé par
+        # celui de l'organisation ; noté pour pouvoir le retrouver (il porte aussi user_id dans ses métadonnées).
+        logging.getLogger("adjugo").warning("transfert de propriété : client Stripe %s du compte %s remplacé par %s",
+                                            nouveau.stripe_customer_id, nouveau.id, ancien.stripe_customer_id)
+    for champ, defaut in (("plan", PlanType.starter), ("stripe_customer_id", None), ("overage_enabled", False),
+                          ("overage_count", 0), ("analyses_used_this_month", 0), ("analyses_period", "")):
+        valeur = getattr(ancien, champ)
+        setattr(nouveau, champ, defaut if valeur is None else valeur)
+        setattr(ancien, champ, defaut)
+    nouveau.trial_ends_at = ancien.trial_ends_at
+    nouveau.trial_analyses_used = int(ancien.trial_analyses_used or 0)
+    db.flush()
+    ancien_c, nouveau_c = f"u{ancien.id}", f"u{nouveau.id}"
+    for r in db.query(UsageIA).filter(UsageIA.compte == ancien_c).all():
+        cible = db.query(UsageIA).filter(UsageIA.compte == nouveau_c, UsageIA.periode == r.periode,
+                                         UsageIA.essai == r.essai).first()
+        if cible is None:
+            r.compte, r.billing_user_id, r.org_id = nouveau_c, nouveau.id, nouveau.org_id
+            continue
+        # Même période, même nature (essai ou non) : une seule ligne (contrainte compte, période, essai).
+        cible.cout_eur = float(cible.cout_eur or 0) + float(r.cout_eur or 0)
+        cible.appels = int(cible.appels or 0) + int(r.appels or 0)
+        cible.tokens_entree = int(cible.tokens_entree or 0) + int(r.tokens_entree or 0)
+        cible.tokens_sortie = int(cible.tokens_sortie or 0) + int(r.tokens_sortie or 0)
+        cible.alerte_le = cible.alerte_le or r.alerte_le
+        cible.billing_user_id = nouveau.id
+        db.delete(r)
+    db.flush()
+    db.query(Job).filter(Job.user_id == ancien.id, Job.kind == UNITE_KIND).update(
+        {Job.user_id: nouveau.id}, synchronize_session=False)
+    db.flush()
+
+
 class TransferIn(BaseModel):
     new_owner_id: int
 
@@ -274,15 +350,24 @@ def transfer_ownership(data: TransferIn, request: Request,
         raise HTTPException(400, "Vous êtes déjà propriétaire")
     org.owner_id = target.id
     target.org_role = "admin"
-    current_user.org_role = "membre"
+    # L'ancien propriétaire devient administrateur, ce que dit la fenêtre de transfert (app.js, orgTransfer : « Vous
+    # deviendrez simple administrateur. ») : il invite encore des collègues ; seul le nouveau propriétaire retire,
+    # change les rôles, transfère et modifie l'organisation. Avant : « membre », contre le texte affiché.
+    current_user.org_role = "admin"
     # L'ancien propriétaire perd ses droits → on révoque ses sessions en cours pour que
     # la baisse d'autorité prenne effet immédiatement (pas seulement au prochain login).
     current_user.token_version = (current_user.token_version or 0) + 1
+    # Le compte de facturation change avec le propriétaire : forfait, client Stripe, essai et relevé du coût de l'IA
+    # le suivent. Avant, une organisation Pro redevenait « starter » (5 analyses), un essai terminé transféré à un
+    # collègue rouvrait l'IA, et le webhook Stripe ne mettait plus l'organisation à jour.
+    _transferer_facturation(db, current_user, target)
     # data_owner_id() bascule sur le nouveau propriétaire : on DOIT migrer avec lui les
     # données portées par le tenant, sinon elles deviennent orphelines/invisibles pour TOUTE
     # l'organisation (fiche entreprise, critères Go/No-Go, co-traitance). On ne touche PAS
     # AuditLog (sa chaîne de hash deviendrait invérifiable).
-    from app.models import Company, MatchingCriteria, CoSpace, ProjectInvite, ProjectContribution, ContributionPiece
+    from app.models import (Company, MatchingCriteria, CoSpace, ProjectInvite, ProjectContribution,
+                            ContributionPiece, GroupementSimulation, GroupementConvention,
+                            GroupementSignature)
     from app.routers.criteria_v2 import MatchingCriteriaExt
     old_id, new_id = current_user.id, target.id
     # (a) mono-propriétaire UNIQUE(user_id) : purger une éventuelle ligne du nouveau owner
@@ -290,9 +375,27 @@ def transfer_ownership(data: TransferIn, request: Request,
     for M in (Company, MatchingCriteria, MatchingCriteriaExt):
         db.query(M).filter(M.user_id == new_id).delete(synchronize_session=False)
         db.query(M).filter(M.user_id == old_id).update({M.user_id: new_id}, synchronize_session=False)
-    # (b) co-traitance (owner_id = tenant mandataire) : simple réaffectation.
-    for M in (CoSpace, ProjectInvite, ProjectContribution, ContributionPiece):
+    # (b) co-traitance et simulations « Répondre à plusieurs ? » (owner_id = tenant
+    #     mandataire) : simple réaffectation — sinon elles restaient à l'ex-propriétaire
+    #     (invisibles pour l'org, et effacées avec son compte).
+    # Dossiers de présentation de l'atelier (rédaction, vague 2) : portés par le tenant aussi.
+    from app.models import (DepotLienDocument, DepotLienEspace, DossierPartBrouillon, DossierPresentation,
+                            DossierRepartition, DossierSection, DossierSectionVersion, DossierValidation,
+                            EntretienQuestion)
+    # Documents déposés par les liens des partenaires (décision 5 a) : owner_id = tenant du marché (cycle de vie).
+    # Entretien chantier (rédaction, vague 5) : porté par le tenant comme l'atelier.
+    for M in (CoSpace, ProjectInvite, ProjectContribution, ContributionPiece, GroupementSimulation,
+              GroupementConvention, GroupementSignature, DossierPresentation, DossierSection,
+              DossierSectionVersion, DossierRepartition, DossierPartBrouillon, DossierValidation,
+              DepotLienEspace, DepotLienDocument, EntretienQuestion):
         db.query(M).filter(M.owner_id == old_id).update({M.owner_id: new_id}, synchronize_session=False)
+    # « Mes preuves » (rédaction, vague 3, owner_id = tenant) : elles suivent le nouveau propriétaire.
+    from app.services.preuves import transferer as _transferer_preuves
+    _transferer_preuves(db, old_id, new_id)
+    # (c) profil partenaire du réseau (vague 3, user_id UNIQUE = data_owner_id) : il suit le
+    #     nouveau propriétaire, sinon il devenait orphelin et inéditable par l'organisation.
+    from app.services.partner_network import transfer_profile
+    transfer_profile(db, old_id, new_id)
     db.commit()
     audit.record(db, action="team.ownership_transferred", owner_id=org.owner_id,
                  actor=f"user:{current_user.id}", actor_kind="owner",

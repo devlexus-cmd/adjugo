@@ -8,16 +8,21 @@ Aucune étape ne s'auto-exécute : l'utilisateur déclenche chaque action.
   4. POST /api/sourcing/documents    — génération du dossier (LLM, sur les choisis)
 """
 import logging
+import threading as _threading
+import time as _time
+from collections import OrderedDict as _OrderedDict
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Form
 from sqlalchemy.orm import Session
-from pydantic import BaseModel, Field as PydField
+from pydantic import BaseModel, Field as PydField, model_validator
 
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.core.org import data_owner_id, member_ids
 from app.core.ratelimit import limiter
+from app.core.uploads import aread_upload_limited
+from starlette.concurrency import run_in_threadpool
 from app.models import User, Company, Project
 from app.sourcing.base import TenderCriteria
 from app.sourcing.sources.boamp import BoampSource
@@ -28,32 +33,48 @@ from app.sourcing.sources.bodacc import BodaccSource
 from app.sourcing.sources.buyer import BuyerProfileSource
 from app.sourcing.search import TenderSearchService, CompanySearchService
 from app.sourcing.schemas import NormalizedTender
+from app.schemas import safe_link_url
 from app.services.profile import company_dict as _company_dict, criteria_dict as _criteria_dict
 
 logger = logging.getLogger("adjugo")
 router = APIRouter(prefix="/api/sourcing", tags=["Sourcing (sources officielles)"])
 
-# Sources AO actives : BOAMP (national FR) + TED (européen) + plateformes Atexo
-# (profils acheteurs : PLACE = État national ; Mégalis = collectivités bretonnes — couvrent
-# les MAPA sous-seuil absents du BOAMP). Pagination + cache 20 min + garde-fou template.
+# Sources AO : BOAMP (national FR) + TED (européen) + plateformes Atexo (profils acheteurs :
+# Mégalis = collectivités bretonnes, MAPA sous-seuil absents du BOAMP ; PLACE = État, SUSPENDUE
+# tant que PLACE_ACTIF=0). Pagination + cache 20 min + garde-fou template. Cette liste sert à
+# retrouver une source par son nom (fetch_dce) ; les sources INTERROGÉES viennent de _tender_sources.
 # DECP = marchés attribués → réservé à l'« intelligence marché », pas au feed d'AO ouverts.
 TENDER_SOURCES = [BoampSource(), TedSource(), MEGALIS, PLACE]
 COMPANY_SOURCES = [SireneSource()]
 
 
+def _fr_inclus(countries: list) -> bool:
+    cc = [str(c).upper() for c in (countries or [])]
+    return (not cc) or ("FR" in cc)
+
+
 def _tender_sources(countries: list) -> list:
     """Sources à interroger selon les pays demandés. BOAMP (national FR) n'est
     pertinent que pour la France ; TED couvre tous les pays UE/EEE."""
-    cc = [str(c).upper() for c in (countries or [])]
-    fr_inclus = (not cc) or ("FR" in cc)
+    from app.core.interrupteurs import place_actif
     sources = []
-    if fr_inclus:
+    if _fr_inclus(countries):
         # BOAMP (bulletin national) + les plateformes Atexo : Mégalis (MAPA Bretagne) et
-        # PLACE (MAPA de l'État). Mégalis et PLACE s'auto-filtrent (Mégalis = départements
-        # bretons uniquement ; PLACE = France) → aucun surcoût quand hors périmètre.
-        sources += [BoampSource(), MEGALIS, PLACE]
+        # PLACE (MAPA de l'État), qui s'auto-filtrent (Mégalis = départements bretons
+        # uniquement). PLACE n'est interrogée que si PLACE_ACTIF=1 (autorisation écrite reçue).
+        sources += [BoampSource(), MEGALIS] + ([PLACE] if place_actif() else [])
     sources.append(TedSource())
     return sources
+
+
+def _sources_non_consultees(countries: list) -> list:
+    """Sources volontairement NON interrogées, dites telles quelles à l'écran (jamais passées
+    sous silence) : aujourd'hui PLACE tant que PLACE_ACTIF=0."""
+    from app.core.interrupteurs import place_actif
+    from app.sourcing.sources.atexo import PLACE_NON_CONSULTEE
+    if _fr_inclus(countries) and not place_actif():
+        return [{"source": PLACE.name, "message": PLACE_NON_CONSULTEE}]
+    return []
 # Red-flag financier (procédure collective) — enrichissement parallèle, jamais bloquant.
 RED_FLAG_SOURCE = BodaccSource()
 BUYER_SOURCE = BuyerProfileSource()
@@ -61,6 +82,33 @@ BUYER_SOURCE = BuyerProfileSource()
 
 def _company_service() -> CompanySearchService:
     return CompanySearchService(COMPANY_SOURCES, red_flag_source=RED_FLAG_SOURCE)
+
+
+def _verdict(score, gonogo) -> str:
+    """Verdict Go/À étudier/No-Go à partir des seuils du profil. Garde-fou CENTRAL :
+    on force nogo_threshold < go_threshold pour que la bande « à étudier » existe toujours
+    (sinon un profil mal réglé nogo≥go faisait disparaître la zone intermédiaire).
+    Rien d'enregistré : les défauts de « Ce que je cherche » (75 / 40, CriteriaUpdate), ceux que l'écran montre dans le
+    champ et que garde le premier enregistrement (avant : 65, un marché noté 70 changeait de verdict à ce moment-là)."""
+    go_t = (gonogo or {}).get("go_threshold") or 75
+    nogo_t = (gonogo or {}).get("nogo_threshold") or 40
+    nogo_t = min(nogo_t, go_t - 1)
+    return "go" if score >= go_t else ("no_go" if score < nogo_t else "a_etudier")
+
+
+def _apply_groupement(db, project, analysis, company_data, gonogo, current_user) -> None:
+    """« Répondre à plusieurs ? » — verdict de groupement après une analyse sur DCE réel :
+    manques + alliance automatique sur les partenaires rattachés et l'annuaire (JAMAIS de
+    réseau ici). Pose go_decision='go_groupement' le cas échéant ; match_score reste le score
+    SEUL. Tolérant : service absent / erreur → rien ne change, l'analyse est déjà sauvée."""
+    try:
+        from app.services.groupement_verdict import apply_groupement_verdict
+        apply_groupement_verdict(db, project, analysis, company_data, gonogo,
+                                 member_ids(current_user, db))
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        logger.warning("verdict de groupement ignoré (projet %s) : %s", getattr(project, "id", "?"), e)
 
 
 def _user_country(current_user, db) -> str:
@@ -84,14 +132,46 @@ def buyer_profile(request: Request, acheteur: str = "",
                   current_user: User = Depends(get_current_user)):
     """Intelligence marché : historique de publication réel d'un acheteur (BOAMP).
     Renvoie {} si l'acheteur n'a aucun avis trouvé — jamais de profil inventé."""
+    from app.services.demo_search import is_demo
+    if is_demo(current_user):
+        # Les acheteurs de la démo sont FICTIFS : aucune requête au BOAMP, et jamais les vrais avis d'une
+        # collectivité réelle affichés à côté d'un marché inventé.
+        return {"acheteur": acheteur, "found": False, "demo": True}
     prof = BUYER_SOURCE.profile(acheteur)
     return prof or {"acheteur": acheteur, "found": False}
+
+
+class MarketEstimateRequest(BaseModel):
+    objet: str = ""
+    departement: str = ""
+    cpv: str = ""
+
+
+@router.post("/market-estimate")
+@limiter.limit("40/hour")
+def market_estimate(request: Request, req: MarketEstimateRequest,
+                    current_user: User = Depends(get_current_user)):
+    """Repère de PRIX DE MARCHÉ (fourchette) à partir des marchés comparables réels (DECP).
+    Déterministe, SANS LLM, SANS quota. C'est un repère INDICATIF sourcé — jamais le budget
+    de l'acheteur, jamais un montant inventé. Utile quand l'avis ne publie pas de montant."""
+    objet = (req.objet or "").strip()
+    if len(objet) < 3:
+        raise HTTPException(422, "Objet trop court pour estimer un repère de prix.")
+    from app.services.estimation_budget import estimer_budget
+    return estimer_budget(objet, departement=(req.departement or "").strip()[:3],
+                          cpv=((req.cpv or "").strip() or None))
 
 
 # ── Optimiseur de groupement (composition recommandée par lot) ────────────────────
 
 class GroupementRequest(BaseModel):
     project_id: int
+
+
+# Bornes par requête (anti-amplification, cf. optimize_groupement) : au plus 40 lots listés et
+# 12 recherches de co-traitants (discover) — un marché réel dépasse rarement une dizaine de lots.
+_MAX_LOTS_GROUPEMENT = 40
+_MAX_DISCOVER_GROUPEMENT = 12
 
 
 @router.post("/groupement")
@@ -125,12 +205,19 @@ def optimize_groupement(request: Request, req: GroupementRequest,
         dep = str(gonogo["departements"]).split(",")[0].strip()[:2]
     deps = [dep] if dep else []
 
-    lots = parse_lots(details.get("allotissement", ""))
+    # Bornes anti-amplification : un allotissement (forgé, ou extrait d'un DCE à rallonge) peut
+    # porter des dizaines de lots, et chaque lot non couvert déclenche un discover() ≈ 13 requêtes
+    # HTTP sortantes synchrones (avec retries). Sur le process unique (1 worker), une requête non
+    # bornée fige le service plusieurs minutes → DoS. On borne donc le nombre de lots traités ET le
+    # nombre de recherches de co-traitants par requête ; les lots au-delà sont listés mais non
+    # recherchés (couverture « non_couvert »).
+    lots = parse_lots(details.get("allotissement", ""))[:_MAX_LOTS_GROUPEMENT]
     mine = own_trades({**company_data, "specialites": gonogo.get("specialites", "")})
     trade_label = {t["key"]: t["label"] for t in TRADES}
 
     svc = _company_service()
     out_lots, n_propre, n_cot, n_non = [], 0, 0, 0
+    discovers = 0
     for lot in lots:
         key = infer_trade(lot["label"])
         entry = {"num": lot["num"], "label": lot["label"],
@@ -138,9 +225,12 @@ def optimize_groupement(request: Request, req: GroupementRequest,
         if key and key in mine:
             entry["couverture"], entry["role"] = "propre", "mandataire"
             n_propre += 1
-        elif key:
+        elif key and discovers < _MAX_DISCOVER_GROUPEMENT:
+            # « PME seulement » (lot 1, point 5 ; moteur § 6.2 point 7), comme le verdict de groupement
+            # (app/services/groupement_verdict.py) : une TPE cherche des partenaires à sa mesure.
+            discovers += 1
             res = svc.discover(activity=key, departement=dep, tender_departements=deps,
-                               need_label=trade_label.get(key, ""), limit=6)
+                               need_label=trade_label.get(key, ""), limit=6, pme_only=True)
             best = res["companies"][0] if res["companies"] else None
             if best:
                 entry["couverture"], entry["role"] = "co_traitance", "cotraitant"
@@ -149,6 +239,11 @@ def optimize_groupement(request: Request, req: GroupementRequest,
             else:
                 entry["couverture"], entry["role"] = "non_couvert", None
                 n_non += 1
+        elif key:
+            # Budget de recherche de co-traitants épuisé pour cette requête : lot listé, pas de
+            # recherche réseau (évite l'amplification sur un allotissement à rallonge).
+            entry["couverture"], entry["role"] = "non_couvert", None
+            n_non += 1
         else:
             entry["couverture"], entry["role"] = "indetermine", None
             n_non += 1
@@ -171,10 +266,21 @@ class SearchRequest(BaseModel):
     cpv: list[str] = []
     montant_min: Optional[float] = None
     montant_max: Optional[float] = None
-    limit: int = 20
-    offset: int = 0                # pagination « charger plus »
+    limit: int = PydField(20, ge=1, le=100)          # borné : l'UI demande 15 par page
+    offset: int = PydField(0, ge=0, le=10000)        # pagination « charger plus »
     countries: list[str] = []      # ISO alpha-2 (ex. ["FR","DE"]). Vide = toute l'UE/EEE.
     type_marche: str = ""          # "travaux" | "services" | "fournitures" | "" (tous)
+
+    @model_validator(mode="after")
+    def _departements_reconnus(self):
+        # Un département non reconnu était écarté en silence : la recherche partait sur toute la France (Arras pour
+        # qui a tapé « 29000 »). Il est refusé avec une phrase (règle « recherche stricte par département ») quand la
+        # France est cherchée ; un autre pays n'a pas de département (l'écran cache alors le champ).
+        from app.sourcing.base import departements_non_reconnus, message_departement_non_reconnu
+        mauvais = departements_non_reconnus(self.departements) if _fr_inclus(self.countries) else []
+        if mauvais:
+            raise ValueError(message_departement_non_reconnu(mauvais))
+        return self
 
 
 @router.get("/countries")
@@ -189,6 +295,13 @@ def list_countries(current_user: User = Depends(get_current_user)):
 def search_tenders(request: Request, req: SearchRequest,
                    current_user: User = Depends(get_current_user),
                    db: Session = Depends(get_db)):
+    from app.services.demo_search import is_demo as _is_demo, search_results as _demo_search
+    if _is_demo(current_user):
+        _t = _demo_search()   # le vrai BOAMP renverrait vide sur la requête démo → liste canned riche
+        return {"count": len(_t), "sources_queried": ["BOAMP"], "sources_skipped": [], "errors": [],
+                "sources_non_consultees": _sources_non_consultees(req.countries),
+                "tenders": [x.model_dump(exclude={"raw"}) for x in _t], "has_more": False,
+                "closed_filtered": 0, "amount_filtered": 0}
     company = db.query(Company).filter(Company.user_id == data_owner_id(current_user, db)).first()
     company_data = _company_dict(company)
     gonogo = _criteria_dict(current_user.id, db)
@@ -201,6 +314,7 @@ def search_tenders(request: Request, req: SearchRequest,
         "count": result["count"],
         "sources_queried": result["sources_queried"],
         "sources_skipped": result.get("sources_skipped", []),
+        "sources_non_consultees": _sources_non_consultees(req.countries),
         "errors": [e.model_dump() for e in result["errors"]],
         "tenders": [t.model_dump(exclude={"raw"}) for t in result["tenders"]],
         "has_more": result.get("has_more", False),
@@ -228,35 +342,97 @@ def renewals(request: Request, req: RenewalRequest,
 
     PRIORITÉ DECP (Données Essentielles, open data) : durée + date réelles → échéance
     100 % DÉTERMINISTE, couverture de TOUS les profils acheteurs (pas que BOAMP),
-    et GRATUIT (aucun quota consommé). Repli sur la version BOAMP+IA si DECP est vide."""
+    et GRATUIT (aucun quota consommé). Repli sur la version BOAMP+IA si DECP est vide : débité s'il trouve,
+    remboursé sinon ; toujours remboursé en outre-mer et en Corse (_repli_rembourse_par_zone, décision 1 du 22/10).
+
+    Démo (pitch) : des fins de contrat fictives, sans réseau ni IA ni quota (demo_search.renewals_results)."""
+    from app.services.demo_search import is_demo as _is_demo, renewals_results as _demo_renewals
+    if _is_demo(current_user):
+        return _demo_renewals(req.departements)
     gonogo = _criteria_dict(current_user.id, db)
-    deps = [d.strip()[:2] for d in (req.departements or []) if d.strip()]
+    # Département sur son code COMPLET (lot 1, point 4 bis) : « 974 » ne voit plus 971 ; Corse inchangée.
+    from app.services.decp import code_departement
+    deps = list(dict.fromkeys(code_departement(d) for d in (req.departements or []) if d.strip()))
 
     # 1) DECP — déterministe, sans LLM, sans quota.
+    motif = "DECP sans résultat"
+    # Erreurs de la DECP gardées pour la réponse du repli : l'écran dit qu'une source n'a pas répondu au lieu
+    # d'affirmer « Aucune échéance proche » (contrôle des bugs, deuxième passe). Aucun changement du débit.
+    erreurs_decp = []
     try:
         from app.services.decp import detect_renewals_decp
         res = detect_renewals_decp(req.query or "travaux", deps, gonogo, domaines=req.domaines)
         if res.get("renewals"):
             return res
+        if res.get("errors"):
+            motif = "DECP indisponible"
+            erreurs_decp = [str(x) for x in res["errors"]]
     except Exception as e:
         logger.warning("Radar DECP en échec, repli BOAMP+IA : %s", e)
+        motif = "DECP en erreur"
+        erreurs_decp = [f"DECP indisponible : {type(e).__name__}"]
 
-    # 2) Repli : BOAMP + enrichissement IA (consomme un quota, remboursé si rien).
+    # 2) Repli : BOAMP + enrichissement IA (consomme un quota, remboursé si rien). Gardé (décision 12) ;
+    # chaque repli est noté dans le journal avec ce qu'il trouve (_journal_repli_a_venir).
     from app.core.quota import consume_analysis, refund_analysis
     from app.services.renewal import detect_renewals
-    consume_analysis(current_user, db)
+    consume_analysis(current_user, db, "renouvellements")
     from app.services.llm import tenant_scope
     try:
         with tenant_scope(current_user.id):
             res = detect_renewals(req.query or "travaux", deps, gonogo, domaines=req.domaines)
-    except Exception:
+    except Exception as e:
         refund_analysis(current_user, db)
+        _journal_repli_a_venir(motif, deps, None, f"remboursée (repli en échec : {type(e).__name__})")
         raise
     # Remboursement dès que le repli ne produit AUCUN renouvellement (BOAMP vide, hors
-    # fenêtre, ou erreur) : pas de valeur rendue = pas de quota débité.
-    if not res.get("renewals"):
+    # fenêtre, ou erreur) : pas de valeur rendue = pas de quota débité. En outre-mer et en Corse, toujours remboursé,
+    # même s'il trouve (décision 1 de la réunion du 22/10 : _repli_rembourse_par_zone) ; le journal le dit.
+    par_zone = _repli_rembourse_par_zone(deps)
+    rembourse = par_zone or not res.get("renewals")
+    if rembourse:
         refund_analysis(current_user, db)
-    return res
+    _journal_repli_a_venir(motif, deps, res, REMBOURSE_PAR_ZONE if par_zone
+                           else ("débitée" if res.get("renewals") else "remboursée"))
+    # Partie écran du lot 1 (point 12) : l'onglet dit d'où viennent ces fins de contrat (avis d'attribution du BOAMP,
+    # durée lue ou estimée, pas la durée publiée de la DECP) et ce qu'est devenue l'analyse, débitée ou remboursée.
+    # Rien d'autre ne change : même débit, même remboursement.
+    return {**res, "errors": erreurs_decp + list(res.get("errors") or []),
+            "source": "BOAMP", "analyse": "remboursee" if rembourse else "debitee"}
+
+
+# Sort de l'analyse noté au journal quand le repli est remboursé parce qu'il porte sur l'outre-mer ou la Corse.
+REMBOURSE_PAR_ZONE = "remboursée (outre-mer ou Corse, jusqu'à l'annonce du crédit à l'écran)"
+
+
+def _repli_rembourse_par_zone(deps: list) -> bool:
+    """Décision 1 de la réunion du 22/10 (docs/MISE_EN_LIGNE_22_10.md, section 3) : le repli payant de « À venir » est
+    TOUJOURS remboursé, qu'il trouve ou non, dès qu'un des départements demandés est en outre-mer (tout code qui
+    commence par « 97 » ou « 98 » : « 971 », « 974 », « 988 »…, ou « 97 » saisi seul) ou en Corse (« 2A », « 2B », et
+    « 20 », celui d'un code postal corse), seul ou avec d'autres départements, jusqu'à ce que l'écran annonce le
+    crédit avant le clic (partie écran du lot 1). En production (0afc1ed), le repli y demandait au BOAMP « 97 » ou
+    « 2A », que le BOAMP n'écrit jamais (il écrit « 974 », « 20A », « 20B ») : il n'y trouvait rien et l'analyse y était
+    toujours remboursée (docs/MOTEUR_LOT1.md, R.1 et V.5). Une demande qui mêle la métropole et l'une de ces zones est
+    remboursée en entier (en production, débitée si elle trouvait en métropole). Sans département (toute la France) ou
+    en métropole seule, la règle habituelle : débité s'il trouve, remboursé sinon. `deps` : codes complets
+    (decp.code_departement), ceux que reçoivent la DECP et le repli."""
+    return any(str(d)[:2] in ("97", "98", "2A", "2B") or str(d) == "20" for d in (deps or []))
+
+
+def _journal_repli_a_venir(motif: str, deps: list, res, analyse: str) -> None:
+    """Décision 12 (lot 1, point 8) : chaque repli payant de l'onglet « À venir » (BOAMP + IA) est noté dans le
+    journal, avec ce qu'il trouve, pour trancher à la vague 1 de la veille sur une mesure. AUCUNE donnée
+    personnelle : ni utilisateur, ni organisation, ni mots tapés ; le motif du repli, les départements (codes
+    de 2 ou 3 caractères), le compte des fins de contrat, la part de durées lues ou estimées par type de contrat,
+    le sort de l'analyse (« débitée », « remboursée », REMBOURSE_PAR_ZONE en outre-mer et en Corse, ou « remboursée
+    (repli en échec : …) ») et les références publiques des avis d'attribution BOAMP (10 au plus)."""
+    fins = list((res or {}).get("renewals") or [])
+    estimees = sum(1 for r in fins if r.get("duree_estimee"))
+    refs = [str(r.get("idweb") or "")[:20] for r in fins if r.get("idweb")][:10]
+    logger.info("repli payant « À venir » (BOAMP + IA) : motif=%s ; départements=%s ; fins de contrat trouvées=%d "
+                "(durée lue %d, durée estimée %d) ; erreurs de source=%d ; analyse %s ; avis BOAMP=%s",
+                motif, ",".join(deps) or "aucun", len(fins), len(fins) - estimees, estimees,
+                len((res or {}).get("errors") or []), analyse, ",".join(refs) or "aucun")
 
 
 # ── Étape 2 : analyse profonde d'UN AO (LLM, quota) ──────────────────────────────
@@ -265,18 +441,62 @@ class AnalyzeRequest(BaseModel):
     tender: dict  # NormalizedTender choisi par l'utilisateur (étape 1)
 
 
+def _date_limite_lue(texte):
+    """La date « JJ/MM/AAAA » d'un texte d'analyse (« 11/11/2026 à 12h00 »), comme demo_seed._date_limite, ou None."""
+    import datetime as _dt
+    import re
+    m = re.search(r"(\d{2})/(\d{2})/(\d{4})", str(texte or ""))
+    if not m:
+        return None
+    try:
+        return _dt.date(int(m.group(3)), int(m.group(2)), int(m.group(1)))
+    except ValueError:
+        return None
+
+
+def _date_limite_du_marche(tender, details):
+    """Date limite enregistrée sur un marché créé par « Analyser ce marché » (Project.deadline, que lisent le courriel
+    d'invitation, les rappels J-3 et J-1 de la part, « Avant de déposer », le compte à rebours du partenaire, « À
+    faire ») : celle de l'avis officiel (date ISO de la source), à défaut celle que l'analyse lit et que la page du
+    marché affiche. Jamais une date quand un rectificatif a changé la date limite sans qu'on ait pu la lire : ni
+    l'ancienne, ni une date devinée (contrôle des bugs, deuxième passe : la colonne restait toujours vide)."""
+    import datetime as _dt
+    if tender is not None and getattr(tender, "date_limite_rectifiee_non_lue", False):
+        return None
+    iso = str(getattr(tender, "date_limite", "") or "")[:10] if tender is not None else ""
+    try:
+        return _dt.date.fromisoformat(iso)
+    except ValueError:
+        return _date_limite_lue((details or {}).get("date_limite"))
+
+
 @router.post("/analyze")
 @limiter.limit("30/hour")
 def analyze_tender(request: Request, req: AnalyzeRequest,
                    current_user: User = Depends(get_current_user),
                    db: Session = Depends(get_db)):
     from app.core.quota import consume_analysis, refund_analysis
-    from app.services.analysis import analyze_dce_text
 
     try:
         tender = NormalizedTender(**req.tender)
     except Exception:
-        raise HTTPException(400, "Objet AO invalide")
+        raise HTTPException(400, "Avis de marché invalide")
+
+    from app.services.demo_search import is_demo as _is_demo, analysis_for as _demo_analysis
+    if _is_demo(current_user) and (tender.provenance.official_ref or "").startswith("DEMO-"):
+        _a = _demo_analysis(tender.provenance.official_ref)
+        if _a:
+            _score = _a.get("match_score", 0); _decision = _a.get("go_decision")
+            _proj = Project(user_id=current_user.id,
+                            name=(_a.get("details", {}).get("intitule_marche") or tender.objet)[:500],
+                            client=tender.acheteur or "", match_score=_score, go_decision=_decision,
+                            ai_summary=_a.get("summary", ""), ai_analysis=_a, source_url=_safe_link(tender.provenance.source_url),
+                            deadline=_date_limite_du_marche(tender, _a.get("details")))
+            db.add(_proj); db.commit(); db.refresh(_proj)
+            return {"project_id": _proj.id, "decision": _decision, "score": _score, "dce_available": True,
+                    "confidence": tender.confidence, "summary": _a.get("summary", ""),
+                    "details": _a.get("details", {}), "score_breakdown": _a.get("score_breakdown"),
+                    "source": _safe_source(tender.provenance.model_dump())}
 
     consume_analysis(current_user, db)  # 402 si quota atteint
 
@@ -293,16 +513,19 @@ def analyze_tender(request: Request, req: AnalyzeRequest,
         dce_text = _tender_as_text(tender)
 
     from app.services.llm import tenant_scope
+    from app.services import analyse_partagee
+    partage = analyse_partagee.partage_de(current_user, db)
     try:
         with tenant_scope(current_user.id):
-            analysis = analyze_dce_text(dce_text, company_data, gonogo,
-                                        lang_name=_user_lang_name(current_user, db))
+            analysis = analyse_partagee.analyser_texte(dce_text, company_data, gonogo,
+                                                       lang_name=_user_lang_name(current_user, db), p=partage,
+                                                       annonce_seule=not dce_available)
     except Exception:
         refund_analysis(current_user, db)   # l'IA a échoué → on ne débite pas le quota
         raise HTTPException(503, "L'analyse IA est momentanément indisponible. "
                                  "Réessayez — votre quota n'a pas été débité.")
     analysis["dce_available"] = dce_available
-    analysis["source"] = tender.provenance.model_dump()
+    analysis["source"] = _safe_source(tender.provenance.model_dump())
     analysis["lead_score"] = tender.score.model_dump() if tender.score else None
 
     # Le SCORE Go/No-Go n'est posé QU'À PARTIR D'UN VRAI DCE analysé : sur un avis
@@ -310,14 +533,15 @@ def analyze_tender(request: Request, req: AnalyzeRequest,
     # ; le score apparaît après import du DCE réel via /analyze-upload.
     if dce_available:
         score = analysis.get("match_score", 0)
-        go_t = (gonogo or {}).get("go_threshold") or 65
-        nogo_t = (gonogo or {}).get("nogo_threshold") or 40
-        decision = "go" if score >= go_t else ("no_go" if score < nogo_t else "a_etudier")
+        decision = _verdict(score, gonogo)
     else:
         score = None
         decision = None
         analysis.pop("match_score", None)
     analysis["go_decision"] = decision
+    if tender.date_limite_rectifiee_non_lue:
+        # Gardé pour l'import du dossier (_finish_analysis) : la date qu'il lira peut être l'ancienne.
+        analysis["date_limite_rectifiee_non_lue"] = True
 
     project = Project(
         user_id=current_user.id,
@@ -325,21 +549,365 @@ def analyze_tender(request: Request, req: AnalyzeRequest,
         client=tender.acheteur or "",
         match_score=score, go_decision=decision,
         ai_summary=analysis.get("summary", ""), ai_analysis=analysis,
-        source_url=tender.provenance.source_url,
+        source_url=_safe_link(tender.provenance.source_url),
+        deadline=_date_limite_du_marche(tender, analysis.get("details")),
     )
+    # Décision 11 (rédaction) : ce dossier importé impose-t-il son fichier de réponse ? (agrégat)
+    from app.services.atelier import mesurer_import
+    mesurer_import(project, analysis)
     db.add(project); db.commit(); db.refresh(project)
 
+    # Verdict de groupement SEULEMENT sur un vrai DCE scoré (sans DCE : pas de score, rien).
+    if dce_available:
+        _apply_groupement(db, project, analysis, company_data, gonogo, current_user)
+
     return {
-        "project_id": project.id, "decision": decision, "score": score,
+        "project_id": project.id, "decision": project.go_decision, "score": score,   # score = SEUL
+        "decision_seul": decision,       # verdict SEUL (« decision » peut être « go_groupement »)
         "dce_available": dce_available,
         "confidence": tender.confidence,
         "summary": analysis.get("summary", ""),
         "details": analysis.get("details", {}),
-        "source": tender.provenance.model_dump(),
+        "score_breakdown": analysis.get("score_breakdown"),   # « pourquoi ce % » (déterministe)
+        "source": _safe_source(tender.provenance.model_dump()),
+        "groupement": analysis.get("groupement"),
+        "groupement_score": project.groupement_score,
     }
 
 
-# ── Étape 2 bis : analyse du DCE RÉEL importé (PDF/ZIP) ──────────────────────────
+# ── Étape 2 bis : analyse du DCE RÉEL importé (PDF/ZIP) — LECTURE INTÉGRALE ────────
+#
+# Chaque pièce est lue EN ENTIER (app.services.dce_lecture), le texte intégral est rangé avec les
+# fichiers du marché (app.services.dce_texte) et l'IA reçoit tout le dossier, d'un seul tenant
+# ou pièce par pièce (app.services.analyse_dossier). Un petit dossier est traité pendant la
+# requête, comme avant ; un gros dossier (pages scannées à lire, lecture en deux temps) part en
+# tâche de fond et sa progression se lit sur GET /api/sourcing/lecture/{project_id}.
+# Quota : UNE analyse par import, remboursée si l'IA tombe.
+
+_PROGRESS = _OrderedDict()          # job_id -> progression (process unique ; bornée)
+_PROGRESS_LOCK = _threading.Lock()
+_PROGRESS_MAX = 500
+
+
+def _set_progress(job_id, **kw) -> None:
+    with _PROGRESS_LOCK:
+        d = _PROGRESS.setdefault(job_id, {})
+        d.update(kw)
+        d["maj"] = _time.time()
+        _PROGRESS.move_to_end(job_id)
+        while len(_PROGRESS) > _PROGRESS_MAX:
+            _PROGRESS.popitem(last=False)
+
+
+def _get_progress(job_id) -> dict:
+    with _PROGRESS_LOCK:
+        return dict(_PROGRESS.get(job_id) or {})
+
+
+def _analyze_lecture_in_thread(user_id, lecture, company_data, gonogo, lang_name, partage=None):
+    """Analyse d'un dossier lu en entier, hors de la boucle d'événements, dans l'espace facturé.
+    partage : extraction du dossier partagée entre organisations (app.services.analyse_partagee)."""
+    from app.services.analyse_dossier import analyser
+    from app.services.llm import tenant_scope
+    with tenant_scope(user_id):
+        return analyser(lecture, company_data, gonogo, lang_name=lang_name, partage=partage)
+
+
+def _lire_direct(filename, content):
+    from app.services.dce_lecture import lire_dossier
+    return lire_dossier(filename, content, mode="direct")
+
+
+def _empreinte(content: bytes) -> str:
+    import hashlib
+    return hashlib.sha256(content or b"").hexdigest()
+
+
+def _estimation_import(current_user, db, lecture: dict, company_data, gonogo, lang_name):
+    """Essai gratuit seulement : coût estimé (prudent) de l'analyse de ce dossier, d'après sa taille
+    et sa façon d'être lu (d'un seul tenant ou en deux temps). None pour tout autre compte."""
+    from app.core.quota import _billing_user, essai_actif
+    if not essai_actif(_billing_user(current_user, db)):
+        return None
+    from app.services.analyse_dossier import plan
+    from app.services.budget_ia import estimer_import
+    try:
+        return estimer_import(lecture, plan(lecture, company_data, gonogo, lang_name))
+    except Exception as e:      # noqa: BLE001 — l'estimation par défaut d'une analyse s'applique
+        logger.warning("estimation du coût de l'analyse impossible : %s", type(e).__name__)
+        return None
+
+
+def _needs_background(lecture: dict, company_data, gonogo, lang_name) -> bool:
+    """Tâche de fond si des pages restent à lire (scans) ou si le dossier se lit en deux temps
+    (plusieurs appels à l'IA) : la requête ne doit jamais tenir plusieurs minutes."""
+    if lecture.get("a_poursuivre"):
+        return True
+    from app.services.analyse_dossier import plan
+    return plan(lecture, company_data, gonogo, lang_name)["mode"] != "integral"
+
+
+def _lecture_state(project) -> dict:
+    wf = project.workflow if isinstance(project.workflow, dict) else {}
+    st = wf.get("lecture")
+    return st if isinstance(st, dict) else {}
+
+
+def _set_lecture_state(db, project, state: dict) -> None:
+    from sqlalchemy.orm.attributes import flag_modified
+    wf = dict(project.workflow) if isinstance(project.workflow, dict) else {}
+    wf["lecture"] = state
+    project.workflow = wf
+    flag_modified(project, "workflow")
+    db.commit()
+
+
+def _lecture_en_cours(db, project) -> bool:
+    from app.models import Job
+    st = _lecture_state(project)
+    if st.get("etat") != "en_cours" or not st.get("job_id"):
+        return False
+    j = db.get(Job, st["job_id"])
+    return bool(j and j.status in ("pending", "running"))
+
+
+def _finish_analysis(db, project, analysis, company_data, gonogo, user, lecture=None) -> dict:
+    """Enregistre une analyse de dossier réel sur le marché (verdict, grille, groupement) et
+    renvoie la réponse de la route. Commun à l'analyse pendant la requête et en tâche de fond."""
+    from datetime import datetime, timezone
+    analysis["dce_available"] = True
+    prev = project.ai_analysis or {}
+    if lecture is not None and isinstance(analysis.get("lecture"), dict):
+        # Taille du texte intégral rangé (export RGPD) ; ré-analyse du même texte : celle d'avant.
+        analysis["lecture"]["taille_stockee"] = (lecture.get("taille_stockee")
+                                                 or ((prev.get("lecture") or {}).get("taille_stockee")
+                                                     if isinstance(prev, dict) else None))
+    _keep_grille_choices(prev, analysis, lecture)
+    analysis["source"] = _safe_source(prev.get("source"))
+    analysis["lead_score"] = prev.get("lead_score")
+    if isinstance(prev, dict) and prev.get("date_limite_rectifiee_non_lue"):
+        analysis["date_limite_rectifiee_non_lue"] = True
+    # La date limite que lit le dossier (celle que la page du marché affiche), seulement si le marché n'en a pas : une
+    # date déjà enregistrée (avis officiel, saisie) n'est jamais écrasée (contrôle des bugs, deuxième passe).
+    if project.deadline is None and not analysis.get("date_limite_rectifiee_non_lue"):
+        project.deadline = _date_limite_lue((analysis.get("details") or {}).get("date_limite"))
+    score = analysis.get("match_score", 0)
+    decision = _verdict(score, gonogo)
+    analysis["go_decision"] = decision
+    project.match_score = score
+    project.go_decision = decision
+    project.ai_summary = analysis.get("summary", "")
+    project.ai_analysis = analysis
+    # Décision 11 (rédaction) : ce dossier importé impose-t-il son fichier de réponse ? (agrégat)
+    from app.services.atelier import mesurer_import
+    mesurer_import(project, analysis)
+    intitule = analysis.get("details", {}).get("intitule_marche")
+    if intitule:
+        project.name = intitule[:500]
+    # En tâche de fond, l'état garde la tâche qui tourne (GET /lecture dit « termine » quand elle est finie).
+    # Pendant la requête, aucune tâche ne tourne : l'état repart de zéro. Sinon l'état d'une ancienne lecture
+    # en tâche de fond (en erreur, ou morte au redémarrage) survivait sous « termine », et GET /lecture
+    # disait « La lecture ou l'analyse du dossier a échoué. Réessayez : votre analyse n'a pas été débitée. »
+    # d'une analyse qui avait réussi et avait été débitée.
+    st = dict(_lecture_state(project)) if _lecture_en_cours(db, project) else {}
+    st.pop("erreur", None)
+    st.update({"etat": "termine", "fin": datetime.now(timezone.utc).isoformat(timespec="seconds")})
+    _set_lecture_state(db, project, st)        # commit
+    _apply_groupement(db, project, analysis, company_data, gonogo, user)
+    return {
+        "project_id": project.id, "decision": project.go_decision, "score": score,   # score = SEUL
+        # Verdict SEUL : « decision » devient « go_groupement » quand un groupement est recommandé ; la
+        # pastille « Seul » de « Trouver des marchés » dit celui-ci.
+        "decision_seul": decision,
+        "dce_available": True,
+        "summary": analysis.get("summary", ""),
+        "details": analysis.get("details", {}),
+        "score_breakdown": analysis.get("score_breakdown"),   # « pourquoi ce % » (déterministe)
+        "source": analysis["source"],
+        "groupement": analysis.get("groupement"),
+        "groupement_score": project.groupement_score,
+        "couverture": analysis.get("couverture"),
+    }
+
+
+_ECHEC_LECTURE = ("La lecture ou l'analyse du dossier a échoué. Réessayez : votre analyse n'a pas été "
+                  "débitée.")
+
+
+def _sauver_lecture(db, project, lecture) -> None:
+    """Range le texte intégral ; un échec du stockage n'empêche jamais l'analyse (les questions
+    retombent alors sur l'extrait de l'analyse)."""
+    from app.services import dce_texte
+    try:
+        dce_texte.sauver(db, project, lecture)
+    except Exception as e:      # noqa: BLE001
+        db.rollback()
+        logger.warning("texte intégral du marché %s non rangé : %s", getattr(project, "id", "?"), type(e).__name__)
+
+
+def _lecture_job(jdb, job_id: int, project_id: int, user_id: int, filename: str, file_key, content,
+                 lecture: dict, stored: bool, company_data, gonogo, lang_name, partage=None) -> dict:
+    """Tâche de fond : lecture intégrale (OCR compris), rangement du texte, analyse, enregistrement.
+    Toute exception passe le job en erreur, le marché en « erreur » ET rembourse l'analyse
+    (app.services.lecture_taches) ; le message gardé est toujours lisible par l'utilisateur."""
+    from app.services.llm import LLMUnavailable
+    try:
+        return _lecture_job_run(jdb, job_id, project_id, user_id, filename, file_key, content, lecture, stored,
+                                company_data, gonogo, lang_name, partage)
+    except (ValueError, LLMUnavailable):
+        raise
+    except Exception as e:
+        logger.warning("lecture du dossier (marché %s) en échec : %s", project_id, type(e).__name__)
+        raise RuntimeError(_ECHEC_LECTURE) from e
+
+
+def _lecture_en_erreur(project_id: int):
+    """Après l'échec d'une lecture en tâche de fond : le marché passe « erreur » (et non plus « en
+    cours » : l'écran cesse d'en suivre la progression)."""
+    def on_error(db, job):
+        from datetime import datetime, timezone
+        project = db.get(Project, project_id)
+        if project is None:
+            return
+        st = dict(_lecture_state(project))
+        if st.get("job_id") == job.id and st.get("etat") == "en_cours":
+            st.update({"etat": "erreur", "erreur": (job.error or _ECHEC_LECTURE)[:500],
+                       "fin": datetime.now(timezone.utc).isoformat(timespec="seconds")})
+            _set_lecture_state(db, project, st)
+    return on_error
+
+
+def _lecture_job_run(jdb, job_id, project_id, user_id, filename, file_key, content, lecture, stored,
+                     company_data, gonogo, lang_name, partage=None) -> dict:
+    from app.models import Project, User
+    from app.services.analyse_dossier import analyser
+    from app.services.dce_lecture import lire_dossier, totaux
+
+    def prog(d):
+        _set_progress(job_id, **d)
+
+    if not stored:
+        if content is None:
+            # Le fichier n'est pas gardé en mémoire dans la file : relu depuis le dossier du marché.
+            try:
+                from app.services.storage import get_storage
+                content = get_storage().load(file_key)
+            except Exception:
+                raise ValueError("Le fichier du dossier est introuvable : importez-le à nouveau. "
+                                 "Votre analyse n'a pas été débitée.")
+        _set_progress(job_id, etape="lecture", pieces_lues=0)
+        prev_parties = (lecture or {}).get("analyse_parties")
+        lecture = lire_dossier(filename, content, mode="fond", progress=prog, reprise=lecture)
+        lecture["source_empreinte"] = _empreinte(content)
+        if isinstance(prev_parties, dict) and prev_parties:
+            # Parties déjà lues par l'IA (clé = contenu exact de la partie) : reprises telles quelles.
+            lecture["analyse_parties"] = prev_parties
+        content = None
+    project = jdb.get(Project, project_id)
+    if project is None:
+        raise ValueError("Ce marché n'existe plus.")
+    if not stored:
+        _sauver_lecture(jdb, project, lecture)
+    t = totaux(lecture)
+    _set_progress(job_id, etape="analyse", pieces_lues=t["pieces"], pages_lues=t["pages_lues"])
+
+    def ranger(parties):
+        # Informations relevées pièce par pièce, rangées avec la lecture : si la synthèse échoue,
+        # une nouvelle analyse ne relira que ce qui manque (best-effort, jamais bloquant).
+        from app.services import dce_texte
+        pr = jdb.get(Project, project_id)
+        if pr is not None:
+            try:
+                dce_texte.ranger_parties(jdb, pr, parties)
+            except Exception as e:      # noqa: BLE001
+                jdb.rollback()
+                logger.warning("informations relevées du marché %s non rangées : %s", project_id, type(e).__name__)
+
+    analysis = analyser(lecture, company_data, gonogo, lang_name=lang_name, progress=prog, on_parties=ranger,
+                        partage=partage)
+    project = jdb.get(Project, project_id)
+    user = jdb.get(User, user_id)
+    out = _finish_analysis(jdb, project, analysis, company_data, gonogo, user, lecture)
+    _set_progress(job_id, etape="termine")
+    return out
+
+
+def _context(db, current_user) -> tuple:
+    company = db.query(Company).filter(Company.user_id == data_owner_id(current_user, db)).first()
+    return _company_dict(company), _criteria_dict(current_user.id, db), _user_lang_name(current_user, db)
+
+
+def _start_job(db, project, current_user, filename: str, content, lecture: dict, stored: bool,
+               company_data, gonogo, lang_name, file_key=None, partage=None) -> int:
+    """Lance la lecture intégrale et l'analyse en tâche de fond (exécuteur des lectures) ; renvoie
+    l'identifiant du job. Le fichier est relu depuis le stockage (file_key) quand il y est rangé."""
+    from datetime import datetime, timezone
+    from app.services.jobs import create_job
+    from app.services import lecture_taches
+    from app.services.dce_lecture import totaux
+    job = create_job(db, current_user.id, lecture_taches.KIND, "Lecture du dossier du marché")
+    _set_lecture_state(db, project, {"etat": "en_cours", "job_id": job.id, "source": filename[:200],
+                                     "debut": datetime.now(timezone.utc).isoformat(timespec="seconds")})
+    t = totaux(lecture)
+    _set_progress(job.id, etape="lecture", pieces_total=t["pieces"], pieces_lues=0, pages_lues=0)
+    pid, uid, jid = project.id, current_user.id, job.id
+    data = None if (stored or file_key) else content
+    lecture_taches.lancer(jid, lambda jdb: _lecture_job(jdb, jid, pid, uid, filename, file_key, data, lecture,
+                                                        stored, company_data, gonogo, lang_name, partage),
+                          on_error=_lecture_en_erreur(pid))
+    return jid
+
+
+def _lecture_response(project_id: int, job_id: int):
+    from fastapi.responses import JSONResponse
+    return JSONResponse(status_code=202, content={
+        "project_id": project_id, "en_cours": True, "job_id": job_id,
+        "message": "Dossier volumineux : Adjugo le lit en entier, pièce par pièce. Suivez la progression ici.",
+        "progression": _get_progress(job_id)})
+
+
+def _prepare_rangement(db, project, lecture: dict, content: bytes) -> None:
+    lecture["source_empreinte"] = _empreinte(content)
+    _sauver_lecture(db, project, lecture)
+
+
+async def _import_and_analyze(db, project, current_user, filename: str, content: bytes,
+                              lecture: dict, stored: bool, file_key=None, forcer: bool = False):
+    """Après la lecture directe : petit dossier analysé pendant la requête (d'un seul tenant),
+    gros dossier en tâche de fond. Le travail lourd (assemblage, compression, empreinte, IA) et le
+    débit (qui peut appeler Stripe, au-delà du forfait) se font hors de la boucle d'événements : un
+    appel réseau lent n'y fige jamais les autres clients. UNE analyse débitée par import (y compris
+    quand l'extraction du dossier est resservie depuis l'analyse partagée). forcer (« Ré-analyser ») :
+    nouvelle extraction du dossier, jamais resservie."""
+    from app.core.quota import consume_analysis, refund_analysis
+    from app.services import analyse_partagee
+    company_data, gonogo, lang_name = _context(db, current_user)
+    partage = await run_in_threadpool(analyse_partagee.partage_de, current_user, db, forcer)
+    background = await run_in_threadpool(_needs_background, lecture, company_data, gonogo, lang_name)
+    if background:
+        from app.services import lecture_taches
+        await run_in_threadpool(lecture_taches.admettre, db, current_user)   # 429 avant tout débit
+    # Essai gratuit : la limite d'usage est vérifiée AVANT de commencer, sur le coût estimé de CE
+    # dossier ; une lecture commencée va toujours au bout (jamais un dossier à moitié lu).
+    estimation = await run_in_threadpool(_estimation_import, current_user, db, lecture, company_data, gonogo,
+                                         lang_name)
+    await run_in_threadpool(consume_analysis, current_user, db, "analyse",
+                            estimation)  # 402 si quota atteint — UNE analyse par import
+    if background:
+        jid = await run_in_threadpool(_start_job, db, project, current_user, filename, content, lecture,
+                                      stored, company_data, gonogo, lang_name, file_key, partage)
+        return _lecture_response(project.id, jid)
+    if not stored:
+        await run_in_threadpool(_prepare_rangement, db, project, lecture, content)
+    try:
+        analysis = await run_in_threadpool(_analyze_lecture_in_thread, current_user.id, lecture,
+                                           company_data, gonogo, lang_name, partage)
+    except Exception:
+        await run_in_threadpool(refund_analysis, current_user, db)   # l'IA a échoué → on ne débite pas le quota
+        raise HTTPException(503, "L'analyse IA est momentanément indisponible. "
+                                 "Réessayez — votre quota n'a pas été débité.")
+    return _finish_analysis(db, project, analysis, company_data, gonogo, current_user, lecture)
+
 
 @router.post("/analyze-upload")
 @limiter.limit("30/hour")
@@ -347,81 +915,39 @@ async def analyze_upload(request: Request, file: UploadFile = File(...),
                          project_id: int = Form(...),
                          current_user: User = Depends(get_current_user),
                          db: Session = Depends(get_db)):
-    from app.core.quota import consume_analysis, refund_analysis
-    from app.services.analysis import analyze_dce_text, extract_dce_text
-
     project = db.query(Project).filter(Project.id == project_id,
                                        Project.user_id.in_(member_ids(current_user, db))).first()
     if not project:
         raise HTTPException(404, "Projet introuvable — analysez d'abord l'avis.")
+    if _lecture_en_cours(db, project):
+        raise HTTPException(409, "Une lecture du dossier est déjà en cours pour ce marché. Attendez sa fin.")
+    from app.core.quota import exiger_ia
+    exiger_ia(current_user, db)                  # essai terminé sans forfait : 402 avant de lire le fichier
 
-    content = await file.read()
-    if len(content) == 0:
-        raise HTTPException(400, "Fichier vide.")
-    if len(content) > 50 * 1024 * 1024:
-        raise HTTPException(413, "Fichier trop volumineux (50 Mo max).")
+    content = await aread_upload_limited(file)   # lecture bornée : 413 au-delà de 50 Mo
 
-    # Extraction du DCE réel — message clair si illisible/format non supporté.
-    # max_chars élevé : on lit l'INTÉGRALITÉ du dossier (RC+CCAP+CCTP+DPGF d'un ZIP),
-    # sinon l'analyse variait d'un import à l'autre selon ce qui passait sous le plafond.
+    # Lecture INTÉGRALE, pièce par pièce (sans OCR pendant la requête) — message clair si rien
+    # n'est lisible ou si le format n'est pas pris en charge.
     try:
-        dce_text = extract_dce_text(file.filename, content, max_chars=120000)
+        lecture = await run_in_threadpool(_lire_direct, file.filename, content)
     except ValueError as e:
         raise HTTPException(422, str(e))
-
-    consume_analysis(current_user, db)  # 402 si quota atteint
-
-    company = db.query(Company).filter(Company.user_id == data_owner_id(current_user, db)).first()
-    company_data = _company_dict(company)
-    gonogo = _criteria_dict(current_user.id, db)
-
-    from app.services.llm import tenant_scope
-    try:
-        with tenant_scope(current_user.id):
-            analysis = analyze_dce_text(dce_text, company_data, gonogo,
-                                        lang_name=_user_lang_name(current_user, db))
-    except Exception:
-        refund_analysis(current_user, db)   # l'IA a échoué → on ne débite pas le quota
-        raise HTTPException(503, "L'analyse IA est momentanément indisponible. "
-                                 "Réessayez — votre quota n'a pas été débité.")
-    analysis["dce_available"] = True
-    analysis["dce_excerpt"] = (dce_text or "")[:30000]   # contexte pour le Q&A IA
-    prev = project.ai_analysis or {}
-    analysis["source"] = prev.get("source") or {}
-    analysis["lead_score"] = prev.get("lead_score")
-
-    score = analysis.get("match_score", 0)
-    go_t = (gonogo or {}).get("go_threshold") or 65
-    nogo_t = (gonogo or {}).get("nogo_threshold") or 40
-    decision = "go" if score >= go_t else ("no_go" if score < nogo_t else "a_etudier")
-    analysis["go_decision"] = decision
-
-    project.match_score = score
-    project.go_decision = decision
-    project.ai_summary = analysis.get("summary", "")
-    project.ai_analysis = analysis
-    intitule = analysis.get("details", {}).get("intitule_marche")
-    if intitule:
-        project.name = intitule[:500]
-    db.commit()
 
     # Archiver le DCE importé dans le dossier de l'AO (coffre-fort, dossier "DCE").
     # replace_in_dossier (et non save) : un ré-import du même nom REMPLACE l'ancien
     # au lieu d'empiler des doublons (l'utilisateur croyait ses documents « écrasés »).
+    # Archivé AVANT l'analyse : une analyse longue ou en échec peut être relancée sans ré-import.
+    file_key = None
     try:
         from app.services.dossier import replace_in_dossier
-        replace_in_dossier(db, current_user.id, project.id, "DCE",
-                           file.filename or "DCE.pdf", content, file.content_type or "application/pdf")
+        doc = replace_in_dossier(db, current_user.id, project.id, "DCE",
+                                 file.filename or "DCE.pdf", content, file.content_type or "application/pdf")
+        file_key = getattr(doc, "file_key", None)
     except Exception as e:
         logger.warning("Archivage DCE échoué (projet %s): %s", project.id, e)
 
-    return {
-        "project_id": project.id, "decision": decision, "score": score,
-        "dce_available": True,
-        "summary": analysis.get("summary", ""),
-        "details": analysis.get("details", {}),
-        "source": analysis["source"],
-    }
+    return await _import_and_analyze(db, project, current_user, file.filename or "DCE.pdf", content,
+                                     lecture, stored=False, file_key=file_key)
 
 
 # ── Ré-analyser le DCE DÉJÀ importé (sans re-télécharger) ────────────────────────
@@ -431,9 +957,11 @@ async def reanalyze_project(request: Request, project_id: int = Form(...),
                             current_user: User = Depends(get_current_user),
                             db: Session = Depends(get_db)):
     """Relance l'analyse sur le dossier déjà importé — utile après avoir affiné ses
-    critères, ou si l'analyse précédente semblait incomplète."""
-    from app.core.quota import consume_analysis, refund_analysis
-    from app.services.analysis import analyze_dce_text, extract_dce_text
+    critères, ou si l'analyse précédente semblait incomplète. Le texte intégral déjà lu est
+    réutilisé tel quel (même fichier) ; une analyse antérieure à la lecture intégrale relit le
+    dossier en entier. L'extraction du dossier par l'IA est TOUJOURS refaite (jamais resservie
+    depuis l'analyse partagée) ; elle remplace alors l'extraction partagée."""
+    from app.services import dce_texte
     from app.services.storage import get_storage
     from app.models import Document
 
@@ -441,6 +969,10 @@ async def reanalyze_project(request: Request, project_id: int = Form(...),
                                        Project.user_id.in_(member_ids(current_user, db))).first()
     if not project:
         raise HTTPException(404, "Projet introuvable.")
+    if _lecture_en_cours(db, project):
+        raise HTTPException(409, "Une lecture du dossier est déjà en cours pour ce marché. Attendez sa fin.")
+    from app.core.quota import exiger_ia
+    exiger_ia(current_user, db)                  # essai terminé sans forfait : 402 avant de relire le dossier
 
     doc = (db.query(Document)
            .filter(Document.user_id.in_(member_ids(current_user, db)), Document.project_id == project.id,
@@ -452,52 +984,291 @@ async def reanalyze_project(request: Request, project_id: int = Form(...),
         content = get_storage().load(doc.file_key)
     except Exception:
         raise HTTPException(404, "Le fichier du dossier est introuvable dans le stockage.")
+    stored = await run_in_threadpool(dce_texte.charger, project)
+    if stored and stored.get("source_empreinte") == await run_in_threadpool(_empreinte, content):
+        lecture = dict(stored)
+        if _a_relire(lecture):
+            # Des pièces n'ont pas été lues pour une raison PASSAGÈRE (temps écoulé, pages en image
+            # pas encore lues…) : relecture en tâche de fond, en reprenant les pièces déjà lues en
+            # entier — sinon « Ré-analyser » débiterait une analyse sans jamais compléter la lecture.
+            lecture["a_poursuivre"] = True
+            return await _import_and_analyze(db, project, current_user, doc.name, content, lecture,
+                                             stored=False, file_key=doc.file_key, forcer=True)
+        lecture["a_poursuivre"] = False             # déjà lu (en entier ou pour de bon) : on ne relit pas
+        return await _import_and_analyze(db, project, current_user, doc.name, content, lecture, stored=True,
+                                         forcer=True)
     try:
-        dce_text = extract_dce_text(doc.name, content, max_chars=120000)
+        lecture = await run_in_threadpool(_lire_direct, doc.name, content)
     except ValueError as e:
         raise HTTPException(422, str(e))
+    return await _import_and_analyze(db, project, current_user, doc.name, content, lecture, stored=False,
+                                     file_key=doc.file_key, forcer=True)
 
-    consume_analysis(current_user, db)
-    company = db.query(Company).filter(Company.user_id == data_owner_id(current_user, db)).first()
-    company_data = _company_dict(company)
-    gonogo = _criteria_dict(current_user.id, db)
-    from app.services.llm import tenant_scope
+
+# Raisons PASSAGÈRES de non-lecture : une nouvelle lecture peut les lever.
+_RAISONS_PASSAGERES = ("temps", "scan_a_lire", "plafond_ocr")
+
+
+def _a_relire(lecture: dict) -> bool:
+    """Une pièce (ou des pages) n'a pas été lue pour une raison passagère : temps de lecture écoulé,
+    pages en image pas encore lues, plafond de pages lues par OCR dans une tâche (la relecture
+    reprend les pages déjà reconnues et avance) — ou lecture des images indisponible alors qu'elle
+    l'est maintenant."""
+    from app.services import analysis as _an
+    from app.services.dce_lecture import LU, raison_texte
+    codes = list(_RAISONS_PASSAGERES)
+    if _an.ocr_available():
+        codes.append("ocr_indisponible")
+    textes = [raison_texte(c) for c in codes]
+    for p in lecture.get("pieces") or []:
+        if p.get("statut") == LU:
+            continue
+        if p.get("raison") in codes or any(t in str(p.get("detail") or "") for t in textes):
+            return True
+    return False
+
+
+@router.get("/lecture/{project_id}")
+def lecture_status(project_id: int, current_user: User = Depends(get_current_user),
+                   db: Session = Depends(get_db)):
+    """Progression de la lecture d'un gros dossier (tâche de fond) et ce qui a été lu."""
+    from app.models import Job
+    project = db.query(Project).filter(Project.id == project_id,
+                                       Project.user_id.in_(member_ids(current_user, db))).first()
+    if not project:
+        raise HTTPException(404, "Projet introuvable.")
+    st = _lecture_state(project)
+    out = {"project_id": project.id, "etat": st.get("etat") or "aucune", "job_id": st.get("job_id"),
+           "progression": {}, "erreur": ""}
+    a = project.ai_analysis if isinstance(project.ai_analysis, dict) else {}
+    out["couverture"] = a.get("couverture")
+    out["integral"] = bool(a.get("lecture"))
+    defaut = "La lecture du dossier a échoué. Votre analyse n'a pas été débitée."
+    if st.get("etat") in ("en_cours", "termine") and st.get("job_id"):
+        j = db.get(Job, st["job_id"])
+        if j is None or j.status == "error":
+            out["etat"] = "erreur"
+            out["erreur"] = (j.error if j else "") or defaut
+            if st.get("etat") == "en_cours":
+                # Échec (ou redémarrage du serveur) : le marché ne reste pas « en cours » — l'écran
+                # cesse d'en suivre la progression à chaque ouverture.
+                st2 = dict(st, etat="erreur", erreur=out["erreur"][:500])
+                _set_lecture_state(db, project, st2)
+        elif j.status == "done":
+            out["etat"] = "termine"         # le résultat du job est enregistré
+        else:
+            # « termine » n'est dit qu'une fois le résultat du job enregistré.
+            out["etat"] = "en_cours"
+            out["progression"] = _get_progress(j.id)
+    elif st.get("etat") == "erreur":
+        out["erreur"] = st.get("erreur") or defaut
+    return out
+
+
+# ── « Comment vous serez noté » : choix de l'utilisateur sur une ligne (0 IA) ─────
+
+def _keep_grille_choices(prev: dict, analysis: dict, lecture=None) -> None:
+    """Ré-analyse : les lignes que l'utilisateur avait confirmées ou écartées le restent, et (vague 5) ses
+    choix sur les exigences et les questions ; une exigence qu'il avait ajoutée revient si sa phrase est
+    encore dans le nouveau dossier (texte de la lecture intégrale)."""
     try:
-        with tenant_scope(current_user.id):
-            analysis = analyze_dce_text(dce_text, company_data, gonogo,
-                                        lang_name=_user_lang_name(current_user, db))
-    except Exception:
-        refund_analysis(current_user, db)   # l'IA a échoué → on ne débite pas le quota
-        raise HTTPException(503, "L'analyse IA est momentanément indisponible. "
-                                 "Réessayez — votre quota n'a pas été débité.")
-    analysis["dce_available"] = True
-    analysis["dce_excerpt"] = (dce_text or "")[:30000]
-    prev = project.ai_analysis or {}
-    analysis["source"] = prev.get("source") or {}
-    analysis["lead_score"] = prev.get("lead_score")
-    score = analysis.get("match_score", 0)
-    go_t = (gonogo or {}).get("go_threshold") or 65
-    nogo_t = (gonogo or {}).get("nogo_threshold") or 40
-    decision = "go" if score >= go_t else ("no_go" if score < nogo_t else "a_etudier")
-    analysis["go_decision"] = decision
-    project.match_score = score
-    project.go_decision = decision
-    project.ai_summary = analysis.get("summary", "")
-    project.ai_analysis = analysis
-    intitule = analysis.get("details", {}).get("intitule_marche")
-    if intitule:
-        project.name = intitule[:500]
+        from app.services.grille_notation import carry_over
+        old = ((prev or {}).get("details") or {}).get("grille_notation")
+        det = analysis.get("details") if isinstance(analysis.get("details"), dict) else None
+        if det is not None and isinstance(det.get("grille_notation"), dict) and isinstance(old, dict):
+            texte = None
+            try:
+                if isinstance(lecture, dict) and lecture.get("pieces"):
+                    from app.services import dce_lecture as _lec
+                    texte, _m = _lec.texte_integral(lecture)
+            except Exception:       # noqa: BLE001 — sans texte, les exigences ajoutées ne reviennent pas
+                texte = None
+            det["grille_notation"] = carry_over(old, det["grille_notation"], text=texte)
+    except Exception as e:      # noqa: BLE001 — jamais bloquant pour une analyse déjà payée
+        logger.warning("reprise des choix de la grille impossible : %s", type(e).__name__)
+
+
+class GrilleChoixRequest(BaseModel):
+    project_id: int
+    critere_id: str = PydField(..., min_length=1, max_length=12)
+    choix: str = PydField(..., pattern="^(confirme|ecarte|annule)$")
+    poids: str = PydField("", max_length=40)
+
+
+@router.post("/grille/choix")
+@limiter.limit("120/hour")
+def grille_choix(request: Request, req: GrilleChoixRequest,
+                 current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Le chef de file confirme (« je l'ai lu dans le règlement », avec le poids tel qu'il
+    l'a lu s'il le souhaite) ou écarte une ligne de la grille. Une ligne « à vérifier »
+    n'entre dans le plan qu'après cette confirmation. Aucun appel à l'IA, aucun quota."""
+    import copy
+    from app.models import utcnow
+    from app.services.grille_notation import apply_choice
+    project = db.query(Project).filter(Project.id == req.project_id,
+                                       Project.user_id.in_(member_ids(current_user, db)),
+                                       Project.deleted_at.is_(None)).first()
+    if not project:
+        raise HTTPException(404, "Projet introuvable.")
+    a = copy.deepcopy(project.ai_analysis) if isinstance(project.ai_analysis, dict) else {}
+    det = a.get("details") if isinstance(a.get("details"), dict) else {}
+    try:
+        g = apply_choice(det.get("grille_notation"), req.critere_id, req.choix,
+                         poids=req.poids, when=utcnow().isoformat())
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    det["grille_notation"] = g
+    a["details"] = det
+    project.ai_analysis = a                  # NOUVEAU dict : colonne JSON bien marquée modifiée
     db.commit()
-    return {
-        "project_id": project.id, "decision": decision, "score": score,
-        "dce_available": True,
-        "summary": analysis.get("summary", ""),
-        "details": analysis.get("details", {}),
-        "source": analysis["source"],
-    }
+    try:
+        from app.services import audit
+        from app.routers.invites import tenant_owner_id
+        ln = next((x for x in g.get("criteres") or [] if x.get("id") == req.critere_id), {})
+        audit.record(db, action="grille.choix", owner_id=tenant_owner_id(project, db), project_id=project.id,
+                     actor=f"user:{current_user.id}", actor_kind="owner", target_type="project",
+                     target_id=project.id, detail=f"{req.choix} : {str(ln.get('critere') or '')[:120]}",
+                     ip=audit.client_ip(request), meta={"critere_id": req.critere_id, "choix": req.choix})
+    except Exception:
+        pass
+    return {"grille_notation": g}
 
 
-# ── Q&A IA sur un AO (après import du DCE réel) ──────────────────────────────────
+# ── Vague 5 (C2 complet) : ce que le dossier demande — exigences, questions, relecture (0 IA) ──
+
+def _projet_grille(db, current_user: User, project_id: int):
+    project = db.query(Project).filter(Project.id == project_id,
+                                       Project.user_id.in_(member_ids(current_user, db)),
+                                       Project.deleted_at.is_(None)).first()
+    if not project:
+        raise HTTPException(404, "Projet introuvable.")
+    return project
+
+
+def _enregistrer_grille(db, project, g: dict) -> None:
+    import copy
+    a = copy.deepcopy(project.ai_analysis) if isinstance(project.ai_analysis, dict) else {}
+    det = a.get("details") if isinstance(a.get("details"), dict) else {}
+    det["grille_notation"] = g
+    a["details"] = det
+    project.ai_analysis = a                  # NOUVEAU dict : colonne JSON bien marquée modifiée
+    db.commit()
+
+
+def _journal_grille(db, request, current_user: User, project, action: str, detail: str, meta: dict) -> None:
+    try:
+        from app.services import audit
+        from app.routers.invites import tenant_owner_id
+        audit.record(db, action=action, owner_id=tenant_owner_id(project, db), project_id=project.id,
+                     actor=f"user:{current_user.id}", actor_kind="owner", target_type="project",
+                     target_id=project.id, detail=detail[:200], ip=audit.client_ip(request), meta=meta)
+    except Exception:
+        pass
+
+
+def _texte_du_dossier(db, current_user: User, project) -> Optional[str]:
+    """Texte intégral du dossier du marché (lecture intégrale rangée, sinon relecture bornée du fichier
+    archivé), lu SANS IA. None si aucun dossier lisible."""
+    from app.services.groupement_convention import dce_text
+    return dce_text(db, project, member_ids(current_user, db))
+
+
+class GrilleElementRequest(BaseModel):
+    project_id: int
+    type: str = PydField(..., pattern="^(exigence|question)$")
+    element_id: str = PydField(..., min_length=1, max_length=12)
+    choix: str = PydField(..., pattern="^(ecarte|traitee|annule)$")
+
+
+@router.post("/grille/element")
+@limiter.limit("240/hour")
+def grille_element(request: Request, req: GrilleElementRequest,
+                   current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Une exigence retirée (« ce n'est pas une exigence »), dite traitée par vous, ou rétablie ; une question
+    à l'acheteur retirée ou rétablie. Aucun appel à l'IA, aucun quota."""
+    from app.models import utcnow
+    from app.services import grille_exigences as ge
+    project = _projet_grille(db, current_user, req.project_id)
+    det = (project.ai_analysis or {}).get("details") if isinstance(project.ai_analysis, dict) else None
+    try:
+        g = ge.appliquer_choix((det or {}).get("grille_notation"), req.type, req.element_id, req.choix,
+                               when=utcnow().isoformat())
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    _enregistrer_grille(db, project, g)
+    bloc = g.get("exigences" if req.type == "exigence" else "questions_acheteur") or {}
+    x = next((y for y in bloc.get("liste") or [] if y.get("id") == req.element_id), {})
+    _journal_grille(db, request, current_user, project, f"grille.{req.type}",
+                    f"{req.choix} : {str(x.get('texte') or x.get('question') or '')[:120]}",
+                    {"element_id": req.element_id, "choix": req.choix})
+    return {"grille_notation": g}
+
+
+class GrilleExigenceRequest(BaseModel):
+    project_id: int
+    phrase: str = PydField(..., min_length=1, max_length=600)
+
+
+@router.post("/grille/exigence")
+@limiter.limit("120/hour")
+def grille_exigence(request: Request, req: GrilleExigenceRequest,
+                    current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Ajoute une exigence que l'utilisateur a lue : sa phrase doit être retrouvée MOT POUR MOT dans le dossier
+    du marché (citation_guard), sinon 422. Aucun appel à l'IA."""
+    from app.models import utcnow
+    from app.services import grille_exigences as ge
+    project = _projet_grille(db, current_user, req.project_id)
+    det = (project.ai_analysis or {}).get("details") if isinstance(project.ai_analysis, dict) else None
+    texte = _texte_du_dossier(db, current_user, project)
+    try:
+        g = ge.ajouter_exigence((det or {}).get("grille_notation"), texte or "", req.phrase,
+                                when=utcnow().isoformat())
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    _enregistrer_grille(db, project, g)
+    _journal_grille(db, request, current_user, project, "grille.exigence", "exigence ajoutée", {})
+    return {"grille_notation": g}
+
+
+class GrilleRelireRequest(BaseModel):
+    project_id: int
+
+
+@router.post("/grille/relire")
+@limiter.limit("30/hour")
+def grille_relire(request: Request, req: GrilleRelireRequest,
+                  current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Relit le dossier du marché SANS IA (rien n'est débité) pour une analyse faite avant la vague 5 :
+    sous-critères, exigences, environnement, candidatures multiples, intelligence artificielle, questions à
+    l'acheteur. Les choix de l'utilisateur sont repris."""
+    from app.models import utcnow
+    from app.services.grille_notation import relire
+    project = _projet_grille(db, current_user, req.project_id)
+    a = project.ai_analysis if isinstance(project.ai_analysis, dict) else {}
+    det = a.get("details") if isinstance(a.get("details"), dict) else None
+    if not det or not a.get("dce_available", True):
+        raise HTTPException(409, {"code": "pas_de_dossier",
+                                  "message": "Importez d'abord le dossier du marché : il n'y a rien à relire."})
+    texte = _texte_du_dossier(db, current_user, project)
+    if not texte:
+        raise HTTPException(409, {"code": "dossier_illisible",
+                                  "message": "Le dossier du marché n'est plus lisible : importez-le de nouveau."})
+    g = relire(det.get("grille_notation"), det, texte, when=utcnow().isoformat())
+    _enregistrer_grille(db, project, g)
+    _journal_grille(db, request, current_user, project, "grille.relire", "dossier relu sans IA", {})
+    return {"grille_notation": g}
+
+
+# ── Q&A IA sur un AO (après import du DCE réel) — sur TOUT le dossier ────────────
+#
+# Le texte intégral rangé (app.services.dce_texte) est interrogé par une recherche des passages
+# pertinents dans TOUTES les pièces (BM25 sans accents ni pluriels) ; le ou les règlements de la
+# consultation (RC, RC modificatif, RC de chaque lot) sont toujours remis, en entier dans la limite
+# d'ASK_REGLEMENT_MAX, le modificatif en premier. La réponse cite la pièce et la page ; chaque
+# phrase citée est vérifiée contre le texte (citation_guard) — une phrase non retrouvée n'est
+# jamais présentée comme une citation. Si la réponse n'est pas dans les extraits remis, Adjugo dit
+# ce qui a été consulté (jamais « absent du dossier ») et nomme les pièces non lues.
+# Hors quota d'analyses, mais borné par organisation et par jour (app.core.quota).
 
 class AskRequest(BaseModel):
     project_id: int
@@ -512,12 +1283,201 @@ ASK_SYSTEM = (
     "n'invente jamais."
 )
 
+ASK_SYSTEM_INTEGRAL = (
+    "Tu es un assistant expert des marchés publics. Tu réponds à une question sur un appel d'offres "
+    "à partir des SEULS extraits du dossier de consultation fournis : le ou les règlements de la "
+    "consultation (repères [R], ou [R1], [R2]… s'il y en a plusieurs : un règlement modificatif "
+    "l'emporte sur le règlement d'origine) et les passages des autres pièces les plus proches de la "
+    "question (repères [P1], [P2]…, avec le nom de la pièce et la page).\n"
+    "Règles :\n"
+    "- Réponds de façon précise et concise (montant, délai, clause exacte), en t'appuyant UNIQUEMENT "
+    "sur ces extraits. N'invente jamais.\n"
+    "- Pour chaque élément de ta réponse, donne la phrase du dossier recopiée MOT POUR MOT (300 "
+    "caractères au plus) et son repère. Une phrase qui n'est pas une copie exacte sera rejetée.\n"
+    "- Si la réponse n'est pas dans ces extraits, dis-le clairement (\"trouve\": false) : elle n'a pas "
+    "été trouvée dans les extraits fournis — n'écris jamais qu'elle n'existe pas dans le dossier.\n"
+    "Réponds UNIQUEMENT en JSON : {\"trouve\": true, \"reponse\": \"...\", "
+    "\"citations\": [{\"ref\": \"P1\", \"phrase\": \"...\"}]}"
+)
+
+ASK_REGLEMENT_MAX = 60000      # règlement remis en entier jusqu'à 60 000 caractères (≈ 20 000 tokens)
+ASK_PASSAGES = 8
+ASK_MAX_TOKENS = 1200
+MSG_ANCIENNE_ANALYSE = ("Cette analyse date d'avant la lecture intégrale du dossier : la réponse ne s'appuie "
+                        "que sur le début du dossier. Ré-analysez ou ré-importez le dossier pour qu'Adjugo le lise en entier.")
+
+
+def _ask_legacy(project, q: str, lang: str) -> dict:
+    """Analyse antérieure à la lecture intégrale : comportement d'origine (extrait de l'analyse),
+    en signalant la limite et en invitant à ré-analyser."""
+    from app.services.llm import complete
+    a = project.ai_analysis or {}
+    ctx = a.get("dce_excerpt") or ""
+    if not ctx:
+        import json as _json
+        ctx = (a.get("summary", "") + "\n\nDÉTAILS:\n"
+               + _json.dumps(a.get("details", {}), ensure_ascii=False))
+    user = (f"DCE de l'appel d'offres « {project.name} » (acheteur : {project.client or 'n/d'}) :\n"
+            f"\"\"\"\n{ctx[:30000]}\n\"\"\"\n\nQUESTION : {q}\n\n"
+            f"Réponds en {lang}, fondé uniquement sur le DCE ci-dessus.")
+    answer = complete(ASK_SYSTEM, user, max_tokens=700, temperature=0.1, tache="questions", json_attendu=False)
+    return {"answer": (answer or "").strip() or "—", "sources": [], "integral": False,
+            "trouve": None, "verifiee": False, "message": MSG_ANCIENNE_ANALYSE}
+
+
+def _verify_citation(phrase: str, ref: str, regs: list, hits: list, pieces: list, locs: dict):
+    """Source vérifiée d'une phrase citée : {piece, libelle, page, citation} ou None. La phrase doit
+    se trouver dans un des extraits REMIS à l'IA (règlements, passages) : l'IA n'a rien lu d'autre.
+    regs : [(repère, pièce, texte remis)]. Repère erroné : la phrase est cherchée dans les autres
+    extraits remis."""
+    from app.services.analysis import citation_guard, Localisateur
+    from app.services.dce_lecture import page_of
+    cand = []
+    r = (ref or "").strip().upper().strip("[]")
+    for key, piece, texte in regs:
+        if r == key:
+            cand.append((key, piece, texte, 0))
+    if r.startswith("P") and r[1:].isdigit() and 1 <= int(r[1:]) <= len(hits):
+        k = int(r[1:])
+        h = hits[k - 1]
+        cand.append((f"P{k}", pieces[h["piece_index"]], h["texte"], h["debut"]))
+    for key, piece, texte in regs:
+        cand.append((key, piece, texte, 0))
+    for k, h in enumerate(hits, 1):
+        cand.append((f"P{k}", pieces[h["piece_index"]], h["texte"], h["debut"]))
+    for key, piece, src, base in cand:
+        cit = citation_guard(src, phrase, min_len=12)
+        if cit:
+            loc = locs.setdefault(key, Localisateur(src))
+            off = loc.offset(cit)
+            page = page_of(piece, base + off) if off is not None else None
+            return {"piece": piece.get("nom") or "", "libelle": piece.get("libelle") or "",
+                    "page": page, "citation": cit}
+    return None
+
+
+def _reglements_remis(pieces: list) -> tuple:
+    """Règlements remis à l'IA : TOUS ceux du dossier (RC, RC modificatif, RC de chaque lot), le
+    modificatif en premier, en entier dans la limite d'ASK_REGLEMENT_MAX caractères au total ; un
+    règlement qui n'y tient pas est remis en partie (son début), les suivants pas du tout — leurs
+    passages restent alors cherchés comme ceux des autres pièces. Renvoie ([(repère, pièce, texte
+    remis, en entier ?)], numéros des pièces remises EN ENTIER, à écarter de la recherche)."""
+    from app.services import dce_texte
+    regs = dce_texte.reglements(pieces)
+    index = {id(p): i for i, p in enumerate(pieces)}
+    room, out, entiers = ASK_REGLEMENT_MAX, [], set()
+    for p in regs:
+        t = p.get("texte") or ""
+        if len(t) <= room:
+            out.append((p, t, True))
+            entiers.add(index[id(p)])
+            room -= len(t)
+        elif room >= 4000:
+            out.append((p, t[:room], False))
+            room = 0
+    keys = ["R"] if len(out) == 1 else [f"R{i}" for i in range(1, len(out) + 1)]
+    return [(k, p, t, full) for k, (p, t, full) in zip(keys, out)], entiers
+
+
+def _ask_integral(project, payload: dict, q: str, lang: str) -> dict:
+    from app.services import dce_texte
+    from app.services.dce_lecture import couverture
+    from app.services.llm import messages_create, cached_text_block, parse_json
+    pieces = payload.get("pieces") or []
+    regs, entiers = _reglements_remis(pieces)
+    hits = dce_texte.passages(project, q, k=ASK_PASSAGES, payload=payload, exclude_pieces=entiers)
+    blocks = []
+    head = f"Appel d'offres « {project.name} » (acheteur : {project.client or 'n/d'})."
+    if regs:
+        parts = []
+        for key, p, t, full in regs:
+            tag = "en entier" if full else f"début ({len(t)} premiers caractères)"
+            modif = ", règlement modificatif" if dce_texte.est_modificatif(p) else ""
+            parts.append(f"[{key}] Règlement de la consultation{modif} — pièce « {p.get('nom')} », {tag} :\n<<<\n{t}\n>>>")
+        # Préfixe STABLE d'une question à l'autre : mis en cache de prompt (lu à 10 % du prix).
+        blocks.append(cached_text_block(head + "\n\n" + "\n\n".join(parts)))
+    lines = []
+    for i, h in enumerate(hits, 1):
+        pg = f", page {h['page']}" if h.get("page") else ""
+        lines.append(f"[P{i}] pièce « {h['piece']} » ({h['libelle']}{pg}) :\n<<<\n{h['texte'].strip()}\n>>>")
+    cov = couverture(payload)
+    manque = cov["non_lues"] + cov["partielles"]
+    note = ""
+    if manque:
+        note = ("\n\nPièces non lues ou lues en partie (l'information peut s'y trouver) : "
+                + "; ".join(f"{m['nom']} ({m['raison']})" for m in manque[:15]))
+    tail = ("Passages du dossier les plus proches de la question :\n\n" + ("\n\n".join(lines) or "(aucun)")
+            + note + f"\n\nQUESTION : {q}\n\nRéponds en {lang}, en JSON.")
+    if not regs:
+        tail = head + "\n\n" + tail
+    blocks.append({"type": "text", "text": tail})
+    resp = messages_create(tache="questions", max_tokens=ASK_MAX_TOKENS, temperature=0,
+                           system=ASK_SYSTEM_INTEGRAL, messages=[{"role": "user", "content": blocks}])
+    raw = "".join(getattr(b, "text", "") or "" for b in (getattr(resp, "content", None) or [])
+                  if getattr(b, "type", "text") == "text").strip()
+    try:
+        data = parse_json(raw)
+    except Exception:
+        data = {"trouve": None, "reponse": raw, "citations": []}
+    trouve = data.get("trouve")
+    reponse = str(data.get("reponse") or "").strip()
+    sources, seen, locs = [], set(), {}
+    reg_src = [(k, p, t) for k, p, t, _full in regs]
+    cit_ok = cit_ko = 0
+    for c in (data.get("citations") or [])[:8]:
+        if not isinstance(c, dict):
+            continue
+        src = _verify_citation(str(c.get("phrase") or ""), str(c.get("ref") or ""), reg_src, hits, pieces, locs)
+        if src:
+            cit_ok += 1
+        elif str(c.get("phrase") or "").strip():
+            cit_ko += 1
+        if src and (src["piece"], src["citation"]) not in seen:
+            seen.add((src["piece"], src["citation"]))
+            sources.append(src)
+    try:
+        # Surveillance de la qualité (par fournisseur) : citations rejetées, abstentions.
+        from app.services import llm_qualite as _q
+        _q.noter_citations(cit_ok, cit_ko)
+        _q.noter_question(trouve)
+    except Exception:
+        pass
+    out = {"integral": True, "trouve": trouve, "sources": sources, "verifiee": bool(sources),
+           "message": "", "couverture": cov["message"]}
+    if trouve is False:
+        # Ce qui a été consulté, honnêtement : jamais « absent du dossier » (seuls des extraits ont
+        # été remis à l'IA).
+        nr, nh = len(regs), len(hits)
+        reg_txt = ("le règlement de la consultation" if nr == 1 else f"{nr} règlements de la consultation") if nr else ""
+        if nh == 0:
+            pas_txt = "aucun autre passage du dossier ne contient les mots de la question"
+        elif nh == 1:
+            pas_txt = "le seul passage du dossier proche de la question"
+        else:
+            pas_txt = f"les {nh} passages du dossier les plus proches de la question"
+        consulte = f"{reg_txt} ; {pas_txt}" if reg_txt else pas_txt
+        msg = (f"Pas trouvé dans les extraits consultés ({consulte}). Reformulez la question avec les mots "
+               "du dossier, ou vérifiez dans les pièces.")
+        if manque:
+            msg += (f" Attention : {len(manque)} pièce{'s' if len(manque) > 1 else ''} n'"
+                    f"{'ont' if len(manque) > 1 else 'a'} pas pu être lue{'s' if len(manque) > 1 else ''} en entier "
+                    f"({', '.join(m['nom'] for m in manque[:5])}).")
+        out["answer"] = msg
+        out["sources"], out["verifiee"] = [], False
+        return out
+    out["answer"] = reponse or "—"
+    if not sources:
+        out["message"] = ("Phrase non retrouvée telle quelle dans le dossier : vérifiez la réponse dans la "
+                          "pièce concernée.")
+    return out
+
 
 @router.post("/ask")
 @limiter.limit("90/hour")
 def ask_ao(request: Request, req: AskRequest,
            current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    from app.services.llm import complete, MODEL_FAST
+    from app.core.quota import reserve_question, release_question
+    from app.services import dce_texte
     project = db.query(Project).filter(Project.id == req.project_id,
                                        Project.user_id.in_(member_ids(current_user, db))).first()
     if not project or not project.ai_analysis:
@@ -525,29 +1485,31 @@ def ask_ao(request: Request, req: AskRequest,
     q = (req.question or "").strip()
     if not q:
         raise HTTPException(400, "Question vide")
-    a = project.ai_analysis or {}
-    ctx = a.get("dce_excerpt") or ""
-    if not ctx:
-        import json as _json
-        ctx = (a.get("summary", "") + "\n\nDÉTAILS:\n"
-               + _json.dumps(a.get("details", {}), ensure_ascii=False))
     lang = _user_lang_name(current_user, db)
-    user = (f"DCE de l'appel d'offres « {project.name} » (acheteur : {project.client or 'n/d'}) :\n"
-            f"\"\"\"\n{ctx[:14000]}\n\"\"\"\n\nQUESTION : {q}\n\n"
-            f"Réponds en {lang}, fondé uniquement sur le DCE ci-dessus.")
+    slot = reserve_question(current_user, db)     # 429 au-delà de la borne du jour (organisation)
     try:
         from app.services.llm import tenant_scope, LLMUnavailable
+        payload = dce_texte.charger(project)
         with tenant_scope(current_user.id):
-            answer = complete(ASK_SYSTEM, user, max_tokens=700, temperature=0.1, model=MODEL_FAST)
+            if payload and any(p.get("texte") for p in payload.get("pieces") or []):
+                return _ask_integral(project, payload, q, lang)
+            return _ask_legacy(project, q, lang)
     except LLMUnavailable as e:
+        release_question(db, slot)
         # Dégradation gracieuse : service IA saturé/en pause → 503 RETRYABLE (Retry-After).
         raise HTTPException(503, str(e), headers={"Retry-After": "30"})
-    except Exception as e:
-        raise HTTPException(502, f"IA momentanément indisponible : {e}")
-    return {"answer": (answer or "").strip() or "—"}
+    except HTTPException:
+        release_question(db, slot)
+        raise
+    except Exception:
+        release_question(db, slot)
+        logger.warning("question sur le marché %s en échec", project.id, exc_info=True)
+        raise HTTPException(502, "IA momentanément indisponible : réessayez dans un instant.")
 
 
 # ── Étape 3 : sourcing co-traitants réels (déterministe) ─────────────────────────
+
+NOTE_MARCHES_NON_VERIFIES = "Marchés publics gagnés non vérifiés en source DECP pour ce SIRET."
 
 class CotraitantsRequest(BaseModel):
     project_id: int
@@ -568,7 +1530,7 @@ def source_cotraitants(request: Request, req: CotraitantsRequest,
     deps = [req.departement] if req.departement else []
     res = _company_service().discover(
         activity=req.activity, departement=req.departement, query=req.query,
-        tender_departements=deps, need_label=req.activity)
+        tender_departements=deps, need_label=req.activity, pme_only=True)   # « PME seulement » (lot 1, point 5)
     # Complementarity Graph : score de SYNERGIE vs l'entreprise pilote (ce que le
     # candidat APPORTE au groupement). On trie les partenaires par synergie décroissante.
     from app.sourcing.scoring import synergy_score
@@ -577,6 +1539,10 @@ def source_cotraitants(request: Request, req: CotraitantsRequest,
     for c in res["companies"]:
         if not c.procedure_collective:   # un partenaire en procédure reste plafonné/en bas
             c.synergy = synergy_score(c, lead_data, deps, req.activity)
+            if c.past_wins is None:
+                # DECP en panne ou non consultée pour cette entreprise : le compte est INCONNU. On ne dit
+                # jamais « aucun marché gagné » sans l'avoir lu (lot 1, point 5 ; moteur § 7, règle 5).
+                c.synergy["note"] = NOTE_MARCHES_NON_VERIFIES
     res["companies"].sort(key=lambda c: (c.synergy or {}).get("total", 0) if not c.procedure_collective else -1,
                           reverse=True)
     return {
@@ -593,12 +1559,56 @@ class DocumentsRequest(BaseModel):
     cotraitants: list[dict] = []   # NormalizedCompany choisis (avec SIRET)
 
 
+# Dossier du coffre où est rangé le dossier de présentation (identifiant inchangé : l'écran
+# l'affiche « Dossier de présentation »). Ancienne archive, jamais reconnue par la liste des pièces.
+MEMOIRE_FOLDER = "Mémoire technique"
+_LEGACY_MEMOIRE_ARCHIVE = "memoire_technique.md"
+
+
+def _archive_memoire(db: Session, user: User, project: Project, dossier: dict, files: dict,
+                     garder=()) -> None:
+    """Range le dossier de présentation (Word + PDF) dans le dossier du marché, sous le nom du
+    règlement, et mémorise son état (passages à compléter, texte coupé) pour la liste des pièces.
+    Remplace la génération précédente (y compris l'ancienne archive .md) ; jamais bloquant.
+    `garder` (vague 6, plusieurs lots) : les fichiers d'un lot bloqué, non joint cette fois — jamais retirés."""
+    from datetime import datetime, timezone
+    from sqlalchemy.orm.attributes import flag_modified
+    from app.services.dossier import remove_from_dossier, replace_in_dossier
+    mimes = {"docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+             "pdf": "application/pdf"}
+    try:
+        wf = dict(project.workflow) if isinstance(project.workflow, dict) else {}
+        before = (wf.get("dossier_presentation") or {}).get("fichiers") or []
+        names = [name for name, _b in files.values()]
+        garder = [n for n in (garder or []) if n and n not in names]
+        remove_from_dossier(db, user.id, project.id, MEMOIRE_FOLDER,
+                            [n for n in before if n not in names and n not in garder] + [_LEGACY_MEMOIRE_ARCHIVE])
+        for kind, (name, content) in files.items():
+            # « docx:2 » / « pdf:2 » : le fichier d'un lot (rédaction, vague 6 — un fichier par lot).
+            replace_in_dossier(db, user.id, project.id, MEMOIRE_FOLDER, name, content,
+                               mimes.get(str(kind).split(":", 1)[0], ""))
+        etat = dossier.get("memoire_etat") or {}
+        wf["dossier_presentation"] = {
+            "nom": dossier.get("memoire_nom") or "", "fichiers": [n for n in before if n in garder] + names,
+            "a_completer": int(etat.get("a_completer") or 0), "coupe": bool(etat.get("coupe")),
+            "genere_le": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        }
+        project.workflow = wf
+        flag_modified(project, "workflow")
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        logging.getLogger("adjugo").warning("archivage du dossier de présentation (projet %s) : %s", project.id, e)
+
+
 @router.post("/documents")
 @limiter.limit("20/hour")
 def generate_documents(request: Request, req: DocumentsRequest,
                        current_user: User = Depends(get_current_user),
                        db: Session = Depends(get_db)):
     from app.services.agents import redaction
+    from app.core.demo_guard import refuser_demo
+    refuser_demo(current_user, "générer vos documents")    # défense en profondeur : rien n'est rangé
 
     project = db.query(Project).filter(Project.id == req.project_id,
                                        Project.user_id.in_(member_ids(current_user, db))).first()
@@ -608,60 +1618,63 @@ def generate_documents(request: Request, req: DocumentsRequest,
     company = db.query(Company).filter(Company.user_id == data_owner_id(current_user, db)).first()
     company_data = _company_dict(company)
 
-    verified = []
-    if req.cotraitants:
-        # Flux Sourcing : co-traitants choisis dans la liste SIRENE → re-vérifier le SIRET
-        svc = _company_service()
-        for c in req.cotraitants:
-            siret = c.get("siret")
-            official = svc.verify_siret(siret) if siret else None
-            if official:
-                verified.append({
-                    "name": official.nom, "siret": official.siret,
-                    "code_ape": official.naf, "specialites": official.naf_label or "",
-                    "city": official.ville, "departement": official.departement,
-                    "effectif": official.effectif or 0,
-                })
-    else:
-        # Page AO : on prend les sous-traitants déjà RATTACHÉS à l'appel d'offres
-        from app.routers.cotraitants import Cotraitant, ProjectCotraitant
-        links = db.query(ProjectCotraitant).filter(ProjectCotraitant.project_id == project.id).all()
-        for lk in links:
-            ct = db.query(Cotraitant).filter(Cotraitant.id == lk.cotraitant_id).first()
-            if ct:
-                verified.append({
-                    "name": ct.name, "siret": ct.siret, "code_ape": ct.code_ape,
-                    "specialites": ct.specialites, "city": ct.city,
-                    "departement": ct.departement, "effectif": ct.effectif or 0,
-                    "role": lk.role or "sous_traitant",
-                })
+    # Entreprises des formulaires officiels : les sous-traitants DÉCLARÉS et les partenaires dont
+    # l'invitation est ACCEPTÉE (étude organisation, décision 4). Les entreprises éventuellement envoyées
+    # par le navigateur (`cotraitants`, ancienne étape 3 de la recherche) ne sont JAMAIS reprises : une
+    # entreprise trouvée dans SIRENE n'entre pas dans un DC1/DC2 sans avoir accepté une invitation.
+    from app.services.groupement_members import avertissements_formulaires, cotraitants_pour_formulaires
+    _form = cotraitants_pour_formulaires(db, project.id)
+    verified = _form["lignes"]
 
+    # Le dossier de présentation vient de l'atelier (rédaction, vague 2) : plus aucun appel à
+    # l'IA ici. La portée reste posée, par sécurité, pour tout appel futur.
     from app.services.llm import tenant_scope
     with tenant_scope(current_user.id):
         dossier = redaction.build_dossier(project.ai_analysis, company_data, verified, project.id,
                                           lang_name=_user_lang_name(current_user, db),
                                           country=_user_country(current_user, db),
                                           db=db, user_id=current_user.id, estimate=project.estimate)
+    memoire_files = dossier.pop("_memoire_files", None) or {}
+    memoire_garder = dossier.pop("_memoire_garder", None) or []
+    dossier.setdefault("warnings", []).extend(avertissements_formulaires(_form))
 
-    # Archiver les CERFA + mémoire dans le dossier de l'AO (coffre-fort)
+    # Archiver les CERFA + le dossier de présentation (Word ET PDF) dans le dossier de l'AO.
     try:
         import base64
         from app.services.dossier import replace_in_dossier
         for c in dossier.get("cerfas", []):
             replace_in_dossier(db, current_user.id, project.id, "CERFA",
                                c["name"], base64.b64decode(c["content_b64"]), "application/pdf")
-        memo = dossier.get("memoire_markdown")
-        if memo:
-            replace_in_dossier(db, current_user.id, project.id, "Mémoire technique",
-                               "memoire_technique.md", memo.encode("utf-8"), "text/markdown")
     except Exception:
         pass
+    if memoire_files:
+        _archive_memoire(db, current_user, project, dossier, memoire_files, garder=memoire_garder)
 
     return {
         "cotraitants_verifies": len(verified),
-        "cotraitants_rejetes": (len(req.cotraitants) - len(verified)) if req.cotraitants else 0,
+        # Entreprises envoyées par le navigateur : jamais reprises (aucune n'a accepté d'invitation).
+        "cotraitants_rejetes": len(req.cotraitants or []),
         "dossier": dossier,
     }
+
+
+def _safe_link(url) -> Optional[str]:
+    """Lien d'avis stocké sur le projet (affiché ensuite comme lien cliquable, y compris
+    à un partenaire) : l'objet AO vient du navigateur, donc UNE SEULE règle, celle de
+    safe_link_url (http(s) absolu ou chemin interne « /… » ; jamais javascript:, data:,
+    « //hôte », « /\\hôte »…). Plafond = taille de la colonne Project.source_url (500)."""
+    return safe_link_url(url, 500)
+
+
+def _safe_source(src) -> dict:
+    """Bloc « source » d'une analyse (stocké dans ai_analysis puis renvoyé à l'interface) :
+    son source_url passe par la même règle — une ancienne valeur douteuse ressort vide."""
+    if not isinstance(src, dict):
+        return {}
+    out = dict(src)
+    if "source_url" in out:
+        out["source_url"] = safe_link_url(out.get("source_url"), 2000) or ""
+    return out
 
 
 def _tender_as_text(t: NormalizedTender) -> str:

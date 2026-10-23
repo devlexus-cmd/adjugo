@@ -1,9 +1,60 @@
 """
 Adjugo — Schémas Pydantic (validation des requêtes/réponses API)
 """
+import re
 from pydantic import BaseModel, EmailStr, Field, field_validator
 from typing import Optional, List, Literal
 from datetime import date, datetime
+
+
+# === LIENS AFFICHÉS (avis d'origine, fiches officielles…) ===
+# Un lien stocké puis rendu dans un <a href> ne doit JAMAIS porter un schéma exécutable
+# (« javascript: », « data: », « vbscript: »…) : l'échappement HTML ne le neutralise pas.
+# Seuls passent une adresse web absolue http(s) ou un chemin interne commençant par « / »
+# (pages de démo /static/…) ; « //hôte » (relatif au protocole) et « /\hôte » sont refusés.
+_SAFE_LINK_RE = re.compile(r"^(?:https?://[^\s/]|/(?![/\\]))", re.IGNORECASE)
+_CTRL_RE = re.compile(r"[\x00-\x1f\x7f]")
+URL_INVALID_MSG = ("Adresse de l'avis invalide : indiquez un lien qui commence par "
+                   "http:// ou https://.")
+
+
+def safe_link_url(value, max_len: int = 500) -> Optional[str]:
+    """Renvoie l'URL nettoyée si elle est sûre à afficher comme lien, sinon None.
+    Utilisée à l'ÉCRITURE (validation) et à la LECTURE (une ancienne valeur en base ne
+    ressort jamais en « javascript: »)."""
+    if value is None:
+        return None
+    s = str(value).strip()
+    if not s or len(s) > max_len or _CTRL_RE.search(s) or not _SAFE_LINK_RE.match(s):
+        return None
+    return s
+
+
+# === STATUT D'UN MARCHÉ (réorganisation, vague 2a, décision 7) ===
+# Un seul axe : la valeur reçue est ramenée à sa clé (« envoye », l'ancienne clé de « Déposé », devient « depose ») ;
+# une valeur hors de l'axe est refusée (422) au lieu d'échouer à l'enregistrement.
+STATUT_INVALIDE_MSG = ("Statut inconnu : choisissez À venir, Repéré, Décidé, En préparation, Déposé, Gagné, "
+                       "Perdu ou Abandonné.")
+
+
+def _validate_statut(v):
+    if v is None:
+        return None
+    from app.models import statut_normalise
+    k = statut_normalise(v)
+    if k is None:
+        raise ValueError(STATUT_INVALIDE_MSG)
+    return k
+
+
+def _validate_link(v):
+    """Validateur Pydantic commun : vide → None ; lien dangereux → message clair (422)."""
+    if v is None or not str(v).strip():
+        return None
+    s = safe_link_url(v)
+    if s is None:
+        raise ValueError(URL_INVALID_MSG)
+    return s
 
 
 # === AUTH ===
@@ -12,7 +63,17 @@ class UserCreate(BaseModel):
     email: EmailStr
     password: str = Field(min_length=8, description="Au moins 8 caractères")
     full_name: str
-    company_name: Optional[str] = None
+    # Nom d'entreprise : espaces autour retirés avant la mesure ; fait d'espaces seulement, il vaut « absent » (sinon
+    # l'organisation et la fiche entreprise s'appelaient « »). Borné à la largeur des colonnes companies.name et
+    # organizations.name (255) : au-delà, 422 lisible (« Entreprise : trop long ») au lieu d'un 500 sur PostgreSQL.
+    company_name: Optional[str] = Field(None, max_length=255)
+
+    @field_validator("company_name", mode="before")
+    @classmethod
+    def _strip_company_name(cls, v):
+        if not isinstance(v, str):
+            return v                    # None, ou une valeur d'un autre type : la validation habituelle décide
+        return v.strip() or None
 
     # EmailStr ne met en minuscule QUE le domaine : on normalise TOUTE l'adresse (partie locale
     # incluse) pour qu'inscription, connexion et reset utilisent la même forme canonique. Sinon
@@ -37,6 +98,12 @@ class UserLogin(BaseModel):
 class Token(BaseModel):
     access_token: str
     token_type: str = "bearer"
+
+
+class RegisterOut(Token):
+    """Inscription : jeton + suggestion d'interface (vague 3 : « publiez votre profil
+    partenaire ») — simple affichage, aucun email n'est envoyé pour ça."""
+    suggest_profile: Optional[dict] = None
 
 
 class UserOut(BaseModel):
@@ -124,6 +191,18 @@ class ProjectCreate(BaseModel):
     tva_rate: Optional[float] = Field(0, ge=0, le=100)
     deadline: Optional[date] = None
     source_url: Optional[str] = None
+    # Décision 11 : une carte peut exister avant la publication (« suivi », À venir). Absent : « Repéré ».
+    status: Optional[str] = None
+
+    @field_validator("source_url")
+    @classmethod
+    def _check_source_url(cls, v):
+        return _validate_link(v)
+
+    @field_validator("status")
+    @classmethod
+    def _check_status(cls, v):
+        return _validate_statut(v)
 
 
 class ProjectUpdate(BaseModel):
@@ -139,6 +218,32 @@ class ProjectUpdate(BaseModel):
     outcome_rank: Optional[int] = None
     awarded_amount: Optional[float] = None
     competitor_winner: Optional[str] = None
+    # Lien vers l'avis officiel : même garde de schéma qu'à la création.
+    source_url: Optional[str] = None
+    # Relecture de la vague 2a : un GESTE qui fait avancer le marché (« Préparer seul », un geste de Préparer, une
+    # invitation, « Écarter », « Remettre ») envoie les étapes d'où il part ; l'étape ne change que si le marché y est
+    # encore (une page ou une liste plus ancienne qu'un « Marquer déposé » ne le fait jamais reculer). Absent : le
+    # choix « Statut », libre.
+    si_statut: Optional[List[str]] = Field(None, max_length=8)
+
+    @field_validator("source_url")
+    @classmethod
+    def _check_source_url(cls, v):
+        return _validate_link(v)
+
+    @field_validator("status")
+    @classmethod
+    def _check_status(cls, v):
+        return _validate_statut(v)
+
+    @field_validator("si_statut")
+    @classmethod
+    def _check_si_statut(cls, v):
+        if v is None:
+            return None
+        if any(x is None for x in v):
+            raise ValueError(STATUT_INVALIDE_MSG)
+        return [_validate_statut(x) for x in v]
 
 
 class ProjectOut(BaseModel):
@@ -151,6 +256,8 @@ class ProjectOut(BaseModel):
     deadline: Optional[date]
     match_score: Optional[int]
     go_decision: Optional[str]
+    # « Répondre à plusieurs ? » : score de groupement (match_score reste le score SEUL).
+    groupement_score: Optional[int] = None
     ai_summary: Optional[str]
     ai_analysis: Optional[dict]
     workflow: Optional[dict]
@@ -159,6 +266,17 @@ class ProjectOut(BaseModel):
     awarded_amount: Optional[float] = None
     competitor_winner: Optional[str] = None
     created_at: datetime
+
+    @field_validator("ai_analysis")
+    @classmethod
+    def _safe_source_link(cls, v):
+        """Règle « à la lecture » : un lien d'avis ancien en base ne ressort jamais en
+        « javascript: » (copie : la valeur ORM n'est pas modifiée)."""
+        if isinstance(v, dict) and isinstance(v.get("source"), dict) and "source_url" in v["source"]:
+            v = dict(v)
+            v["source"] = dict(v["source"])
+            v["source"]["source_url"] = safe_link_url(v["source"].get("source_url"), 1000)
+        return v
 
     class Config:
         from_attributes = True
@@ -202,15 +320,20 @@ class InvoiceCreate(BaseModel):
     @field_validator("items")
     @classmethod
     def _items_non_negative(cls, v):
-        # Quantité/prix négatifs → total HT/TTC négatif imprimé sur un document comptable.
-        for it in (v or []):
-            try:
-                if float(it.get("qty") or 0) < 0 or float(it.get("unit_price") or 0) < 0:
-                    raise ValueError("Quantité et prix unitaire doivent être positifs.")
-            except (TypeError, ValueError) as e:
-                raise ValueError("Ligne de facture invalide : " + str(e))
-        return v
+        return _lignes_positives(v)
     notes: Optional[str] = None
+
+
+def _lignes_positives(v):
+    """Quantité/prix négatifs → total HT/TTC négatif imprimé sur un document comptable. Même règle à la création et à
+    la modification d'un devis ou d'une facture (contrôle des bugs, octobre 2026 : la modification ne la vérifiait pas)."""
+    for it in (v or []):
+        try:
+            if float(it.get("qty") or 0) < 0 or float(it.get("unit_price") or 0) < 0:
+                raise ValueError("Quantité et prix unitaire doivent être positifs.")
+        except (TypeError, ValueError) as e:
+            raise ValueError("Ligne de facture invalide : " + str(e))
+    return v
 
 
 class InvoiceUpdate(BaseModel):
@@ -220,6 +343,32 @@ class InvoiceUpdate(BaseModel):
     due_date: Optional[date] = None
     paid_date: Optional[date] = None
     notes: Optional[str] = None
+
+    # Contrôle des bugs (octobre 2026) : un statut hors de la liste, ou un statut, des lignes ou un taux envoyés vides
+    # (null), étaient recopiés tels quels ; l'écriture ou la relecture échouait (réponse 500), et la liste des devis
+    # et factures de l'organisation ne se lisait plus. Ces validateurs ne voient que les champs envoyés.
+    @field_validator("status")
+    @classmethod
+    def _statut_connu(cls, v):
+        from app.models import InvoiceStatus
+        valeurs = [s.value for s in InvoiceStatus]
+        if v is None or str(v).strip() not in valeurs:
+            raise ValueError("Statut inconnu : choisissez parmi " + ", ".join(valeurs) + ".")
+        return str(v).strip()
+
+    @field_validator("items")
+    @classmethod
+    def _items_non_negative(cls, v):
+        if v is None:
+            raise ValueError("Ajoutez au moins une ligne avant d'enregistrer.")
+        return _lignes_positives(v)
+
+    @field_validator("tva_rate")
+    @classmethod
+    def _taux_renseigne(cls, v):
+        if v is None:
+            raise ValueError("Indiquez le taux de TVA (0 % si vous êtes en franchise de TVA).")
+        return v
 
 
 class InvoiceOut(BaseModel):

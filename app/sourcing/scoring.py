@@ -6,9 +6,11 @@ aucun score ici.
 
 Barèmes documentés ci-dessous (modifiables sans toucher à la logique).
 """
+import os
 import re
 from typing import Optional
 
+from app.sourcing.base import dans_departements
 from app.sourcing.schemas import NormalizedTender, NormalizedCompany, Score, ScoreCriterion
 
 # ── Barème AO (somme des max = 100) ──
@@ -33,6 +35,25 @@ COMPANY_WEIGHTS = {
     "verif": 6,            # SIRET confirmé au registre
 }
 
+# Confrontation capacité / TAILLE DU LOT : surface annuelle estimée d'une entreprise ≈ CA
+# publié, à défaut effectif × ce montant ; un lot dont le montant dépasse cette surface d'un
+# facteur > _RATIO_LOT signale une structure probablement trop petite (capacité à confirmer).
+_EUR_PAR_SALARIE = float(os.getenv("SOURCING_EUR_PAR_SALARIE", "200000"))
+_RATIO_LOT = float(os.getenv("SOURCING_RATIO_LOT", "1.5"))
+
+
+# Un code CPV européen : 8 chiffres, suivis ou non de sa clé de contrôle (« 45261000-7 »).
+_CPV_REEL = re.compile(r"^\d{8}(?:-\d)?$")
+
+
+def _dep_du_code_postal(cp) -> str:
+    """Département d'un code postal pour la ZONE de la note : 2 chiffres, outre-mer sur 3 (« 97400 » → « 974 »).
+    Corse (« 20… ») inchangée : « 20 », comme avant (la Corse n'est pas touchée par le lot 1)."""
+    cp = str(cp or "").strip()
+    if len(cp) < 2 or not cp[:2].isdigit():
+        return ""
+    return cp[:3] if (cp[:2] in ("97", "98") and len(cp) >= 3 and cp[:3].isdigit()) else cp[:2]
+
 
 def _split(s) -> list:
     if not s:
@@ -56,12 +77,15 @@ def score_tender(t: NormalizedTender, company: Optional[dict], criteria: Optiona
     if not targets:
         b.append(ScoreCriterion(key="cpv", label="Adéquation métier", points=0,
                                 max_points=TENDER_WEIGHTS["cpv"], status="inconnu",
-                                detail="Aucune spécialité/CPV défini dans vos critères"))
+                                detail="Aucune spécialité ni code CPV dans Mon entreprise, onglet « Ce que je cherche »"))
     else:
         hits = []
         # CPV : match par préfixe DÉLIMITÉ sur les codes CPV réels de l'avis (≥4 chiffres
         # communs), pas une sous-chaîne dans un blob (fini les faux positifs "4521").
-        tender_cpv = [str(c).strip() for c in (t.cpv or []) if str(c).strip()]
+        # Seul un VRAI code CPV (8 chiffres, clé de contrôle facultative : « 45261000 », « 45261000-7 »)
+        # est comparé (lot 1, point 3) : le vocabulaire interne du BOAMP (« 45 » = « Cd, DVD ») n'est
+        # jamais un métier correspondant, d'où qu'il vienne (ancien avis renvoyé par le navigateur compris).
+        tender_cpv = [str(c).strip() for c in (t.cpv or []) if _CPV_REEL.match(str(c).strip())]
         for ct in cpv_targets:
             digits = re.sub(r"\D", "", ct)
             if digits and any(tc.startswith(digits[:4]) or digits.startswith(tc[:4])
@@ -82,13 +106,15 @@ def score_tender(t: NormalizedTender, company: Optional[dict], criteria: Optiona
     blob = (" ".join(t.cpv) + " " + text_blob).lower()
 
     # 2. Zone géographique
-    zones = _split(crit.get("departements")) + [(comp.get("postal_code") or "")[:2]]
+    # Comparaison sur le code COMPLET (lot 1, point 4) : « 974 » n'est plus « dans la zone » de la Guadeloupe
+    # (971), et un avis du 974 n'est plus « hors zone » pour qui cherche le 974 (dept_cle, dans_departements).
+    zones = _split(crit.get("departements")) + [_dep_du_code_postal(comp.get("postal_code"))]
     zones = [z for z in zones if z]
     if not t.departements:
         b.append(ScoreCriterion(key="zone", label="Zone géographique", points=0,
                                 max_points=TENDER_WEIGHTS["zone"], status="inconnu",
                                 detail="Lieu d'exécution non précisé dans l'avis"))
-    elif zones and any(d[:2] in zones for d in t.departements):
+    elif zones and any(dans_departements(d, zones) for d in t.departements):
         b.append(ScoreCriterion(key="zone", label="Zone géographique",
                                 points=TENDER_WEIGHTS["zone"], max_points=TENDER_WEIGHTS["zone"],
                                 status="ok", detail=f"Département {', '.join(t.departements)} dans votre zone"))
@@ -195,7 +221,7 @@ def score_company(c: NormalizedCompany, need_trade_label: str = "",
                          "État administratif non disponible"))
     elif c.etat_administratif == "A" and not c.date_fermeture:
         out.append(_crit("etat", "Entreprise active", W["etat"], W["etat"], "ok",
-                         "Active au registre SIRENE"))
+                         "Active au registre officiel des entreprises"))
     else:
         out.append(_crit("etat", "Entreprise active", 0, W["etat"], "partiel",
                          "Cessée / radiée" + (f" le {c.date_fermeture}" if c.date_fermeture else "")))
@@ -230,16 +256,24 @@ def score_company(c: NormalizedCompany, need_trade_label: str = "",
         out.append(_crit("anciennete", "Ancienneté", 0, W["anciennete"], "partiel",
                          "Moins d'un an d'existence"))
 
-    # 5. Capacité (tranche d'effectif salarié) — 12
+    # 5. Capacité (effectif), éventuellement CONFRONTÉE À LA TAILLE DU LOT — 12
+    W5 = W["capacite"]
     if c.effectif is None:
-        out.append(_crit("capacite", "Capacité (effectif)", 0, W["capacite"], "inconnu",
+        out.append(_crit("capacite", "Capacité (effectif)", 0, W5, "inconnu",
                          "Tranche d'effectif non publiée"))
-    elif c.effectif >= 5:
-        out.append(_crit("capacite", "Capacité (effectif)", W["capacite"], W["capacite"], "ok",
-                         f"~{c.effectif} salariés"))
     else:
-        out.append(_crit("capacite", "Capacité (effectif)", round(W["capacite"] * 0.5), W["capacite"],
-                         "partiel", f"~{c.effectif} salarié(s) — petite structure"))
+        pts = W5 if c.effectif >= 5 else round(W5 * 0.5)
+        note = (f"~{c.effectif} salariés" if c.effectif >= 5
+                else f"~{c.effectif} salarié(s) — petite structure")
+        # Surface annuelle estimée (CA, à défaut effectif × _EUR_PAR_SALARIE) ; si le lot la
+        # dépasse de plus de _RATIO_LOT, la structure est probablement sous-dimensionnée.
+        surface = max(float(c.ca or 0.0), (c.effectif or 0) * _EUR_PAR_SALARIE)
+        if lot_montant and surface and lot_montant > surface * _RATIO_LOT:
+            pts = min(pts, round(W5 * 0.25))
+            note += (" — partie de " + f"{int(round(lot_montant)):,}".replace(",", " ")
+                     + " € élevée au regard de la taille, capacité à confirmer")
+        out.append(_crit("capacite", "Capacité (effectif)", pts, W5,
+                         "ok" if pts == W5 else "partiel", note))
 
     # 6. Présence opérationnelle (établissements ouverts) — 8
     nb = c.nb_etablissements_ouverts
@@ -294,7 +328,7 @@ def score_company(c: NormalizedCompany, need_trade_label: str = "",
     if badges:
         note_parts.append("Certifié " + ", ".join(badges))
     if flags:
-        note_parts.append("⚠ " + " ; ".join(flags))
+        note_parts.append("À vérifier : " + " ; ".join(flags))
     note = ". ".join(note_parts)
 
     return Score(total=max(0, min(100, total)), breakdown=out, note=note)

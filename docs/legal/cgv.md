@@ -1,8 +1,6 @@
 # Conditions Générales de Vente et d'Utilisation (CGV/CGU)
 
-> ⚠️ **Avertissement** — Ce document est un **modèle** rédigé à titre informatif. Il doit être **relu et validé par un juriste** avant toute publication et complété avec les informations réelles de l'éditeur. Les champs marqués `[À COMPLÉTER : ...]` doivent être renseignés avant mise en ligne.
-
-*Version : 1.0 — Dernière mise à jour : 15 juin 2026*
+*Version : 1.2 — Dernière mise à jour : 22 juillet 2026*
 
 ---
 
@@ -10,7 +8,7 @@
 
 Les présentes Conditions Générales de Vente et d'Utilisation (ci-après les « CGV ») régissent la relation contractuelle entre :
 
-- d'une part, **Eliot VIEGAS, entrepreneur individuel exerçant sous le nom commercial PADIS** (SIREN 105 406 813 — siège : 9 rue Saint-Yves, 29000 Quimper), éditeur du service Adjugo (ci-après « **Adjugo** », « **l'Éditeur** » ou « **le Prestataire** »), dont les coordonnées figurent dans les [Mentions légales](./mentions-legales.md) ;
+- d'une part, **Eliot VIEGAS, entrepreneur individuel exerçant sous le nom commercial PADIS** (SIREN 105 406 813 — SIRET 105 406 813 00011 — code APE 6201Z — siège : 9 rue Saint-Yves, 29000 Quimper), éditeur du service Adjugo (ci-après « **Adjugo** », « **l'Éditeur** » ou « **le Prestataire** »), dont les coordonnées figurent dans les [Mentions légales](./mentions-legales.md) ;
 - et d'autre part, toute personne morale ou tout professionnel (indépendant, TPE, PME) souscrivant au Service dans le cadre de son activité professionnelle (ci-après « **le Client** »).
 
 **Caractère professionnel (B2B).** Le Service Adjugo est exclusivement destiné à des professionnels agissant dans le cadre de leur activité commerciale, industrielle, artisanale, libérale ou agricole. En souscrivant, le Client reconnaît agir à des fins professionnelles. **Les dispositions du Code de la consommation relatives aux consommateurs, et notamment le droit de rétractation, ne s'appliquent pas** à la présente relation.
@@ -39,14 +37,13 @@ Adjugo est un service en ligne (SaaS) d'aide à la réponse aux marchés publics
 
 ## 3. Offres, prix et facturation à l'usage
 
-Le Service est proposé selon les formules suivantes (prix **nets — TVA non applicable, art. 293 B du CGI**, par mois et par compte, sauf mention contraire) :
+Le Service débute par un **essai gratuit de 30 jours sans carte bancaire** (cf. article 3.5), puis est proposé selon les **formules payantes** suivantes (prix **nets — TVA non applicable, art. 293 B du CGI**, par mois et par compte, sauf mention contraire) :
 
 | Formule | Prix | Contenu principal |
 |---|---|---|
-| **Starter** | **0 € / mois** | Veille + **5 analyses d'appel d'offres** incluses / mois |
-| **Pro** | **129 € / mois** | Veille + **30 analyses d'appel d'offres** incluses / mois + génération de dossier |
-| **Business** | **199 € / mois** | Veille + **100 analyses d'appel d'offres** incluses / mois + fonctions de groupement |
-| **Enterprise** | **Sur devis** | Groupements, grandes structures, volumes élevés, fonctionnalités dédiées |
+| **Pro** | **129,99 € / mois** | Veille + **30 analyses d'appel d'offres** incluses / mois + génération de dossier |
+| **Business** | **199,99 € / mois** | Veille + **100 analyses d'appel d'offres** incluses / mois + fonctions de groupement |
+| **Enterprise / Sur mesure** | **Sur devis** | Groupements, grandes structures, volumes élevés, fonctionnalités dédiées |
 
 ### 3.1. Facturation à l'usage (au-delà du quota)
 
@@ -66,13 +63,17 @@ Le numéro de TVA intracommunautaire de l'Éditeur est **FR63105406813** (utilis
 
 L'Éditeur se réserve le droit de modifier ses tarifs. Toute modification est notifiée au Client par e-mail avec un préavis raisonnable d'au moins **trente (30) jours** et s'applique au renouvellement suivant de l'abonnement. À défaut d'acceptation, le Client peut résilier dans les conditions de l'article 5.
 
+### 3.5. Essai gratuit
+
+Tout nouveau compte bénéficie d'un **essai gratuit de trente (30) jours**, **sans carte bancaire**, donnant accès à l'ensemble des fonctionnalités au niveau de la formule **Pro**, dans les limites suivantes, valables pour **toute la durée de l'essai** : **trente (30) analyses d'appel d'offres au total** (et non par mois), **quinze (15) questions par jour** posées sur les dossiers, et une **limite d'usage** des fonctions d'intelligence artificielle destinée à protéger le Service. Lorsque l'une de ces limites est atteinte, les fonctions concernées sont suspendues jusqu'à la souscription d'une formule payante (ou, pour les quinze questions par jour, jusqu'au lendemain) ; un traitement déjà commencé (lecture et analyse d'un dossier, rédaction) est toujours mené à son terme. Ces limites ne s'appliquent pas aux formules payantes, régies par l'article 3. À la fin de l'essai, les **fonctions d'intelligence artificielle** du Service **ne sont plus accessibles sans formule payante** ; un traitement commencé pendant l'essai est mené à son terme. L'essai est limité à **un (1) par Client**. **Aucun moyen de paiement n'étant enregistré, aucun prélèvement automatique n'intervient** : à l'échéance des trente (30) jours, l'accès aux analyses est **suspendu** tant que le Client n'a pas souscrit une formule payante (Pro ou Business). Les données du Client demeurent accessibles en consultation et en export dans les conditions prévues à l'article 5 et à la [Politique de confidentialité](./politique-confidentialite.md). L'Éditeur se réserve le droit de restreindre ou de refuser un essai en cas d'usage abusif (création de comptes multiples visant à cumuler des essais, notamment).
+
 ## 4. Paiement
 
 4.1. **Prestataire de paiement.** Les paiements sont traités par **Stripe** (Stripe Payments Europe, Ltd. / Stripe, Inc.), prestataire de services de paiement. L'Éditeur n'a pas accès aux numéros complets de cartes bancaires, qui sont collectés et traités directement par Stripe selon ses propres conditions et normes de sécurité (PCI-DSS).
 
 4.2. **Modalités.** Les abonnements payants sont réglés par avance, par prélèvement automatique récurrent sur le moyen de paiement enregistré, à chaque échéance (mensuelle, sauf mention contraire). Les analyses facturées à l'usage sont prélevées selon les modalités prévues à l'article 3.1.
 
-4.3. **Défaut de paiement.** En cas de rejet ou de défaut de paiement, l'Éditeur pourra, après relance restée infructueuse, suspendre l'accès au Service jusqu'à régularisation. Conformément aux articles L.441-10 et D.441-5 du Code de commerce, tout retard de paiement entre professionnels donne lieu de plein droit à des **pénalités de retard** (au taux légal applicable) et à une **indemnité forfaitaire de recouvrement de 40 €**.
+4.3. **Défaut de paiement.** En cas de rejet ou de défaut de paiement, l'Éditeur pourra, après relance restée infructueuse, suspendre l'accès au Service jusqu'à régularisation. Conformément aux articles L.441-10 et D.441-5 du Code de commerce, tout retard de paiement entre professionnels donne lieu de plein droit à des **pénalités de retard** calculées au taux d'intérêt de la Banque centrale européenne à son opération de refinancement la plus récente majoré de 10 points de pourcentage, ainsi qu'à une **indemnité forfaitaire de recouvrement de 40 € par facture**, sans préjudice d'une indemnisation complémentaire sur justificatifs si les frais de recouvrement exposés excèdent ce montant.
 
 4.4. **Factures.** Les factures sont émises et mises à disposition du Client sous format électronique.
 
@@ -80,7 +81,7 @@ L'Éditeur se réserve le droit de modifier ses tarifs. Toute modification est n
 
 5.1. **Durée.** Les abonnements sont souscrits pour une durée d'**un (1) mois**, renouvelable par **tacite reconduction** par périodes successives identiques, sauf résiliation.
 
-5.2. **Résiliation par le Client.** Le Client peut résilier à tout moment depuis son compte ou par e-mail à viegaseliot1@gmail.com. La résiliation prend effet **à la fin de la période d'abonnement en cours** ; aucun remboursement prorata temporis n'est dû pour la période entamée, sauf disposition légale impérative contraire. La formule Découverte (0 €) peut être quittée à tout moment.
+5.2. **Résiliation par le Client.** Le Client peut résilier à tout moment depuis son compte ou par e-mail à eviegas@padis-core.com. La résiliation prend effet **à la fin de la période d'abonnement en cours** ; aucun remboursement prorata temporis n'est dû pour la période entamée, sauf disposition légale impérative contraire. Pendant l'**essai gratuit** (article 3.5), aucun paiement n'est dû ; l'essai prend fin automatiquement à son terme, sans engagement ni prélèvement, en l'absence de souscription.
 
 5.3. **Résiliation par l'Éditeur.** L'Éditeur peut suspendre ou résilier le compte, après mise en demeure restée sans effet pendant **quinze (15) jours**, en cas de manquement du Client à ses obligations (notamment défaut de paiement, usage frauduleux ou illicite, atteinte à la sécurité du Service).
 
@@ -92,7 +93,7 @@ L'Éditeur se réserve le droit de modifier ses tarifs. Toute modification est n
 
 6.2. Le Service est fourni selon une **obligation de moyens**. L'Éditeur ne garantit pas une disponibilité ininterrompue ni exempte d'erreur. Des interruptions peuvent survenir, notamment du fait de l'hébergeur, des fournisseurs tiers (notamment le fournisseur d'IA), ou des sources de données publiques exploitées, dont l'Éditeur ne maîtrise pas la disponibilité.
 
-6.3. `[À COMPLÉTER : si un SLA chiffré est souhaité pour les offres Business/Enterprise — ex. taux de disponibilité mensuel cible de 99,X %, fenêtres de maintenance, et éventuels avoirs/crédits de service. À défaut, le Service est fourni sans engagement chiffré de disponibilité.]`
+6.3. Sauf stipulation contraire d'un contrat Enterprise ou d'une annexe SLA spécifique, le Service est fourni **sans engagement chiffré de disponibilité** (taux de disponibilité garanti, fenêtres de maintenance planifiées ou crédits de service). Les éventuels engagements de niveau de service applicables aux offres Business/Enterprise font l'objet d'une annexe distincte.
 
 ## 7. Limitation de responsabilité
 
@@ -102,7 +103,7 @@ L'Éditeur se réserve le droit de modifier ses tarifs. Toute modification est n
 
 7.3. **Exclusions.** L'Éditeur ne saurait être tenu responsable des dommages indirects ou immatériels, notamment perte de chance, perte de marché, perte de chiffre d'affaires, perte d'exploitation, atteinte à l'image ou préjudice commercial, résultant de l'utilisation ou de l'impossibilité d'utiliser le Service.
 
-7.4. **Plafond.** En tout état de cause, et sauf faute lourde ou dol, la responsabilité totale et cumulée de l'Éditeur au titre du présent contrat est **limitée au montant total des sommes effectivement versées par le Client au cours des douze (12) mois précédant le fait générateur** de responsabilité.
+7.4. **Plafond.** En tout état de cause, et sauf faute lourde ou dol, la responsabilité totale et cumulée de l'Éditeur au titre du présent contrat est **limitée au montant total des sommes effectivement versées par le Client au cours des douze (12) mois précédant le fait générateur** de responsabilité, ce plafond ne pouvant être inférieur à **cent (100) euros**.
 
 7.5. **Force majeure.** L'Éditeur n'est pas responsable en cas d'inexécution due à un événement de force majeure au sens de l'article 1218 du Code civil et de la jurisprudence française.
 
@@ -124,7 +125,7 @@ Le Client s'engage notamment à :
 
 ## 10. Données personnelles
 
-Le traitement des données à caractère personnel est régi par la [Politique de confidentialité](./politique-confidentialite.md), qui fait partie intégrante de la relation contractuelle. Lorsque l'Éditeur traite des données personnelles pour le compte du Client (notamment les données figurant dans les documents téléversés), les parties conviennent que l'Éditeur agit en qualité de **sous-traitant** au sens de l'article 28 du RGPD, dans les conditions précisées à ladite Politique `[À COMPLÉTER : conclure le cas échéant un accord de sous-traitance (DPA) dédié]`.
+Le traitement des données à caractère personnel est régi par la [Politique de confidentialité](./politique-confidentialite.md), qui fait partie intégrante de la relation contractuelle. Lorsque l'Éditeur traite des données personnelles pour le compte du Client (notamment les données figurant dans les documents téléversés), les parties conviennent que l'Éditeur agit en qualité de **sous-traitant** au sens de l'article 28 du RGPD, dans les conditions précisées à ladite Politique. Un **accord de traitement des données (DPA) conforme à l'article 28 du RGPD** est [publié et consultable ici](/dpa) et fait partie intégrante du contrat.
 
 ## 11. Confidentialité
 
@@ -140,10 +141,6 @@ L'Éditeur peut modifier les présentes CGV. Toute modification substantielle es
 
 13.2. **Médiation de la consommation non applicable.** La relation étant exclusivement **B2B** (entre professionnels), le dispositif de médiation de la consommation prévu aux articles L.611-1 et suivants du Code de la consommation **ne s'applique pas**.
 
-13.3. **Résolution amiable.** En cas de différend, les parties s'efforceront de trouver une solution amiable avant toute action judiciaire. Toute réclamation peut être adressée à viegaseliot1@gmail.com.
+13.3. **Résolution amiable.** En cas de différend, les parties s'efforceront de trouver une solution amiable avant toute action judiciaire. Toute réclamation peut être adressée à eviegas@padis-core.com.
 
 13.4. **Juridiction compétente.** À défaut d'accord amiable, **tout litige relatif à la formation, l'interprétation, l'exécution ou la rupture des présentes sera soumis aux tribunaux compétents du ressort de Quimper** (siège de l'Éditeur), y compris en cas de pluralité de défendeurs, d'appel en garantie ou de procédure d'urgence, sous réserve des dispositions légales impératives applicables entre professionnels.
-
----
-
-*Document généré comme modèle. À faire valider par un juriste avant publication.*

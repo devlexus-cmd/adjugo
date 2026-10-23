@@ -17,10 +17,18 @@ _TRADE_KEYWORDS = {
     "peinture": ["peinture", "finition", "revêtement mural", "revetement mural", "papier peint"],
     "platrerie": ["plâtrerie", "platrerie", "cloison", "isolation", "doublage", "faux plafond", "plaque de plâtre"],
     "carrelage": ["carrelage", "revêtement de sol", "revetement de sol", "faïence", "faience", "sol souple"],
-    "terrassement": ["terrassement", "vrd", "voirie", "réseaux", "reseaux", "assainissement", "espaces verts"],
+    "terrassement": ["terrassement", "vrd", "voirie", "réseaux", "reseaux", "assainissement"],
     "metallerie": ["serrurerie", "métallerie", "metallerie", "métallique", "metallique", "ferronnerie", "garde-corps"],
     "etancheite": ["étanchéité", "etancheite"],
     "demolition": ["démolition", "demolition", "déconstruction", "deconstruction", "désamiantage", "desamiantage", "curage"],
+    # Fournitures & services
+    "nettoyage": ["nettoyage", "propreté", "proprete", "entretien des locaux", "ménage", "menage", "bionettoyage", "vitrerie"],
+    "espaces_verts": ["espaces verts", "paysag", "tonte", "élagage", "elagage", "jardin", "végéta", "vegeta", "fleuriss"],
+    "restauration": ["restauration", "cantine", "repas", "traiteur", "alimentaire", "denrées", "denrees"],
+    "informatique": ["informatique", "logiciel", "progiciel", "matériel informatique", "materiel informatique", "infogérance", "infogerance", "numérique", "numerique", "téléphonie", "telephonie"],
+    "securite": ["gardiennage", "surveillance humaine", "sécurité privée", "securite privee", "agent de sécurité", "agent de securite"],
+    "imprimerie": ["imprimerie", "impression", "reprographie"],
+    "formation": ["formation professionnelle", "stage de formation", "organisme de formation"],
 }
 
 

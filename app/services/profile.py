@@ -9,12 +9,19 @@ from app.models import Company
 
 
 def company_dict(company: Optional[Company]) -> dict:
+    """Profil entreprise sérialisé. `team` (équipe interne : nom, fonction, qualifications,
+    références) alimente le dossier de présentation ; ses NOMS ne partent jamais à l'IA (masqués
+    par app/services/pii.py) et il n'est jamais recopié dans les données de groupement
+    (voir groupement_verdict.lead_member)."""
     if not company:
         return {}
     keys = ["name", "siret", "code_ape", "forme_juridique", "representant_legal",
             "address", "city", "postal_code", "tva_intracom", "email", "phone",
             "ca_n1", "ca_n2", "ca_n3", "effectif", "qualifications", "references"]
-    return {k: getattr(company, k, None) for k in keys}
+    out = {k: getattr(company, k, None) for k in keys}
+    team = getattr(company, "team", None)
+    out["team"] = [m for m in team if isinstance(m, dict)] if isinstance(team, list) else []
+    return out
 
 
 def criteria_dict(user_id: int, db: Session) -> dict:

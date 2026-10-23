@@ -30,7 +30,8 @@ def _sender() -> dict:
     return {"name": name or "Adjugo", "email": addr or "noreply@adjugo.pro"}
 
 
-def _send_via_brevo_api(to: str, subject: str, text: str, html: str | None) -> bool:
+def _send_via_brevo_api(to: str, subject: str, text: str, html: str | None,
+                        reply_to: str | None = None) -> bool:
     """Envoi via l'API HTTP de Brevo (port 443). Lève en cas d'échec réseau ;
     retourne False sur réponse d'erreur applicative (clé invalide, etc.)."""
     payload = {
@@ -41,6 +42,8 @@ def _send_via_brevo_api(to: str, subject: str, text: str, html: str | None) -> b
     }
     if html:
         payload["htmlContent"] = html
+    if reply_to:
+        payload["replyTo"] = {"email": reply_to}
     req = urllib.request.Request(
         BREVO_API_URL,
         data=json.dumps(payload).encode("utf-8"),
@@ -98,7 +101,8 @@ def _send_via(host: str, port: int, mode: str, msg: EmailMessage, timeout: int =
             s.send_message(msg)
 
 
-def send_email(to: str, subject: str, text: str, html: str | None = None) -> bool:
+def send_email(to: str, subject: str, text: str, html: str | None = None,
+               reply_to: str | None = None) -> bool:
     """Envoie un email. Retourne True si envoyé, False si désactivé ou en erreur.
 
     Auto-résilient : essaie plusieurs ports/modes (587 STARTTLS → 2525 STARTTLS →
@@ -113,7 +117,7 @@ def send_email(to: str, subject: str, text: str, html: str | None = None) -> boo
     # sortants sont bloqués → le SMTP ci-dessous ne sert qu'en dev local.
     if settings.BREVO_API_KEY:
         try:
-            return _send_via_brevo_api(to, subject, text, html)
+            return _send_via_brevo_api(to, subject, text, html, reply_to)
         except Exception as e:
             logger.warning("brevo-api injoignable (%s) — repli SMTP", e)
 
@@ -125,6 +129,8 @@ def send_email(to: str, subject: str, text: str, html: str | None = None) -> boo
     msg["From"] = settings.SMTP_FROM
     msg["To"] = to
     msg["Subject"] = subject
+    if reply_to:
+        msg["Reply-To"] = reply_to
     msg.set_content(text)
     if html:
         msg.add_alternative(html, subtype="html")

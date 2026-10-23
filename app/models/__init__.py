@@ -3,8 +3,9 @@ Adjugo — Modèles de base de données
 """
 from datetime import datetime, date, timezone
 from sqlalchemy import (
-    Column, Integer, String, Float, Boolean, Text, DateTime,
-    Date, ForeignKey, JSON, Enum as SAEnum, UniqueConstraint,
+    Column, Integer, BigInteger, String, Float, Boolean, Text, DateTime,
+    Date, ForeignKey, JSON, Enum as SAEnum, UniqueConstraint, Index, text as sa_text, false as sa_false,
+    true as sa_true,
 )
 from sqlalchemy.orm import relationship
 from app.core.database import Base
@@ -20,12 +21,42 @@ class PlanType(str, enum.Enum):
 
 
 class ProjectStatus(str, enum.Enum):
-    nouveau = "nouveau"
-    en_cours = "en_cours"
-    envoye = "envoye"
+    """Un seul axe d'étapes (réorganisation, vague 2a, décision 7 ; docs/REORGANISATION_V2A.md, A1), dans l'ordre :
+    À venir → Repéré → Décidé → En préparation → Déposé → Gagné / Perdu, plus Abandonné. Les libellés sont dans
+    STATUTS_LIBELLES (et AXE_ETAPES, app.js). La clé « envoye » (jusqu'au 20/10/2026) est devenue « depose » : la
+    migration c4axeetapes a renommé les valeurs stockées ; une ancienne clé reçue (page ouverte avant la mise en
+    ligne, journal) est lue comme « depose » (`_missing_`). Ne pas confondre avec InvoiceStatus.envoye (un devis
+    s'envoie, il ne se dépose pas)."""
+    suivi = "suivi"            # À venir : une carte de Mes marchés avant la publication du marché (décision 11)
+    nouveau = "nouveau"        # Repéré
+    decide = "decide"          # Décidé : seul ou à plusieurs, rien n'est encore préparé
+    en_cours = "en_cours"      # En préparation
+    depose = "depose"          # Déposé (ancienne clé « envoye »)
     gagne = "gagne"
     perdu = "perdu"
-    abandonne = "abandonne"
+    abandonne = "abandonne"    # Abandonné (« Écarter » à l'étape Décider)
+
+    @classmethod
+    def _missing_(cls, value):
+        return cls.depose if value == "envoye" else None
+
+
+# L'axe, ses libellés (ceux de l'écran) et les familles de statuts lues par le serveur.
+AXE_ETAPES = tuple(s.value for s in ProjectStatus)
+STATUTS_LIBELLES = {"suivi": "À venir", "nouveau": "Repéré", "decide": "Décidé", "en_cours": "En préparation",
+                    "depose": "Déposé", "gagne": "Gagné", "perdu": "Perdu", "abandonne": "Abandonné"}
+STATUTS_DEPOSES = ("depose", "gagne", "perdu")             # déposé et au-delà
+STATUTS_CLOS = STATUTS_DEPOSES + ("abandonne",)            # plus de relance ni de rappel de date limite
+
+
+def statut_normalise(valeur):
+    """La clé de l'axe pour une valeur reçue (« envoye » → « depose »), None si elle n'en est pas une."""
+    if isinstance(valeur, ProjectStatus):
+        return valeur.value
+    try:
+        return ProjectStatus(str(valeur or "").strip()).value
+    except ValueError:
+        return None
 
 
 class InvoiceType(str, enum.Enum):
@@ -89,6 +120,12 @@ class User(Base):
     # Tarification à l'usage : autoriser le dépassement de quota facturé (vs 402 bloquant)
     overage_enabled = Column(Boolean, default=False)
     overage_count = Column(Integer, default=0)  # analyses hors quota ce mois
+    # Essai gratuit 30 jours (sans carte) : date de fin. NULL = compte historique/démo
+    # (jamais d'essai attaché → ancien comportement Découverte conservé).
+    trial_ends_at = Column(DateTime, nullable=True)
+    # Analyses consommées pendant l'essai, sur TOUTE sa durée (jamais remis à zéro au changement de
+    # mois, contrairement à analyses_used_this_month) : TRIAL_ANALYSES au total (app/core/quota.py).
+    trial_analyses_used = Column(Integer, default=0)
     amont_alerts_enabled = Column(Boolean, default=False)  # veille amont auto (email)
     # Révocation de session : incrémenté au retrait/transfert → les JWT émis avant
     # (qui portent l'ancienne valeur) sont rejetés. Coupe immédiatement un accès.
@@ -97,6 +134,13 @@ class User(Base):
     # Réinitialisation de mot de passe par email (sha256 d'un token à usage unique).
     reset_token_hash = Column(String(64), default="")
     reset_expires_at = Column(DateTime, nullable=True)
+    # Prise en main (réorganisation, vague 2b, B1 ; migration c5priseenmain ; app/services/prise_en_main.py) : l'état
+    # de « Vos premiers pas » et de la carte « Faites-vous trouver », gardé SUR LE SERVEUR (un autre onglet, un autre
+    # appareil, la page ouverte par le lien de confirmation les retrouvent). Préférences d'affichage, jamais un fait.
+    # `premiers_pas_replie` : la liste de l'accueil est repliée. `suggestion_reseau` : "" (jamais proposée),
+    # "a_montrer" (proposée après l'inscription ou l'acceptation d'une invitation), "fermee" (fermée ou suivie).
+    premiers_pas_replie = Column(Boolean, default=False, nullable=True, server_default=sa_false())
+    suggestion_reseau = Column(String(12), default="", nullable=True, server_default="")
     created_at = Column(DateTime, default=utcnow)
     updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
 
@@ -194,11 +238,32 @@ class Project(Base):
     # Chiffrage estimatif (devis) : tâches + jours + tarifs + totaux. Voir agents/chiffrage.
     estimate = Column(JSON, nullable=True)
 
+    # ── Répondre à plusieurs (co-traitance v2) ──
+    # match_score reste le score SEUL (jamais gonflé). groupement_score = score cumulé de
+    # l'entreprise virtuelle « moi + partenaires retenus » (calcul déterministe, 0 LLM).
+    # groupement_plan = {members:[{kind,id,invite_id,name,siret,apporte[]}], breakdown, gaps,
+    #   warnings, offre:{total_ht, frozen_at, convention_id}, computed_at}.
+    # L'ÉTAT du groupement n'est PAS stocké : il est DÉRIVÉ par groupement_state() (une seule
+    # source de vérité, rien à resynchroniser). go_decision accepte aussi 'go_groupement'.
+    groupement_score = Column(Integer, nullable=True)
+    groupement_plan = Column(JSON, nullable=True)
+
+    # Mesure de la décision 11 de l'étude « rédaction » (le règlement impose-t-il son propre fichier
+    # de réponse ?) : posé à chaque import du dossier du marché (analyse d'un fichier réel), lu
+    # seulement en agrégat (/metrics). NULL = aucun dossier importé.
+    dce_importe_le = Column(DateTime, nullable=True)
+    dce_fichier_impose = Column(Boolean, nullable=True)
+
     # Résultat (capture Gagné/Perdu pour les analytics de win-rate)
     outcome_reason = Column(String(255), nullable=True)
     outcome_rank = Column(Integer, nullable=True)        # classement obtenu
     awarded_amount = Column(Float, nullable=True)        # montant attribué au lauréat
     competitor_winner = Column(String(255), nullable=True)
+
+    # Rédaction, vague 6 (F, « le carnet de notes ») : passage à « Perdu », demande des notes, notes VALIDÉES
+    # par l'utilisateur (critère par critère), courrier collé, ajout au savoir-faire. Seul point d'écriture :
+    # app/services/carnet_notes.py ; contrat docs/REDACTION_V6.md (section F). NULL = rien de saisi.
+    carnet_notes = Column(JSON, nullable=True)
 
     deleted_at = Column(DateTime, nullable=True, index=True)  # soft-delete (corbeille)
 
@@ -270,7 +335,8 @@ class Invoice(Base):
     __tablename__ = "invoices"
     # Numérotation FAC/DEV SÉQUENTIELLE PAR UTILISATEUR → l'unicité doit être (user_id,
     # reference) et non globale (sinon le 2e user à créer « FAC-2026-001 » heurte la
-    # contrainte globale → 500). Cf. migration g1h2i3j4k5l6.
+    # contrainte globale → 500). Cf. migration g1h2i3j4k5l6. Depuis le contrôle des bugs d'octobre 2026, le numéro
+    # suit l'ORGANISATION (invoices.generate_reference) ; l'unicité (user_id, reference) reste vraie.
     __table_args__ = (UniqueConstraint("user_id", "reference", name="uq_invoice_user_reference"),)
 
     id = Column(Integer, primary_key=True, index=True)
@@ -516,7 +582,15 @@ class Job(Base):
     __tablename__ = "jobs"
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    # Compte propriétaire de la tâche (portée « organisation » : lisible par son organisation, GET
+    # /api/jobs/{id}). NULL pour une tâche lancée par un PARTENAIRE du groupement (rédaction, vague 4) :
+    # aucun membre d'aucune organisation n'en est propriétaire (aucune requête `user_id IN (…)` ne la
+    # renvoie) ; elle n'appartient qu'à son invitation (portee « partenaire » + invite_id) et ne se lit
+    # qu'avec le lien de ce partenaire ou le compte qui a rattaché ce lien (migration x8y9redactionv4).
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    # '' (ou NULL, lignes d'avant la vague 4) = organisation de user_id ; 'partenaire' = invite_id.
+    portee = Column(String(12), nullable=True, default="", server_default="")
+    invite_id = Column(Integer, nullable=True, index=True)
     kind = Column(String(40), default="")             # memoire | merged_memoire | warroom | …
     status = Column(String(20), default="pending")    # pending | running | done | error
     label = Column(String(255), default="")           # libellé affiché au client
@@ -524,6 +598,80 @@ class Job(Base):
     error = Column(Text, default="")                  # message d'erreur (quand error)
     created_at = Column(DateTime, default=utcnow)
     updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
+
+
+# === COÛT DE L'IA (interne, jamais montré au client) ===
+# Coût réel des appels à l'IA, au tarif public du fournisseur, cumulé par compte de facturation, par
+# mois et selon que le compte était en essai gratuit ou non (app/services/budget_ia.py). Sert au
+# budget de l'essai (vérifié AVANT chaque opération) et à l'alerte interne des forfaits payants.
+# compte : « u<id> » (propriétaire de l'organisation, qui porte le forfait), « acheteur:<id> » (côté
+# collectivités), « acheteur:anonyme », « plateforme » (appel mutualisé, sans client). Aucune donnée
+# personnelle : un identifiant de compte, des montants et des nombres de tokens.
+
+class UsageIA(Base):
+    __tablename__ = "usage_ia"
+    __table_args__ = (UniqueConstraint("compte", "periode", "essai", name="uq_usage_ia_compte_periode_essai"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    compte = Column(String(40), nullable=False, index=True)
+    billing_user_id = Column(Integer, nullable=True, index=True)   # propriétaire de l'organisation (PME)
+    org_id = Column(Integer, nullable=True, index=True)
+    periode = Column(String(7), nullable=False)                    # « AAAA-MM » (UTC)
+    # Valeurs par défaut côté base identiques à celles de la migration u5v6essaigardefou : une base
+    # neuve (table créée depuis les modèles) et la production montée ont le même schéma.
+    essai = Column(Boolean, default=False, nullable=False, server_default=sa_false())   # coût engagé pendant l'essai
+    cout_eur = Column(Float, default=0.0, nullable=False, server_default="0")
+    appels = Column(Integer, default=0, nullable=False, server_default="0")
+    tokens_entree = Column(BigInteger, default=0, nullable=False, server_default="0")
+    tokens_sortie = Column(BigInteger, default=0, nullable=False, server_default="0")
+    alerte_le = Column(DateTime, nullable=True)   # forfait payant : seuil du mois dépassé (alerte interne)
+    created_at = Column(DateTime, default=utcnow)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
+
+
+# === ANALYSE PARTAGÉE (moins de coût d'IA, sans rien changer à la qualité) ===
+# Extraction d'un dossier de consultation (document PUBLIC de l'acheteur) faite par l'IA SANS aucune
+# donnée d'entreprise, gardée pour être resservie quand ce même dossier, exactement, est analysé à
+# nouveau, par n'importe quelle organisation. Clé = empreinte de TOUT ce que l'IA reçoit pour
+# l'extraction (consignes, modèles, version de la lecture, langue, texte et état de chaque pièce).
+# AUCUNE colonne de propriétaire : rien ne relie une entrée à une organisation. Aucune donnée
+# d'entreprise cliente ; peut contenir des données personnelles publiées par l'acheteur (contact d'un
+# agent). Durée bornée, effacée avec le compte de la dernière organisation qui l'utilise. Voir
+# docs/ANALYSE_PARTAGEE.md.
+class AnalysePartagee(Base):
+    __tablename__ = "analyses_partagees"
+
+    id = Column(Integer, primary_key=True, index=True)
+    cle = Column(String(64), nullable=False, unique=True, index=True)
+    nature = Column(String(12), nullable=False, default="dossier", server_default="dossier")   # dossier | avis
+    mode = Column(String(20), nullable=False, default="", server_default="")   # integral | deux_temps | avis
+    version = Column(String(40), nullable=False, default="", server_default="")
+    modele = Column(String(200), nullable=False, default="", server_default="")
+    extraction = Column(JSON, nullable=False)       # réponse de l'IA (faits du dossier), avant tout calcul
+    rapport = Column(JSON, nullable=True)           # lecture en deux temps : ce qui a été lu, partie par partie
+    parties = Column(JSON, nullable=True)           # deux temps : faits relevés par partie (clé = contenu exact)
+    deroule = Column(JSON, nullable=True)           # deux temps : durées et instants de lecture (progression)
+    duree_s = Column(Float, nullable=False, default=0.0, server_default="0")
+    cout_eur = Column(Float, nullable=False, default=0.0, server_default="0")
+    created_at = Column(DateTime, default=utcnow)
+    utilise_le = Column(DateTime, default=utcnow, index=True)
+
+
+# Mesure des doublons (interne, jamais montrée à un client) : une ligne par analyse d'un dossier, avec
+# l'empreinte NORMALISÉE de ses pièces (triées) — jamais leur contenu —, pour compter les dossiers
+# analysés par plusieurs organisations. Sans clé étrangère (comme usage_ia) ; effacée avec le compte
+# (RGPD) et au-delà de la durée de mesure.
+class AnalyseEmpreinte(Base):
+    __tablename__ = "analyse_empreintes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    owner_id = Column(Integer, nullable=False, index=True)        # organisation (data_owner_id)
+    nature = Column(String(12), nullable=False, default="dossier", server_default="dossier")
+    empreinte = Column(String(64), nullable=False, index=True)    # contenu normalisé, pièces triées
+    cle = Column(String(64), nullable=True, index=True)            # clé exacte de l'extraction
+    servi_du_cache = Column(Boolean, nullable=False, default=False, server_default=sa_false())
+    economie_eur = Column(Float, nullable=False, default=0.0, server_default="0")
+    created_at = Column(DateTime, default=utcnow, index=True)
 
 
 # === INVITATION CO-TRAITANT (vue bridée par jeton) ===
@@ -551,6 +699,23 @@ class ProjectInvite(Base):
     accepted_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
 
     revoked = Column(Boolean, default=False, index=True)
+    # Le partenaire DÉCLINE l'invitation : traité EXACTEMENT comme revoked partout (helper
+    # app.services.groupement_members.active_invites) — il sort du groupement (checklist,
+    # cockpit, CERFA, convention, signatures) sans que le mandataire ait à révoquer.
+    declined_at = Column(DateTime, nullable=True)
+    # Provenance de l'invitation : manuel (lien créé par le mandataire) | reseau_adjugo
+    # (vague 3 : recipient rempli côté serveur et JAMAIS sérialisé tant que non accepté) | sirene.
+    source = Column(String(20), default="manuel")
+    partner_profile_id = Column(Integer, nullable=True, index=True)   # vague 3 (réseau)
+    # Invitation RÉSEAU : date de la PREMIÈRE réponse positive (acceptée depuis le compte, adresse
+    # prouvée par code, ou part soumise). Jamais remise à zéro (effacement du compte qui l'avait
+    # acceptée, part repassée en brouillon) : l'aperçu minimal et le journal du membre ne reviennent
+    # jamais en arrière (migration q1r2s3t4u5v6).
+    network_accepted_at = Column(DateTime, nullable=True)
+    # Rédaction, vague 4 : empreinte de la CLÉ de l'espace privé du lien (brouillons, sources, aide de
+    # l'IA du partenaire). La clé n'est connue que du navigateur du partenaire : le lien seul — que le chef
+    # de file a pu transmettre — ne suffit jamais à lire sa matière privée (migration x8y9redactionv4).
+    espace_hash = Column(String(64), nullable=True, default="", server_default="")
     expires_at = Column(DateTime, nullable=True)       # null = sans expiration
     view_count = Column(Integer, default=0)
     last_viewed_at = Column(DateTime, nullable=True)
@@ -564,6 +729,12 @@ class ProjectInvite(Base):
     otp_attempts = Column(Integer, default=0)
     verified_email = Column(String(255), default="")   # adresse prouvée
     verified_at = Column(DateTime, nullable=True)
+
+    # Suivi d'envoi : le mandataire voit si le mail d'invitation est réellement parti,
+    # et la relance automatique sait quels paliers d'échéance ont déjà été notifiés
+    # (0 = aucune relance, 1 = J-3 envoyée, 2 = J-1 envoyée) — anti-spam idempotent.
+    emailed_at = Column(DateTime, nullable=True)
+    reminder_stage = Column(Integer, default=0)
 
     created_at = Column(DateTime, default=utcnow)
 
@@ -581,8 +752,12 @@ class AuditLog(Base):
     owner_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)   # tenant propriétaire de la donnée
     project_id = Column(Integer, ForeignKey("projects.id"), nullable=True, index=True)
 
-    actor = Column(String(160), default="")        # "user:42" | email du co-traitant | "invité"
+    actor = Column(String(160), default="")        # "user:42" | nom d'entreprise du co-traitant | "invité"
     actor_kind = Column(String(20), default="")    # owner | guest
+    # Invitation concernée par l'entrée → le JOURNAL MEMBRE (ce que le mandataire a vu de MA
+    # part, ce que j'ai fait) est une simple projection : entrées où invite_id = le mien +
+    # événements de groupement du projet. Jamais l'email/IP des autres membres.
+    invite_id = Column(Integer, nullable=True, index=True)
     action = Column(String(60), default="", index=True)  # invite.created | invite.revoked | guest.view_project | guest.download_doc
     target_type = Column(String(40), default="")   # project | document | invite
     target_id = Column(Integer, nullable=True)
@@ -591,7 +766,8 @@ class AuditLog(Base):
     meta = Column(JSON, nullable=True)
 
     # Chaînage cryptographique (tamper-evidence). entry_hash = sha256(prev_hash + payload) ;
-    # toute modification/suppression d'une entrée brise la chaîne et est détectable.
+    # une entrée modifiée ou retirée au milieu brise la chaîne ; la disparition des DERNIÈRES
+    # entrées n'est détectée que par l'ancrage quotidien (app/services/audit_anchor.py).
     prev_hash = Column(String(64), default="")
     entry_hash = Column(String(64), default="", index=True)
 
@@ -624,9 +800,31 @@ class ProjectContribution(Base):
 
     references = Column(JSON, default=list)            # [{intitule, client, montant, annee}]
     qualifications = Column(JSON, default=list)        # ["Qualibat 1234", "RGE", "ISO 9001"]
-    chiffrage_note = Column(Text, default="")          # approche / estimation prix de son lot
+    # (chiffrage_note — l'ancienne « approche prix » en clair, visible du mandataire — a été
+    # vidée en vague 1 (contenu déplacé dans note_au_mandataire), revidée en vague 4 (migration
+    # q1r2s3t4u5v6) et n'est PLUS MAPPÉE. La colonne reste en base le temps qu'aucune version
+    # déployable ne la mappe (expand/contract) ; sa suppression viendra dans une livraison
+    # ultérieure.)
+    # ── DOCTRINE DE VISIBILITÉ ──
+    # prix_lot_ht = PRIX DE VENTE du lot : le SEUL montant que voit le mandataire (il en a
+    # besoin pour consolider l'offre commune et remplir l'ATTRI1).
+    prix_lot_ht = Column(Float, nullable=True)
+    # detail_chiffre = décomposition / coûts / marges / méthode : ENVELOPPE CHIFFRÉE dans le
+    # navigateur du membre (AES-256-GCM, clé dérivée d'un code de récupération par PBKDF2,
+    # jamais transmise). {ciphertext, iv, alg:'A256GCM', kdf:'PBKDF2-SHA256', kdf_salt,
+    # kdf_iter, key_fingerprint, updated_at}. Le serveur n'en vérifie que la forme ; ni le
+    # mandataire, ni Adjugo, ni le LLM ne peuvent le lire.
+    detail_chiffre = Column(JSON, nullable=True)
+    # Signataire du membre (DC2 / annexe de la convention, vague 2).
+    representant_legal = Column(String(255), default="")
+    signataire_qualite = Column(String(120), default="")
+    # Capacités DÉCLARÉES PAR LE PARTENAIRE LUI-MÊME ({ca_n1, effectif, declared_at}) →
+    # alimentent le score de groupement avec capacites_source='contribution' (plus fiable que
+    # ce que le mandataire a saisi sur son partenaire dans l'annuaire).
+    capacites = Column(JSON, nullable=True)
     memoire_paragraph = Column(Text, default="")       # son paragraphe de mémoire technique
     contact = Column(JSON, nullable=True)              # {nom, email, telephone}
+    note_au_mandataire = Column(Text, default="")      # message libre du partenaire au chef de file
 
     status = Column(String(20), default="draft")       # draft | submitted
     submitted_at = Column(DateTime, nullable=True)
@@ -658,8 +856,591 @@ class ContributionPiece(Base):
     file_key = Column(String(500), nullable=False)     # clé de stockage (préfixe owner)
     file_size = Column(Integer, default=0)
     mime_type = Column(String(100), default="")
+    # ── Coffre-fort croisé (E) ── statut des attestations visible par TOUS les membres
+    # (présent / valide jusqu'au / expire avant la date limite / manquant) SANS jamais exposer
+    # le fichier (téléchargeable uniquement par son déposant et par le mandataire, audité).
+    piece_type = Column(String(20), default="")        # kibs|fiscale|sociale|assurance|rib|qualification|autre
+    expiration_date = Column(Date, nullable=True)      # saisie par le déposant ou copiée du Document source
+    # « Joindre depuis mon coffre-fort » : Document.id du coffre PERSONNEL du partenaire (son
+    # tenant) — le fichier est COPIÉ dans le tenant mandataire, l'original n'est jamais exposé.
+    source_document_id = Column(Integer, nullable=True)
 
     created_at = Column(DateTime, default=utcnow)
+
+
+# === SIMULATIONS DE GROUPEMENT (A — « Répondre à plusieurs ? ») ===
+# Chaque what-if « seul 54 % → avec X 81 % » est conservé : historique « pourquoi GO en
+# groupement », membres pré-remplis de la convention (vague 2), journal. Pour un membre de
+# kind 'sirene', le serveur ne conserve que le SIRET et RE-FETCH les capacités (anti-fausse
+# provenance) ; 'saisi' = étiqueté « déclaré par vous le … ».
+
+class GroupementSimulation(Base):
+    __tablename__ = "groupement_simulations"
+
+    id = Column(Integer, primary_key=True, index=True)
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False, index=True)
+    owner_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)   # = data_owner_id
+    created_by_user_id = Column(Integer, nullable=True)
+
+    # [{kind:'lead'|'attached'|'annuaire'|'reseau'|'sirene'|'saisi', id, name, siret, source, as_of}]
+    members = Column(JSON, default=list)
+    score_seul = Column(Integer, nullable=True)
+    score_groupement = Column(Integer, nullable=True)
+    decision = Column(String(20), default="")          # go_groupement | a_etudier | no_go
+    breakdown = Column(JSON, nullable=True)            # 6 critères × {points,status,detail,apporte_par[]}
+    cumul = Column(JSON, nullable=True)                # capacités cumulées de l'entreprise virtuelle
+    gaps = Column(JSON, nullable=True)                 # ce que le marché exige et qui manque encore
+    warnings = Column(JSON, nullable=True)             # ex. « verdict fondé sur vos propres déclarations »
+    retained = Column(Boolean, default=False)          # composition retenue (→ groupement_plan)
+    created_at = Column(DateTime, default=utcnow)
+
+
+# === CONVENTION DE GROUPEMENT (C — vague 2 « Monter le groupement ») ===
+# UNE convention par marché (project_id UNIQUE), générée par un modèle paramétré DÉTERMINISTE
+# (0 LLM). Le texte figé (content_md) inclut l'annexe de répartition (nom, lot, rôle, prix de
+# vente du lot de chaque membre, total) — JAMAIS la décomposition chiffrée. Un seul
+# content_hash (sha256 du texte) pour tous les signataires. « Figer l'offre » est fusionné avec
+# la génération : total_offre_ht figé et révélé aux membres. Toute part / prix / composition
+# modifiée ensuite ⇒ status 'perimee'. L'option « masquer la répartition » (params) n'existe
+# qu'en brouillon. Ce n'est PAS un conseil juridique : modèle à faire relire par un conseil.
+
+class GroupementConvention(Base):
+    __tablename__ = "groupement_conventions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False, unique=True, index=True)
+    owner_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)   # tenant (tenant_owner_id)
+
+    forme = Column(String(12), default="")                 # '' | conjoint | solidaire
+    mandataire_solidaire = Column(Boolean, default=False)  # en conjoint : le mandataire répond des autres
+    # Ce que le règlement impose : non_verifie | non_specifie | libre | conjoint | solidaire.
+    forme_imposee = Column(String(16), default="non_verifie")
+    # Citation du DCE passée par citation_guard (sous-chaîne du texte intégral), sinon ''.
+    forme_imposee_extrait = Column(Text, default="")
+    habilitation = Column(JSON, nullable=True)             # {representer, signer_candidature_offre, …}
+    # decision, delai_reponse_jours, defaillance, sortie_preavis_jours, confidentialite_annees,
+    # pi, penalites, assurances_travaux, litiges (+ part_mandataire_ht, lot_mandataire,
+    # mandataire_qualite, membres_hors_ligne, masquer_repartition — brouillon seulement).
+    params = Column(JSON, nullable=True)
+    status = Column(String(12), default="draft")           # draft | a_signer | signee | perimee
+    content_md = Column(Text, nullable=True)               # texte FIGÉ (annexe de répartition incluse)
+    content_hash = Column(String(64), nullable=True, unique=True)   # sha256(content_md), un seul pour tous
+    total_offre_ht = Column(Float, nullable=True)
+    version = Column(Integer, default=0)
+    frozen_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=utcnow)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
+
+
+# Accord de chaque membre sur LE texte (même content_hash). Ce n'est pas une signature
+# électronique qualifiée : c'est un « accord enregistré » depuis l'espace du membre, avec le
+# niveau d'identité réellement prouvé (imprimé dans le PDF). invite_id NULL ET
+# cotraitant_link_id NULL = le mandataire ; cotraitant_link_id = membre rattaché sans
+# invitation (accord 'hors_ligne' coché par le mandataire).
+class GroupementSignature(Base):
+    __tablename__ = "groupement_signatures"
+    __table_args__ = (
+        UniqueConstraint("convention_id", "invite_id", name="uq_gsig_convention_invite"),
+        UniqueConstraint("convention_id", "cotraitant_link_id", name="uq_gsig_convention_link"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    convention_id = Column(Integer, ForeignKey("groupement_conventions.id"), nullable=False, index=True)
+    project_id = Column(Integer, nullable=False, index=True)
+    owner_id = Column(Integer, nullable=False, index=True)
+    invite_id = Column(Integer, ForeignKey("project_invites.id"), nullable=True)
+    cotraitant_link_id = Column(Integer, ForeignKey("project_cotraitants.id"), nullable=True)
+    user_id = Column(Integer, nullable=True)               # compte qui a enregistré l'accord
+    company_name = Column(String(255), default="")
+    siret = Column(String(20), default="")
+    signataire_nom = Column(String(255), default="")
+    signataire_qualite = Column(String(120), default="")
+    content_hash = Column(String(64), default="")          # = convention.content_hash approuvé
+    # compte_verifie | email_verifie | lien_seul ('' = accord hors ligne déclaré par le mandataire)
+    identity_level = Column(String(20), default="")
+    status = Column(String(12), default="pending")         # pending | signed | perimee | hors_ligne
+    verified_email = Column(String(255), default="")
+    signed_at = Column(DateTime, nullable=True)
+    ip = Column(String(45), default="")
+
+
+# === PROFIL PARTENAIRE DU RÉSEAU ADJUGO (B — vague 3 « vrai réseau ») ===
+# UN profil par organisation (user_id = data_owner_id, UNIQUE). OPT-IN : visible=False par
+# défaut ; publié seulement par un admin, SIRET à 14 chiffres, entreprise active vérifiée dans
+# SIRENE il y a moins de 30 jours. Confiance UNIQUEMENT vérifiable : SIRENE, BODACC, DECP et
+# dépôts réels sur Adjugo — jamais de note, d'avis ni d'étoile. None = « non vérifié ».
+# Fiche publique = SOUS-ENSEMBLE STRICT : jamais email, téléphone, CA, effectif exact,
+# documents ni résultats ; les références seulement si le partenaire les a choisies.
+# is_demo : colonne conservée (schéma), AUCUN profil de démonstration n'est créé et toutes
+# les requêtes du réseau les excluent.
+class PartnerProfile(Base):
+    __tablename__ = "partner_profiles"
+
+    id = Column(Integer, primary_key=True, index=True)
+    # Identifiant OPAQUE exposé dans l'API (jamais l'id séquentiel : anti-énumération).
+    public_id = Column(String(32), unique=True, index=True, nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), unique=True, nullable=False)   # = data_owner_id
+    visible = Column(Boolean, default=False, nullable=False)    # opt-in : jamais publié par défaut
+
+    # Identité : nom OFFICIEL (SIRENE) dès la vérification, sinon nom du profil entreprise.
+    name = Column(String(255), default="")
+    siren = Column(String(9), default="", index=True)
+    siret = Column(String(14), default="")
+    postal_code = Column(String(10), default="")
+    city = Column(String(120), default="")
+    departement = Column(String(3), default="")
+
+    # Capacités DÉCLARÉES par l'entreprise (étiquetées « déclaré par l'entreprise le … »).
+    metiers = Column(JSON, default=list)            # clés TRADES (app.sourcing.sources.sirene)
+    codes_cpv = Column(JSON, default=list)
+    departements = Column(JSON, default=list)       # zones d'intervention
+    roles_acceptes = Column(JSON, default=list)     # cotraitant | sous_traitant | mandataire
+    disponibilite = Column(String(20), default="")  # disponible | limitee | complet
+    dispo_jusqua = Column(Date, nullable=True)
+    lot_max_eur = Column(Float, nullable=True)      # taille de lot maximale acceptée (HT)
+    presentation = Column(String(300), default="")  # UI : « présentation en une phrase »
+    # Références rendues PUBLIQUES par le partenaire lui-même (choisies) : [{intitule, client, annee}].
+    references_publiques = Column(JSON, default=list)
+    declared_at = Column(DateTime, nullable=True)   # dernière mise à jour des capacités déclarées
+    # SIREN à qui ce profil est masqué — appliqué DANS LES DEUX SENS (ni vu, ni ne voit).
+    hidden_from_sirens = Column(JSON, default=list)
+
+    # Vérifications (registres publics), datées. None = « non vérifié ».
+    verified_sirene = Column(JSON, nullable=True)   # {etat, date_creation, categorie, est_rge, est_qualiopi, est_personne_physique, checked_at, source}
+    verified_bodacc = Column(JSON, nullable=True)   # {found, ongoing, nature, date, url, checked_at}
+    verified_decp = Column(JSON, nullable=True)     # {count, last_date, checked_at} → « au moins N »
+    verified_at = Column(DateTime, nullable=True)   # dernière vérification SIRENE réussie
+
+    # Dépôts réels sur Adjugo : COUNT recalculé, jamais saisi.
+    groupements_deposes = Column(Integer, default=0)
+    last_groupement_at = Column(DateTime, nullable=True)
+    # Compteur ANONYME d'apparitions dans les recherches (mensuel) : jamais QUI a cherché.
+    appearances_count = Column(Integer, default=0)
+    appearances_period = Column(String(7), default="")   # « AAAA-MM »
+
+    published_at = Column(DateTime, nullable=True)
+    is_demo = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime, default=utcnow)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
+
+    # Validation de l'identité par Adjugo (décision fondateur) : la vérification SIRENE prouve
+    # que l'entreprise existe et est active, PAS que le compte la représente. Une demande de
+    # publication passe donc « en_attente » et un administrateur Adjugo (User.is_admin) la
+    # valide ou la refuse (motif). Toute modification du SIRET remet la validation à zéro.
+    # '' (jamais demandée) | en_attente | validee | refusee
+    validation_status = Column(String(20), default="")
+    validation_siren = Column(String(9), default="")          # SIREN pour lequel l'identité a été validée
+    validation_requested_at = Column(DateTime, nullable=True)
+    validation_requested_by = Column(Integer, nullable=True)  # compte qui a demandé (id, sans clé étrangère)
+    validated_at = Column(DateTime, nullable=True)             # date de la décision (validation ou refus)
+    validated_by = Column(Integer, nullable=True)              # administrateur Adjugo (id)
+    validation_motif = Column(String(300), default="")        # motif d'un refus (affiché à l'entreprise)
+    # Dernière TENTATIVE de re-vérification par le cron (verified_at = dernière réussite) :
+    # le cron trie par cette date, sinon un profil que SIRENE ne confirme jamais gardait la tête.
+    last_check_at = Column(DateTime, nullable=True)
+    # Date du dernier recalcul de groupements_deposes (le badge l'affiche).
+    groupements_checked_at = Column(DateTime, nullable=True)
+
+    # Un seul profil PUBLIÉ par SIREN, garanti par la base (deux publications simultanées).
+    __table_args__ = (
+        Index("uq_partner_profiles_siren_publie", "siren", unique=True,
+              sqlite_where=sa_text("visible = 1"), postgresql_where=sa_text("visible")),
+    )
+
+
+# === DOSSIER DE PRÉSENTATION (rédaction, vague 2 — l'atelier) ===
+# Le « mémoire technique » de l'acheteur, rédigé section par section. UN dossier par marché et par
+# entreprise (UNIQUE(project_id, owner_id) ; owner_id = data_owner_id de l'organisation). Modèle
+# défini une fois pour l'entreprise seule (vague 2) et pour le groupement (vague 4) :
+#   • chaque section a un AUTEUR : aujourd'hui l'organisation propriétaire (author_kind
+#     'organisation') ; en vague 4, un membre du groupement (author_kind 'invitation' +
+#     author_invite_id). La matière PRIVÉE d'une section (sources, extraits, faits à relire,
+#     brouillons) n'est lue que par son auteur (app/services/atelier.can_see_private) ;
+#   • une génération ou une modification ne DÉTRUIT jamais rien : chaque texte est une nouvelle
+#     version (table dossier_section_versions, en ajout seul) ; une section validée puis modifiée
+#     repasse « à revalider ».
+# Rien ici n'est envoyé à l'acheteur tel quel : l'export (app/services/atelier_export.py) retire
+# les renvois internes et refuse un dossier troué sauf dérogation enregistrée au journal chaîné.
+
+class DossierPresentation(Base):
+    __tablename__ = "dossiers_presentation"
+    __table_args__ = (UniqueConstraint("project_id", "owner_id", name="uq_dossier_presentation_projet_owner"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False, index=True)
+    owner_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)   # tenant (data_owner_id)
+    created_by_user_id = Column(Integer, nullable=True)
+
+    # Plan : 'grille' (critères retrouvés dans le règlement), 'cadre' (questions du cadre de
+    # réponse imposé, dans leur ordre et leurs numéros) ou 'libre' (plan simple, sans IA).
+    plan_source = Column(String(10), default="libre")
+    plan_meta = Column(JSON, nullable=True)       # {message, criteres_hors_dossier[], fichier_impose, …}
+    # Texte du dossier de l'acheteur LU pour la rédaction (C0) : règlement et cadre EN ENTIER, puis
+    # le reste borné. Lecture faite une fois, sans IA ; jamais montré à un tiers.
+    dce_lu = Column(JSON, nullable=True)
+
+    # Quota (décision 6a) : le dossier complet compte pour 1 analyse (débitée à la 1re action IA),
+    # refaire une section est gratuit jusqu'à ATELIER_REGEN_GRATUITES fois par dossier.
+    analyse_debitee = Column(Boolean, default=False)
+    regenerations = Column(Integer, default=0)
+    regenerations_payantes = Column(Integer, default=0)
+    # Premières rédactions comprises dans l'analyse du dossier : au plus une par partie du plan
+    # (au plus le nombre de parties actives) ; au-delà — partie ajoutée, plan reconstruit — une
+    # rédaction compte comme une refonte. Le plafond ne se contourne donc pas en changeant de plan.
+    premieres_incluses = Column(Integer, default=0)
+    # Tâche qui porte l'analyse du dossier (1re action de l'IA) : tant qu'elle tourne, aucune autre
+    # action de l'IA ne démarre (si elle tombe en panne, l'analyse est rendue, sans passager clandestin).
+    job_analyse_id = Column(Integer, nullable=True)
+
+    # Dernière dérogation à l'export (décision 2b), valable pour UN état du texte (etat_hash) :
+    # {etat_hash, raisons[], raison, texte, par, le, avertissement}. Aussi au journal chaîné.
+    derogation = Column(JSON, nullable=True)
+    # Compteur (pages estimées) mis en cache pour un état du texte : {etat_hash, …}.
+    compteur = Column(JSON, nullable=True)
+    dernier_export = Column(JSON, nullable=True)  # {le, par, format, nom, empreinte, ia}
+    options_export = Column(JSON, nullable=True)  # {page_garde, sommaire}
+    # Coût IA réel cumulé (cost_meter) : interne, jamais montré au client (décision 6a).
+    cout_ia = Column(JSON, nullable=True)
+
+    version = Column(Integer, default=0, nullable=False)   # verrou optimiste (plan)
+    created_at = Column(DateTime, default=utcnow)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
+
+
+class DossierSection(Base):
+    __tablename__ = "dossier_sections"
+
+    id = Column(Integer, primary_key=True, index=True)
+    dossier_id = Column(Integer, ForeignKey("dossiers_presentation.id"), nullable=False, index=True)
+    project_id = Column(Integer, nullable=False, index=True)
+    owner_id = Column(Integer, nullable=False, index=True)
+
+    ordre = Column(Integer, default=0)
+    numero = Column(String(20), default="")        # numéro du cadre (« 2.1 ») ou rang dans le plan
+    intitule = Column(String(300), default="")
+    niveau = Column(Integer, default=1)
+    parents = Column(JSON, nullable=True)          # [{numero, intitule}] (titres du cadre au-dessus)
+    question = Column(Text, default="")            # texte de la question du cadre / phrase du critère
+    # D'où vient la section : grille | cadre | libre (plan simple d'Adjugo) | utilisateur (ajoutée)
+    source_plan = Column(String(12), default="libre")
+    critere = Column(String(300), default="")      # critère de la grille, tel que retrouvé
+    critere_id = Column(String(20), default="")
+    poids = Column(String(40), default="")         # poids retenu dans « Comment vous serez noté », sinon ''
+    # D'où vient ce poids : 'reglement' (écrit dans le règlement) | 'utilisateur' (lu et saisi par
+    # vous en confirmant la ligne) | '' (aucun poids). Dit tel quel à l'écran et à l'IA.
+    poids_source = Column(String(20), default="")
+    partie_de_critere = Column(Boolean, default=False)   # partie d'un critère découpé par Adjugo
+    lot = Column(String(120), default="")          # vague 6 (plusieurs lots), vide aujourd'hui
+    limite = Column(JSON, nullable=True)           # limite applicable : {type, valeur, objet, phrase, source}
+
+    # Auteur (vague 4 : un membre du groupement par son invitation). Aujourd'hui : l'organisation.
+    author_kind = Column(String(12), default="organisation")    # organisation | invitation
+    author_invite_id = Column(Integer, nullable=True, index=True)
+
+    # a_ecrire | brouillon | relu | valide | a_revalider
+    statut = Column(String(12), default="a_ecrire")
+    current_version_id = Column(Integer, nullable=True)
+    validated_version_id = Column(Integer, nullable=True)
+    validated_hash = Column(String(64), default="")
+    validated_at = Column(DateTime, nullable=True)
+    validated_by = Column(Integer, nullable=True)
+    job_id = Column(Integer, nullable=True)        # rédaction en cours (tâche de fond)
+    retiree_at = Column(DateTime, nullable=True)   # section retirée du plan (ses versions restent)
+    lock_version = Column(Integer, default=0, nullable=False)
+    created_at = Column(DateTime, default=utcnow)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
+
+
+class DossierSectionVersion(Base):
+    __tablename__ = "dossier_section_versions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    section_id = Column(Integer, ForeignKey("dossier_sections.id"), nullable=False, index=True)
+    dossier_id = Column(Integer, nullable=False, index=True)
+    project_id = Column(Integer, nullable=False, index=True)
+    owner_id = Column(Integer, nullable=False, index=True)
+
+    numero = Column(Integer, default=1)            # 1, 2, 3… dans la section
+    texte = Column(Text, default="")
+    origine = Column(String(12), default="utilisateur")   # ia | utilisateur | raccourci
+    # Préparé avec l'aide de l'IA (texte de l'IA, ou texte modifié à partir d'un texte de l'IA) :
+    # décide la mention « préparé avec assistance IA » des propriétés du fichier (décision 9a).
+    ia = Column(Boolean, default=False)
+    sources = Column(JSON, nullable=True)          # PRIVÉ : extraits cités [{ref, doc_name, chunk_id, extrait}]
+    faits = Column(JSON, nullable=True)            # PRIVÉ : faits « à relire » (A0)
+    empreinte = Column(String(64), default="")     # sha256 du texte
+    coupe = Column(Boolean, default=False)         # texte interrompu par la limite de longueur de l'IA
+    base_version_id = Column(Integer, nullable=True)
+    restaure_de = Column(Integer, nullable=True)
+    author_kind = Column(String(12), default="organisation")
+    author_invite_id = Column(Integer, nullable=True)
+    auteur_user_id = Column(Integer, nullable=True)   # compte qui a écrit / lancé la rédaction
+    job_id = Column(Integer, nullable=True)
+    # Rédaction, vague 4 (dossier de groupement, docs/REDACTION_V4_GROUPEMENT.md) : texte COMMUN d'une
+    # partie rédigée par un partenaire — le texte qu'il a ENVOYÉ, ou celui que le chef de file a écrit
+    # sur sa partie (ecrit_par 'partenaire' | 'chef_de_file'). Une version commune ne porte JAMAIS de
+    # matière privée : sources vides, faits réduits aux faits à relire sans leur source, compteurs de
+    # sources par type seulement. Le brouillon d'un partenaire n'est jamais ici (dossier_parts_brouillons).
+    partage = Column(Boolean, nullable=True, default=False, server_default=sa_false())
+    ecrit_par = Column(String(14), nullable=True, default="", server_default="")
+    compteurs = Column(JSON, nullable=True)
+    created_at = Column(DateTime, default=utcnow)
+
+
+# === DOSSIER DE GROUPEMENT : QUI ÉCRIT QUOI (rédaction, vague 4 — étude § 6.8 B) ===
+# Contrat : docs/REDACTION_V4_GROUPEMENT.md ; règles : app/services/atelier_groupement.py (seul point
+# d'écriture). Une ligne par partie du dossier de présentation d'un marché en groupement :
+#   • redacteur 'chef_de_file' (l'organisation qui porte le dossier) ou 'partenaire' (invite_id) ;
+#     la partie elle-même (dossier_sections.author_kind / author_invite_id) suit ce choix ;
+#   • proposition : le pré-remplissage SANS IA (lot du membre ↔ critère de la partie) et sa raison ;
+#   • longueur conseillée, date limite interne, demande et relance des parts ;
+#   • le STATUT n'est jamais stocké (comme groupement_state) : il se déduit du texte commun de la
+#     partie, de sa validation et de l'existence d'un brouillon (à rédiger, en cours, envoyée, à
+#     revalider par l'auteur, validée) ; l'empreinte du texte validé est celle de la partie
+#     (dossier_sections.validated_hash) ;
+#   • job_id / aides_ia : aide de l'IA lancée PAR le partenaire (jamais exposée au chef de file).
+class DossierRepartition(Base):
+    __tablename__ = "dossier_repartitions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    dossier_id = Column(Integer, ForeignKey("dossiers_presentation.id"), nullable=False, index=True)
+    section_id = Column(Integer, ForeignKey("dossier_sections.id"), nullable=False, unique=True, index=True)
+    project_id = Column(Integer, nullable=False, index=True)
+    owner_id = Column(Integer, nullable=False, index=True)        # tenant du chef de file (data_owner_id)
+    redacteur = Column(String(14), nullable=False, default="chef_de_file", server_default="chef_de_file")
+    invite_id = Column(Integer, nullable=True, index=True)        # le partenaire qui rédige
+    proposition = Column(JSON, nullable=True)                     # pré-remplissage sans IA + raison
+    choix = Column(String(12), nullable=False, default="propose", server_default="propose")   # propose | manuel
+    longueur_mots = Column(Integer, nullable=True)                # longueur conseillée
+    date_limite = Column(Date, nullable=True)                     # date limite interne
+    demandee_le = Column(DateTime, nullable=True)                 # « Demander les parts »
+    relance_palier = Column(Integer, nullable=False, default=0, server_default="0")
+    job_id = Column(Integer, nullable=True)                       # aide de l'IA du partenaire en cours
+    aides_ia = Column(Integer, nullable=False, default=0, server_default="0")   # plafond par partie
+    lock_version = Column(Integer, nullable=False, default=0, server_default="0")
+    created_at = Column(DateTime, default=utcnow)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
+
+
+# Brouillons PRIVÉS d'un partenaire, partie par partie, en AJOUT SEUL : son texte de travail, ses
+# sources (extraits de SES documents), ses faits avec leur source, ses compteurs. Rangés à part :
+# aucun chemin du chef de file ne lit cette table (ni l'atelier, ni l'export, ni le RGPD du chef de
+# file, ni l'IA d'un autre membre). Rattachés à l'INVITATION (le lien du partenaire) ; owner_id =
+# tenant du marché, pour partir avec lui. Effacés au retrait ou au déclin de l'invitation.
+class DossierPartBrouillon(Base):
+    __tablename__ = "dossier_parts_brouillons"
+
+    id = Column(Integer, primary_key=True, index=True)
+    section_id = Column(Integer, ForeignKey("dossier_sections.id"), nullable=False, index=True)
+    dossier_id = Column(Integer, nullable=False, index=True)
+    project_id = Column(Integer, nullable=False, index=True)
+    owner_id = Column(Integer, nullable=False, index=True)
+    invite_id = Column(Integer, nullable=False, index=True)
+    numero = Column(Integer, nullable=False, default=1, server_default="1")
+    texte = Column(Text, nullable=True)
+    # ia | utilisateur | raccourci | acceptee (texte du chef de file accepté) | retablie
+    origine = Column(String(12), nullable=False, default="utilisateur", server_default="utilisateur")
+    ia = Column(Boolean, nullable=False, default=False, server_default=sa_false())
+    sources = Column(JSON, nullable=True)                         # PRIVÉ
+    faits = Column(JSON, nullable=True)                           # PRIVÉ
+    compteurs = Column(JSON, nullable=True)                       # compteurs de sources par type
+    empreinte = Column(String(64), nullable=False, default="", server_default="")
+    coupe = Column(Boolean, nullable=False, default=False, server_default=sa_false())
+    base_id = Column(Integer, nullable=True)                      # brouillon de départ
+    base_version_id = Column(Integer, nullable=True)              # texte commun de départ
+    auteur_user_id = Column(Integer, nullable=True)               # compte du partenaire, s'il en a un
+    job_id = Column(Integer, nullable=True)
+    created_at = Column(DateTime, default=utcnow)
+
+
+# Validation du DOSSIER ASSEMBLÉ par chaque membre (chef de file compris), sur SON empreinte : toute
+# modification d'un texte commun ensuite la fait repasser « à revalider » (même mécanisme que la
+# convention périmée : explicite à chaque changement, filet par recalcul de l'empreinte à la lecture).
+class DossierValidation(Base):
+    __tablename__ = "dossier_validations"
+    __table_args__ = (UniqueConstraint("dossier_id", "membre_cle", name="uq_dossier_validations_membre"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    dossier_id = Column(Integer, ForeignKey("dossiers_presentation.id"), nullable=False, index=True)
+    project_id = Column(Integer, nullable=False, index=True)
+    owner_id = Column(Integer, nullable=False, index=True)
+    membre = Column(String(14), nullable=False, default="chef_de_file", server_default="chef_de_file")
+    membre_cle = Column(String(24), nullable=False)               # 'chef_de_file' | 'invitation:<id>'
+    invite_id = Column(Integer, nullable=True, index=True)
+    user_id = Column(Integer, nullable=True)
+    empreinte = Column(String(64), nullable=False, default="", server_default="")
+    statut = Column(String(12), nullable=False, default="valide", server_default="valide")   # valide | a_revalider
+    valide_le = Column(DateTime, nullable=True)
+    perime_le = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=utcnow)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
+
+
+# === DOCUMENTS PRIVÉS DÉPOSÉS PAR LE LIEN D'UN PARTENAIRE (rédaction, vague 4, décision 5, option a) ===
+# Contrat : docs/REDACTION_V4_GROUPEMENT.md § 21 ; règles : app/services/depot_lien.py (seul point d'écriture).
+# Rattachés à l'INVITATION du partenaire (invite_id), jamais à l'organisation du chef de file : aucun chemin du chef
+# de file ni d'un membre de son organisation ne lit ces tables. owner_id = tenant du marché, pour que tout parte
+# avec le marché (effacement du compte, corbeille) ; il ne donne AUCUN droit de lecture. Pas de clé étrangère :
+# l'effacement est explicite et ordonné (comme dossier_parts_brouillons.invite_id). Migration y9z0depotlien.
+
+class DepotLienEspace(Base):
+    """L'accord du partenaire (conditions d'utilisation et politique de confidentialité, versions et empreintes
+    des textes acceptés, horodaté) et la date du résultat du marché constatée par la purge quotidienne."""
+    __tablename__ = "depots_lien_espaces"
+
+    id = Column(Integer, primary_key=True, index=True)
+    invite_id = Column(Integer, nullable=False, unique=True, index=True)
+    project_id = Column(Integer, nullable=False, index=True)
+    owner_id = Column(Integer, nullable=False, index=True)
+    consentement = Column(JSON, nullable=True)         # {cgu: {version, mise_a_jour, empreinte, adresse}, confidentialite: {…}, accepte_le}
+    accepte_le = Column(DateTime, nullable=True)
+    resultat_le = Column(DateTime, nullable=True)      # résultat (gagné, perdu, abandonné) constaté : départ des 6 mois
+    created_at = Column(DateTime, default=utcnow)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
+
+
+class DepotLienDocument(Base):
+    """Un document déposé par le partenaire (le fichier est rangé sous invitations/<id>/depots/…). Son texte n'est
+    pas gardé en entier : seulement ses passages (DepotLienMorceau), CV retirés."""
+    __tablename__ = "depots_lien_documents"
+
+    id = Column(Integer, primary_key=True, index=True)
+    invite_id = Column(Integer, nullable=False, index=True)
+    project_id = Column(Integer, nullable=False, index=True)
+    owner_id = Column(Integer, nullable=False, index=True)
+    nom = Column(String(300), nullable=False, default="", server_default="")
+    file_key = Column(String(500), nullable=False, default="", server_default="")
+    taille = Column(Integer, nullable=False, default=0, server_default="0")
+    type_mime = Column(String(100), nullable=False, default="", server_default="")
+    empreinte = Column(String(64), nullable=False, default="", server_default="")     # sha256 du fichier
+    caracteres = Column(Integer, nullable=False, default=0, server_default="0")
+    lecture = Column(String(12), nullable=False, default="texte", server_default="texte")   # texte | scan (sans IA)
+    complet = Column(Boolean, nullable=False, default=True, server_default=sa_true())
+    morceaux = Column(Integer, nullable=False, default=0, server_default="0")
+    lignes_cv_retirees = Column(Integer, nullable=False, default=0, server_default="0")
+    created_at = Column(DateTime, default=utcnow)
+
+
+class DepotLienMorceau(Base):
+    """Un passage d'un document déposé (CV retirés), cherché sans IA pour l'aide de l'IA de SES parties."""
+    __tablename__ = "depots_lien_morceaux"
+
+    id = Column(Integer, primary_key=True, index=True)
+    document_id = Column(Integer, nullable=False, index=True)
+    invite_id = Column(Integer, nullable=False, index=True)
+    ordinal = Column(Integer, nullable=False, default=0, server_default="0")
+    texte = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=utcnow)
+
+
+# === L'ENTRETIEN CHANTIER (rédaction, vague 5 — D de l'étude, § 6.9) ===
+# « Adjugo demande au lieu de deviner » : avant la rédaction des parties notées, quelques questions sur le
+# chantier, chacune avec la PHRASE du dossier de l'acheteur qui la motive (retrouvée mot pour mot). Contrat :
+# docs/REDACTION_V5.md (section D) ; règles : app/services/entretien_chantier.py (seul point d'écriture).
+#   • une ligne par question du dossier de présentation d'un marché ; `numero` STABLE dans le dossier, jamais
+#     réutilisé (renvoi « [R3] » du contrôle des faits de l'atelier) : une question retirée garde sa ligne ;
+#   • la RÉPONSE est un fait « déclaré par vous » (fiche chantier) ; une question sautée laisse
+#     « [À compléter : …] » dans la partie concernée, jamais un texte de remplissage ;
+#   • groupement (vague 4) : une question adressée à un partenaire (`adresse_invite_id`) est posée dans SON
+#     espace ; sa réponse est SA donnée (`reponse_invite_id`), lue par le chef de file comme « déclaré par
+#     votre partenaire » ; effacée au retrait ou au déclin de son invitation ;
+#   • une question proposée par l'IA (option, `origine` 'ia') n'entre que si sa phrase du dossier est
+#     retrouvée mot pour mot (citation_guard). Le CV d'une personne n'est jamais remis à l'IA.
+class EntretienQuestion(Base):
+    __tablename__ = "entretien_questions"
+    __table_args__ = (UniqueConstraint("dossier_id", "numero", name="uq_entretien_questions_numero"),
+                      UniqueConstraint("dossier_id", "code", name="uq_entretien_questions_code"))
+
+    id = Column(Integer, primary_key=True, index=True)
+    dossier_id = Column(Integer, ForeignKey("dossiers_presentation.id"), nullable=False, index=True)
+    project_id = Column(Integer, nullable=False, index=True)
+    owner_id = Column(Integer, nullable=False, index=True)        # tenant du chef de file (data_owner_id)
+    numero = Column(Integer, nullable=False)                      # « R3 » : stable, jamais réutilisé
+    code = Column(String(80), nullable=False)                     # code de la banque, ou « ia-<empreinte> »
+    origine = Column(String(10), nullable=False, default="banque", server_default="banque")   # banque | ia
+    theme = Column(String(160), nullable=False, default="", server_default="")
+    question = Column(Text, nullable=True)
+    type_reponse = Column(String(10), nullable=False, default="texte", server_default="texte")   # texte | equipe
+    motif = Column(Text, nullable=True)                           # la phrase du dossier, telle qu'écrite
+    motif_piece = Column(String(200), nullable=False, default="", server_default="")
+    ordre = Column(Integer, nullable=False, default=0, server_default="0")
+    retiree_le = Column(DateTime, nullable=True)                  # plus proposée (dossier réimporté) : gardée
+    # À qui la question est posée : l'organisation du chef de file, ou un partenaire (son invitation).
+    adresse_kind = Column(String(12), nullable=False, default="organisation", server_default="organisation")
+    adresse_invite_id = Column(Integer, nullable=True, index=True)
+    adresse_choix = Column(String(10), nullable=False, default="propose", server_default="propose")
+    # a_repondre | repondue | sautee | sans_objet
+    statut = Column(String(12), nullable=False, default="a_repondre", server_default="a_repondre")
+    reponse = Column(Text, nullable=True)
+    reponse_preuve_id = Column(Integer, nullable=True)            # « Équipe » de « Mes preuves » (jamais le CV)
+    reponse_kind = Column(String(12), nullable=False, default="", server_default="")   # organisation | invitation
+    reponse_invite_id = Column(Integer, nullable=True, index=True)
+    reponse_user_id = Column(Integer, nullable=True)
+    repondu_le = Column(DateTime, nullable=True)
+    lock_version = Column(Integer, nullable=False, default=0, server_default="0")
+    created_at = Column(DateTime, default=utcnow)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
+
+
+# === MES PREUVES (rédaction, vague 3 — socle commun de A, I et E1) ===
+# Les faits de l'entreprise, chacun avec SA source typée (doctrine § 7, règles 1 à 3 : un fait ne
+# vient jamais de l'IA ; on dit où on l'a trouvé, jamais « vérifié »). Contrat :
+# docs/REDACTION_V3_PREUVES.md ; règles : app/services/preuves.py (seul point d'écriture).
+#   • owner_id = data_owner_id de l'organisation (tenant, comme l'atelier) ;
+#   • proprietaire_kind / proprietaire_invite_id : le membre du groupement qui DÉTIENT le fait
+#     (vague 4 : 'invitation' + id de l'invitation ; aujourd'hui toujours 'organisation' / 0).
+#     Jamais exposé par l'API ; un fait d'une invitation n'est jamais lu par le chef de file ;
+#   • numero : identifiant STABLE dans la portée (owner_id, proprietaire_invite_id) → « F3 ».
+#     Jamais réutilisé : une suppression efface le contenu et garde la ligne (statut interne
+#     'supprimee'), pour qu'un ancien renvoi [F3] ne désigne jamais un autre fait ;
+#   • source_doc_id / source_document_id : SANS clé étrangère (supprimer un document de « Mon
+#     savoir-faire » ou du coffre-fort ne doit jamais échouer) ; contrôlés à chaque lecture.
+class Preuve(Base):
+    __tablename__ = "preuves"
+    __table_args__ = (UniqueConstraint("owner_id", "proprietaire_invite_id", "numero",
+                                       name="uq_preuves_owner_proprietaire_numero"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    owner_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)   # tenant (data_owner_id)
+    proprietaire_kind = Column(String(12), nullable=False, default="organisation", server_default="organisation")
+    proprietaire_invite_id = Column(Integer, nullable=False, default=0, server_default="0", index=True)
+    numero = Column(Integer, nullable=False)
+    # reference | qualification | salarie | materiel | chiffre_cle
+    nature = Column(String(20), nullable=False)
+    valeur = Column(JSON, nullable=True)            # champs structurés de la nature (liste fermée)
+    # documents (dans vos documents) | declare (déclaré par vous) | public (source publique) |
+    # estimation (votre estimation)
+    type_source = Column(String(12), nullable=False, default="declare", server_default="declare")
+    source = Column(JSON, nullable=True)            # détail de la source (passage exact, URL datée…)
+    source_doc_id = Column(Integer, nullable=True, index=True)        # KnowledgeDoc (« Mon savoir-faire »)
+    source_document_id = Column(Integer, nullable=True, index=True)   # Document (justificatif déposé)
+    date_source = Column(Date, nullable=True)       # date du document d'origine, ou de consultation
+    date_fin_validite = Column(Date, nullable=True)
+    # proposee | acceptee | retiree (+ 'supprimee' : interne, contenu effacé, jamais listé)
+    statut = Column(String(12), nullable=False, default="proposee", server_default="proposee")
+    # saisie | import_document (I) | import_public (E2) | profil | chiffrage
+    origine = Column(String(20), nullable=False, default="saisie", server_default="saisie")
+    empreinte = Column(String(64), nullable=False, default="", server_default="", index=True)
+    cree_par = Column(Integer, nullable=True)
+    accepte_par = Column(Integer, nullable=True)
+    accepte_le = Column(DateTime, nullable=True)
+    retire_le = Column(DateTime, nullable=True)
+    version = Column(Integer, nullable=False, default=0, server_default="0")   # verrou optimiste
+    created_at = Column(DateTime, default=utcnow)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
+
+
+# === MESURE D'USAGE (réorganisation de l'interface, vague 1, décision 17) ===
+# Un compteur par écran et par jour (heure de Paris) : combien de fois chaque écran de l'application a été
+# ouvert. AUCUNE donnée personnelle : ni compte, ni organisation, ni adresse IP, ni appareil ; jamais montré
+# aux clients, lu par l'administrateur de la plateforme (GET /api/admin/mesures/ecrans). Aucun outil tiers.
+# Seul point d'écriture : app.services.mesure_usage. Contrat : docs/REORGANISATION_V1.md, § 1.1.
+class MesureEcran(Base):
+    __tablename__ = "mesure_ecrans"
+
+    jour = Column(Date, primary_key=True)
+    ecran = Column(String(40), primary_key=True)
+    ouvertures = Column(Integer, nullable=False, default=0, server_default="0")
 
 
 # === FEEDBACK (beta) ===
@@ -674,3 +1455,38 @@ class Feedback(Base):
     message = Column(Text, default="")
     page = Column(String(120), default="")             # vue/contexte d'où vient le retour
     created_at = Column(DateTime, default=utcnow)
+
+
+# === ACHETEUR (produit collectivités — Pilier acheteur) ===
+# CLOISONNEMENT à 2 faces : les acheteurs publics vivent dans une TABLE SÉPARÉE des `users`
+# (PME). Un JWT acheteur porte `typ:"acheteur"` et ne peut jamais charger un User (et
+# inversement, l'auth PME rejette tout token portant `typ`). Aucune donnée PME ici.
+class Acheteur(Base):
+    __tablename__ = "acheteurs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    email = Column(String(255), unique=True, index=True, nullable=False)
+    hashed_password = Column(String(255), nullable=False)
+    nom_collectivite = Column(String(255), default="")
+    is_active = Column(Boolean, default=True)
+    token_version = Column(Integer, default=0)   # révocation de session (même logique que User)
+    created_at = Column(DateTime, default=utcnow)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
+
+
+# DCE sauvegardés par un acheteur (le DCE complet généré, en JSON, pour rechargement).
+class AcheteurDce(Base):
+    __tablename__ = "acheteur_dces"
+
+    id = Column(Integer, primary_key=True, index=True)
+    acheteur_id = Column(Integer, ForeignKey("acheteurs.id"), nullable=False, index=True)
+    objet = Column(String(500), default="")
+    payload = Column(JSON, nullable=False)       # le DCE complet (sortie de generer_dce)
+    # Pilotage du cycle de vie de la consultation.
+    statut = Column(String(20), default="preparation")   # preparation|publie|analyse|attribue|infructueux
+    date_limite = Column(DateTime, nullable=True)         # date limite de remise des offres
+    # Diffusion au réseau PME Adjugo (flywheel à deux faces).
+    date_diffusion = Column(DateTime, nullable=True)
+    nb_pme_diffusion = Column(Integer, nullable=True)     # nb de PME capables touchées (sourcing)
+    created_at = Column(DateTime, default=utcnow)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)

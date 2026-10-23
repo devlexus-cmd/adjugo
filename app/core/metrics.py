@@ -52,9 +52,25 @@ def render() -> str:
             "# TYPE adjugo_llm_tracked_tenants gauge",
             _fmt("adjugo_llm_tracked_tenants", len(llm._TENANT_TOKENS)),
         ]
+        # Limite d'appels IA simultanés (LLM_MAX_CONCURRENT) : en vol, plafond, attentes.
+        cc = llm.concurrency_snapshot()
+        out += [
+            "# HELP adjugo_llm_inflight Appels IA en cours (plafond : adjugo_llm_inflight_max).",
+            "# TYPE adjugo_llm_inflight gauge",
+            _fmt("adjugo_llm_inflight", cc["now"]),
+            "# TYPE adjugo_llm_inflight_max gauge",
+            _fmt("adjugo_llm_inflight_max", cc["max"]),
+            "# TYPE adjugo_llm_inflight_peak gauge",
+            _fmt("adjugo_llm_inflight_peak", cc["peak"]),
+            "# HELP adjugo_llm_slot_waits_total Appels IA qui ont dû attendre une place libre.",
+            "# TYPE adjugo_llm_slot_waits_total counter",
+            _fmt("adjugo_llm_slot_waits_total", cc["waits"]),
+            "# TYPE adjugo_llm_slot_timeouts_total counter",
+            _fmt("adjugo_llm_slot_timeouts_total", cc["timeouts"]),
+        ]
         # Histogramme de latence des appels IA (→ p50/p95/p99 via histogram_quantile).
         lat = llm.latency_snapshot()
-        out += ["# HELP adjugo_llm_call_duration_seconds Durée des appels Claude réussis.",
+        out += ["# HELP adjugo_llm_call_duration_seconds Durée des appels IA réussis (tous fournisseurs).",
                 "# TYPE adjugo_llm_call_duration_seconds histogram"]
         cumulative = lat["buckets"]
         for b in sorted(cumulative):
@@ -64,6 +80,27 @@ def render() -> str:
             _fmt("adjugo_llm_call_duration_seconds_sum", round(lat["sum"], 3)),
             _fmt("adjugo_llm_call_duration_seconds_count", lat["count"]),
         ]
+    except Exception:
+        pass
+
+    # ── IA par fournisseur et par tâche : qualité, secours, délais (app.services.llm_qualite) ──
+    try:
+        from app.services import llm, llm_qualite
+        now = time.monotonic()
+        out += [
+            "# HELP adjugo_llm_fournisseur_circuit_open Disjoncteur IA ouvert (1) ou fermé (0), par fournisseur.",
+            "# TYPE adjugo_llm_fournisseur_circuit_open gauge",
+            _fmt("adjugo_llm_fournisseur_circuit_open", 1 if llm._CB["open_until"] > now else 0,
+                 {"fournisseur": "anthropic"}),
+            _fmt("adjugo_llm_fournisseur_circuit_open", 1 if llm._CB_MISTRAL["open_until"] > now else 0,
+                 {"fournisseur": "mistral"}),
+            "# HELP adjugo_llm_fournisseur_configure Fournisseur utilisable (1) ou non (0) : clé présente ; pour Mistral, activé aussi.",
+            "# TYPE adjugo_llm_fournisseur_configure gauge",
+            _fmt("adjugo_llm_fournisseur_configure", 1 if llm._anthropic_disponible() else 0,
+                 {"fournisseur": "anthropic"}),
+            _fmt("adjugo_llm_fournisseur_configure", 1 if llm._use_mistral() else 0, {"fournisseur": "mistral"}),
+        ]
+        out += llm_qualite.prometheus_lignes(_fmt)
     except Exception:
         pass
 
@@ -92,6 +129,33 @@ def render() -> str:
         out.append("# TYPE adjugo_jobs gauge")
         for status, n in rows:
             out.append(_fmt("adjugo_jobs", n, {"status": str(status)}))
+    except Exception:
+        pass
+
+    # ── Rédaction, décision 11 : dossiers importés qui imposent leur fichier de réponse ──
+    try:
+        from app.core.database import SessionLocal
+        from app.services.atelier import mesure_fichier_impose
+        db = SessionLocal()
+        try:
+            m = mesure_fichier_impose(db)
+        finally:
+            db.close()
+        out += [
+            "# HELP adjugo_dossiers_importes Dossiers de marché importés et lus (grille construite).",
+            "# TYPE adjugo_dossiers_importes gauge",
+            _fmt("adjugo_dossiers_importes", m["dossiers_importes"]),
+            "# HELP adjugo_dossiers_fichier_impose Dossiers importés dont le règlement impose son fichier de réponse.",
+            "# TYPE adjugo_dossiers_fichier_impose gauge",
+            _fmt("adjugo_dossiers_fichier_impose", m["fichier_impose"]),
+        ]
+    except Exception:
+        pass
+
+    # ── Analyse partagée : doublons entre organisations, extractions resservies (agrégats) ──
+    try:
+        from app.services.analyse_partagee import prometheus_lignes
+        out += prometheus_lignes(_fmt)
     except Exception:
         pass
 

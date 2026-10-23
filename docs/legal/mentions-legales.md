@@ -1,8 +1,6 @@
 # Mentions légales
 
-> ⚠️ **Avertissement** — Ce document est un **modèle** rédigé à titre informatif. Il doit être **relu et validé par un juriste** avant toute publication, et complété avec les informations réelles de l'éditeur. Les champs marqués `[À COMPLÉTER : ...]` sont obligatoires et doivent être renseignés avant mise en ligne.
-
-*Dernière mise à jour : 15 juin 2026*
+*Dernière mise à jour : 18 juin 2026*
 
 ---
 
@@ -19,10 +17,9 @@ Le service Adjugo (ci-après « le Service ») est édité par :
 - **Siège / établissement** : 9 rue Saint-Yves, 29000 Quimper, France
 - **Numéro SIREN / SIRET** : 105 406 813 / 105 406 813 00011
 - **Code APE / NAF** : 6201Z — Programmation informatique
-- **Immatriculation** : Registre National des Entreprises (RNE) `[le cas échéant, RCS de Quimper sous le n° 105 406 813 — à confirmer selon le caractère commercial de l'activité]`
-- **Numéro de TVA intracommunautaire** : FR63105406813
-- **Adresse e-mail de contact** : `[recommandé : contact@adjugo.pro — à défaut]` viegaseliot1@gmail.com
-- **Téléphone** : `[À COMPLÉTER : facultatif mais recommandé]`
+- **Immatriculation** : Registre National des Entreprises (RNE) — SIREN 105 406 813
+- **Numéro de TVA intracommunautaire** : FR63105406813 — **TVA non applicable, art. 293 B du CGI** (franchise en base : aucune TVA n'est facturée ni récupérable)
+- **Adresse e-mail de contact** : eviegas@padis-core.com
 
 ## 2. Directeur de la publication
 
@@ -30,23 +27,22 @@ Le directeur de la publication du Service est :
 
 - **Nom et prénom** : Eliot Viegas
 - **Qualité** : exploitant de l'entreprise individuelle (PADIS)
-- **Contact** : viegaseliot1@gmail.com
+- **Contact** : eviegas@padis-core.com
 
 ## 3. Hébergement
 
 Le Service est hébergé par :
 
-- **Hébergeur** : Railway Corporation
-- **Adresse** : 80 Pine Street, Floor 24, New York, NY 10005, États-Unis
-- **Site web** : https://railway.app
+- **Hébergement applicatif et base de données** : Railway Corporation, 80 Pine Street, Floor 24, New York, NY 10005, États-Unis — https://railway.app. La **base de données est opérée en région Union européenne**.
+- **Stockage des fichiers et des sauvegardes** : Cloudflare, Inc., 101 Townsend Street, San Francisco, CA 94107, États-Unis — stockage opéré en **région Europe de l'Ouest (Union européenne)**.
 
-> **Note de transparence** — L'infrastructure d'hébergement est actuellement opérée dans une région **États-Unis**. L'éditeur s'engage à migrer l'hébergement vers une région **Union européenne** et à encadrer tout transfert de données hors UE par des garanties appropriées (clauses contractuelles types). Voir la [Politique de confidentialité](./politique-confidentialite.md) pour le détail.
+> **Localisation des données** — Les données applicatives (base de données, fichiers téléversés et sauvegardes) sont **hébergées en Union européenne**. Certains traitements techniques (calcul applicatif, fournisseur d'IA) peuvent transiter hors UE ; ces transferts sont encadrés par des garanties appropriées (clauses contractuelles types). Voir la [Politique de confidentialité](./politique-confidentialite.md) pour le détail.
 
 Le nom de domaine et l'API du Service sont accessibles à l'adresse : https://adjugo.pro
 
 ## 4. Propriété intellectuelle
 
-L'ensemble des éléments composant le Service Adjugo — notamment la marque « Adjugo », les logos, l'architecture logicielle, le code source, les interfaces, les barèmes de scoring déterministe, les textes, graphismes, et la documentation — est protégé par le droit de la propriété intellectuelle et demeure la propriété exclusive de l'éditeur, sauf mention contraire.
+L'ensemble des éléments composant le Service Adjugo — notamment la marque « Adjugo », les logos, l'architecture logicielle, le code source, les interfaces, les barèmes de scoring déterministe, les textes, graphismes, et la documentation — est protégé par le droit de la propriété intellectuelle et demeure la propriété exclusive de l'éditeur, sauf mention contraire. La dénomination « Adjugo » est utilisée à titre de nom commercial et de marque d'usage.
 
 Toute reproduction, représentation, modification, publication, adaptation ou exploitation, totale ou partielle, de ces éléments, par quelque procédé que ce soit et sur quelque support que ce soit, est interdite sans l'autorisation écrite préalable de l'éditeur, et constituerait une contrefaçon sanctionnée par les articles L.335-2 et suivants du Code de la propriété intellectuelle.
 
@@ -58,7 +54,7 @@ Les contenus et documents que l'utilisateur téléverse dans le Service (DCE, do
 
 ## 5. Marques
 
-« Adjugo » `[À COMPLÉTER : préciser si la marque est déposée — n° INPI le cas échéant]`. Les autres marques, dénominations et logos cités sur le Service (Anthropic / Claude, Railway, Stripe, etc.) appartiennent à leurs titulaires respectifs et sont cités à titre de référence.
+« Adjugo » est exploité à titre de **nom commercial et de marque d'usage** (marque non déposée à l'INPI à ce jour). Les autres marques, dénominations et logos cités sur le Service (Anthropic / Claude, Railway, Cloudflare, Stripe, Brevo, Sentry, etc.) appartiennent à leurs titulaires respectifs et sont cités à titre de référence.
 
 ## 6. Responsabilité
 
@@ -80,5 +76,5 @@ Les présentes mentions légales sont régies par le **droit français**. En cas
 
 Pour toute question relative au Service ou aux présentes mentions légales :
 
-- **E-mail** : viegaseliot1@gmail.com
+- **E-mail** : eviegas@padis-core.com
 - **Adresse postale** : 9 rue Saint-Yves, 29000 Quimper, France

@@ -73,7 +73,7 @@ def import_cotraitant(data: ImportCotraitant,
         existing = db.query(Cotraitant).filter(
             Cotraitant.user_id.in_(member_ids(current_user, db)), Cotraitant.siret == data.siret).first()
     if existing:
-        raise HTTPException(409, "Ce co-traitant existe déjà")
+        raise HTTPException(409, "Ce partenaire existe déjà")
     ct = Cotraitant(
         user_id=current_user.id,
         name=data.name, siret=data.siret, code_ape=data.code_ape,

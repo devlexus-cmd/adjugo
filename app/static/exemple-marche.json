@@ -1,0 +1,162 @@
+{
+  "_lisez_moi": "Marché d'exemple de l'application, page /app/exemple (réorganisation de l'interface, vague 2b, chantier B2 ; contrat docs/REORGANISATION_V2B.md, section B2). ENTIÈREMENT FICTIF : client, marché et entreprises inventés, noms repris de la démonstration (contrôlés contre le registre des entreprises le 13/10/2026). Lu tel quel par le navigateur : ni base, ni IA, ni réseau, rien n'est enregistré. Les pourcentages et les points viennent du calcul d'Adjugo appliqué aux données de «\u00a0calcul\u00a0» (vérifié par tests/test_reorganisation_v2b_exemple.py).",
+  "version": 1,
+  "marche": {
+    "nom": "Réhabilitation énergétique — Gymnase de Kerhel",
+    "objet": "Réhabilitation énergétique et désamiantage du gymnase municipal",
+    "client": "Kerhel Agglomération",
+    "procedure": "Appel d'offres ouvert",
+    "montant": "1 250 000 € HT",
+    "lieu": "Kerhel (56)",
+    "delai": "9 mois",
+    "parties": [
+      { "lot": 1, "intitule": "Désamiantage et retrait d'amiante" },
+      { "lot": 2, "intitule": "Isolation thermique et rénovation énergétique" },
+      { "lot": 3, "intitule": "Gros œuvre et étanchéité" }
+    ]
+  },
+  "entreprise": {
+    "nom": "Bâtiment de l'Ouest",
+    "presentation": "Toiture, étanchéité, gros œuvre et isolation, en Loire-Atlantique (44). 14 personnes, 1 250 000 € de chiffre d'affaires au dernier exercice. Qualifications : Qualibat 3212 et RGE."
+  },
+  "partenaire": {
+    "nom": "Breizh Désamiantage",
+    "presentation": "Désamiantage dans le Morbihan (56). 18 personnes, 2 100 000 € de chiffre d'affaires au dernier exercice. Qualification désamiantage SS3 et certification amiante sous-section 3."
+  },
+  "intro": "Bâtiment de l'Ouest découvre ce marché. Voici, étape par étape, ce qu'Adjugo lui montre, jusqu'à l'écran de l'entreprise qui répond avec lui.",
+  "lire": {
+    "resume": "Le marché porte sur la réhabilitation énergétique et le désamiantage d'un gymnase, pour 1 250 000 € HT, en trois parties (lots). Les parties 2 et 3 sont dans le métier de Bâtiment de l'Ouest. La partie 1, le désamiantage, demande une qualification qu'il n'a pas, et le règlement exige un chiffre d'affaires plus élevé que le sien.",
+    "couverture": "Dossier lu en entier : 4 pièces.",
+    "pieces": [
+      "Règlement de la consultation",
+      "Cahier des clauses administratives particulières",
+      "Cahier des clauses techniques particulières",
+      "Décomposition du prix global et forfaitaire"
+    ],
+    "exigences": [
+      { "sujet": "Chiffre d'affaires", "phrase": "Le candidat justifie d'un chiffre d'affaires annuel moyen d'au moins 3 000 000 € HT sur les trois derniers exercices.", "source": "Règlement de la consultation, article 2" },
+      { "sujet": "Qualification", "phrase": "Le candidat justifie d'une qualification désamiantage SS3 et d'une certification amiante sous-section 3, en cours de validité.", "source": "Règlement de la consultation, article 2" },
+      { "sujet": "À plusieurs", "phrase": "En cas de groupement, les capacités des membres sont appréciées globalement.", "source": "Règlement de la consultation, article 2" }
+    ],
+    "notation": {
+      "criteres": [
+        { "critere": "Prix", "poids": "50 %" },
+        { "critere": "Valeur technique", "poids": "50 %" }
+      ],
+      "source": "Règlement de la consultation, article 7"
+    }
+  },
+  "decider": {
+    "seul": 43,
+    "a_plusieurs": 100,
+    "seul_decision": "a_etudier",
+    "a_plusieurs_decision": "go_groupement",
+    "criteres": [
+      { "key": "metier", "label": "Adéquation métier", "seul": 8, "a_plusieurs": 30, "max": 30, "apporte_par": ["Breizh Désamiantage"] },
+      { "key": "zone", "label": "Zone géographique", "seul": 5, "a_plusieurs": 20, "max": 20, "apporte_par": ["Breizh Désamiantage"] },
+      { "key": "budget", "label": "Budget", "seul": 15, "a_plusieurs": 15, "max": 15, "apporte_par": [] },
+      { "key": "capacite", "label": "Capacité financière", "seul": 2, "a_plusieurs": 15, "max": 15, "apporte_par": ["Breizh Désamiantage"] },
+      { "key": "qualifs", "label": "Qualifications exigées", "seul": 3, "a_plusieurs": 10, "max": 10, "apporte_par": ["Breizh Désamiantage"] },
+      { "key": "delai", "label": "Délai de réponse", "seul": 10, "a_plusieurs": 10, "max": 10, "apporte_par": [] }
+    ],
+    "manques": [
+      { "key": "capacite", "titre": "Chiffre d'affaires minimum exigé", "gravite": "bloquant", "exige": "3 000 000 € HT par an, en moyenne sur 3 ans", "a": "1 250 000 € au dernier exercice", "phrase": "Le candidat justifie d'un chiffre d'affaires annuel moyen d'au moins 3 000 000 € HT sur les trois derniers exercices." },
+      { "key": "qualifs", "titre": "Qualification exigée non détenue", "gravite": "important", "exige": "Qualification désamiantage SS3 et certification amiante sous-section 3", "a": "Qualibat 3212, RGE", "phrase": "Le candidat justifie d'une qualification désamiantage SS3 et d'une certification amiante sous-section 3, en cours de validité." },
+      { "key": "metier", "titre": "Métier de la partie 1 (lot 1) hors de son activité", "gravite": "important", "exige": "Désamiantage et retrait d'amiante", "a": "Toiture, étanchéité, gros œuvre, isolation", "phrase": "" },
+      { "key": "zone", "titre": "Lieu d'exécution hors de sa zone", "gravite": "important", "exige": "Kerhel (56)", "a": "Ses départements suivis, sans le Morbihan (56)", "phrase": "" }
+    ],
+    "complete": {
+      "nom": "Breizh Désamiantage",
+      "reservoir": "Mes partenaires",
+      "lieu": "Morbihan (56)",
+      "preuve": "Capacités déclarées par Bâtiment de l'Ouest",
+      "apporte": ["Métier", "Zone", "Chiffre d'affaires", "Qualification SS3"],
+      "a_plusieurs": 100
+    },
+    "cumul": "Le règlement apprécie les capacités des membres ensemble : au dernier exercice, 1 250 000 € + 2 100 000 € = 3 350 000 € de chiffre d'affaires, pour 3 000 000 € exigés en moyenne sur trois exercices ; la moyenne des trois exercices de chacun reste à confirmer. La qualification SS3 et la certification amiante de Breizh Désamiantage comptent pour le groupement.",
+    "avertissement": "Calcul fondé sur des capacités de Breizh Désamiantage déclarées par Bâtiment de l'Ouest : elles sont à confirmer auprès du partenaire.",
+    "decision": "Bâtiment de l'Ouest choisit «\u00a0Préparer à plusieurs\u00a0». Adjugo montre ce que dit le dossier et ce qui manque ; c'est l'entreprise qui décide."
+  },
+  "preparer": {
+    "invitation": "Depuis la page du marché, Bâtiment de l'Ouest invite Breizh Désamiantage sur la partie 1 (lot 1). Breizh Désamiantage accepte, puis remplit sa part : son identité, ses pièces et son prix.",
+    "parts_recues": 1,
+    "parts_attendues": 1,
+    "repartition": [
+      { "membre": "Bâtiment de l'Ouest", "role": "Chef de file", "parties": "Parties 2 et 3 (lots 2 et 3)", "prix_ht": 970000 },
+      { "membre": "Breizh Désamiantage", "role": "Partenaire du groupement", "parties": "Partie 1 (lot 1)", "prix_ht": 280000 }
+    ],
+    "total_ht": 1250000,
+    "cloisonnement": [
+      "Chacun saisit son prix chez lui : Bâtiment de l'Ouest reçoit le prix de vente de Breizh Désamiantage et, s'il le dépose, son tableau de prix de vente ; jamais le détail de ses coûts ni de ses marges.",
+      "Chacun écrit sa partie du dossier de présentation ; le chef de file assemble les parties qu'on lui envoie. Ce que chaque entreprise range dans «\u00a0Mon savoir-faire\u00a0» reste chez elle.",
+      "La convention de groupement est la même pour les deux membres : chacun la relit et donne son accord depuis son espace."
+    ],
+    "accords": 2,
+    "membres": 2
+  },
+  "deposer": {
+    "controles": [
+      { "ok": true, "libelle": "Parts de tous les partenaires soumises, avec leur prix de vente", "manque": "" },
+      { "ok": false, "libelle": "Attestations de tous les membres valides à la date limite", "manque": "L'attestation URSSAF de Bâtiment de l'Ouest expire avant la date limite." },
+      { "ok": true, "libelle": "Convention validée par tous les membres", "manque": "" },
+      { "ok": true, "libelle": "Formulaires officiels (DC1, DC2 et acte d'engagement) préparés après la convention", "manque": "" }
+    ],
+    "suite": "Adjugo nomme ce qui manque, sans rien bloquer. Ici, Bâtiment de l'Ouest renouvelle son attestation, puis dépose le dossier sur la plateforme du client, avant la date limite."
+  },
+  "ecran_partenaire": {
+    "titre": "Votre part dans «\u00a0Réhabilitation énergétique — Gymnase de Kerhel\u00a0»",
+    "chef_de_file": "Bâtiment de l'Ouest",
+    "role": "Partenaire du groupement",
+    "partie": "Partie 1 (lot 1) — Désamiantage et retrait d'amiante",
+    "a_plusieurs": 100,
+    "apporte": ["Métier", "Zone", "Chiffre d'affaires", "Qualification SS3"],
+    "prix_ht": 280000,
+    "total_ht": 1250000,
+    "deux_membres": "À 2 membres, le total de l'offre révèle à chacun la part de l'autre.",
+    "voit": [
+      "Sa part : sa partie, ses pièces, son prix et le détail de ses postes",
+      "Le pourcentage à plusieurs et ce qu'il apporte au groupement",
+      "La convention, la même pour les deux membres, avec la part et le prix de vente de chacun et le total",
+      "Si les pièces de chaque membre sont à jour, sans leur contenu"
+    ],
+    "ne_voit_pas": [
+      "Le pourcentage de Bâtiment de l'Ouest seul",
+      "Le détail des prix de Bâtiment de l'Ouest",
+      "Les pièces et le savoir-faire de Bâtiment de l'Ouest"
+    ]
+  },
+  "fin": "Sur vos marchés, chaque étape se fait depuis la page du marché : Lire, Décider, Préparer, Déposer.",
+  "calcul": {
+    "_lisez_moi": "Données de l'exemple passées au calcul d'Adjugo (app.services.groupement_scoring.score_groupement) par le test : il retrouve les points et les pourcentages affichés. Le délai de réponse est compté à 60 jours.",
+    "marche": {
+      "intitule_marche": "Réhabilitation énergétique et désamiantage du gymnase municipal",
+      "type_marche": "Travaux",
+      "lieu_execution": "Kerhel (56)",
+      "budget_estime": "1 250 000 EUR HT",
+      "ca_minimum_requis": "CA annuel moyen ≥ 3 000 000 EUR (3 derniers exercices)",
+      "qualifications_requises": ["Qualification désamiantage SS3", "Certification amiante sous-section 3"],
+      "criteres_attribution": [{ "critere": "Prix", "ponderation": "50%" }, { "critere": "Valeur technique", "ponderation": "50%" }],
+      "capacites_groupement": "cumul admis",
+      "allotissement": "Lot 1 : Désamiantage et retrait d'amiante ; Lot 2 : Isolation thermique et rénovation énergétique ; Lot 3 : Gros œuvre et étanchéité",
+      "jours_pour_repondre": 60
+    },
+    "entreprise": {
+      "name": "Bâtiment de l'Ouest", "ca_n1": 1250000, "effectif": 14, "postal_code": "44000",
+      "qualifications": [
+        { "name": "Qualibat 3212", "detail": "étanchéité de toiture par éléments" },
+        { "name": "RGE", "detail": "reconnu garant de l'environnement" }
+      ]
+    },
+    "criteres": {
+      "specialites": "toiture, étanchéité, gros œuvre, isolation, charpente, couverture",
+      "departements": "44, 33, 31, 69, 13, 67, 59, 35",
+      "budget_min": 50000, "budget_max": 2000000, "go_threshold": 75, "nogo_threshold": 40
+    },
+    "partenaire": {
+      "kind": "attached", "name": "Breizh Désamiantage", "ca_n1": 2100000, "effectif": 18,
+      "qualifications": ["Qualification désamiantage SS3", "certification amiante sous-section 3"],
+      "specialites": "Désamiantage SS3, dépose amiante, retrait", "departement": "56", "source": "declare",
+      "verified": false, "references": []
+    }
+  }
+}
