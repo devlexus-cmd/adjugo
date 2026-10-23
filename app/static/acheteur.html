@@ -105,7 +105,7 @@
       <button class="btn icon sm menu-btn" id="menuBtn" aria-label="Menu"><i data-lucide="menu" class="lucide"></i></button>
       <div class="top-title"><h1 id="tbTitle">Tableau de bord</h1><div class="sub" id="tbSub"></div></div>
       <div class="spacer"></div>
-      <button class="btn primary sm" id="tbAction" onclick="window.__newDce()"><i data-lucide="plus" class="lucide"></i> Nouveau DCE</button>
+      <button class="btn primary sm" id="tbAction" data-act="newdce"><i data-lucide="plus" class="lucide"></i> Nouveau DCE</button>
     </header>
     <div class="content" role="main">
 
@@ -120,21 +120,21 @@
         </div>
         <div class="dash-grid">
           <div class="card">
-            <div class="ch"><h3>Projets récents</h3><div class="spacer" style="flex:1"></div><button class="btn ghost sm" onclick="window.__nav('mesdce')">Tout voir</button></div>
+            <div class="ch"><h3>Projets récents</h3><div class="spacer" style="flex:1"></div><button class="btn ghost sm" data-nav="mesdce">Tout voir</button></div>
             <div class="feed-list" id="dashRecent"><div class="empty"><div class="adj-ripple"><div class="drop"></div><div class="wave"></div><div class="wave"></div><div class="wave"></div></div></div></div>
           </div>
           <div class="dash-rail">
-            <button class="act-hero" onclick="window.__newDce()">
+            <button class="act-hero" data-act="newdce">
               <span class="ah-ic"><i data-lucide="file-plus-2" class="lucide"></i></span>
               <span class="ah-tx"><span class="ah-t">Créer un DCE</span><span class="ah-d">Décrivez le besoin, l'IA rédige le projet</span></span>
               <i data-lucide="arrow-right" class="lucide"></i>
             </button>
             <div class="act-links">
-              <button class="act-link" onclick="window.__nav('sourcing')"><i data-lucide="search" class="lucide"></i><span>Sourcer des PME</span><i data-lucide="chevron-right" class="lucide cr"></i></button>
-              <button class="act-link" onclick="window.__nav('mesdce')"><i data-lucide="folder" class="lucide"></i><span>Mes DCE enregistrés</span><i data-lucide="chevron-right" class="lucide cr"></i></button>
-              <button class="act-link" onclick="window.__nav('compte')"><i data-lucide="user" class="lucide"></i><span>Mon espace</span><i data-lucide="chevron-right" class="lucide cr"></i></button>
+              <button class="act-link" data-nav="sourcing"><i data-lucide="search" class="lucide"></i><span>Sourcer des PME</span><i data-lucide="chevron-right" class="lucide cr"></i></button>
+              <button class="act-link" data-nav="mesdce"><i data-lucide="folder" class="lucide"></i><span>Mes DCE enregistrés</span><i data-lucide="chevron-right" class="lucide cr"></i></button>
+              <button class="act-link" data-nav="compte"><i data-lucide="user" class="lucide"></i><span>Mon espace</span><i data-lucide="chevron-right" class="lucide cr"></i></button>
             </div>
-            <div class="alert-callout" role="button" tabindex="0" onclick="window.__nav('creer')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();window.__nav('creer')}"><i data-lucide="leaf" class="lucide"></i><div><b>Conformité 2026</b><div class="small">Seuils de procédure et clauses environnementales à jour, vérifiés avant publication.</div></div></div>
+            <div class="alert-callout" role="button" tabindex="0" data-nav="creer" data-keynav="1"><i data-lucide="leaf" class="lucide"></i><div><b>Conformité 2026</b><div class="small">Seuils de procédure et clauses environnementales à jour, vérifiés avant publication.</div></div></div>
           </div>
         </div>
       </section>
@@ -336,6 +336,10 @@
   }
   window.__newDce=nouveauDce;
   $$("#nav .nav-item").forEach(function(a){a.onclick=function(){navTo(a.getAttribute("data-view"));};});
+  // Navigation par DÉLÉGATION (CSP durcie : plus d'attributs onclick/onkeydown en ligne, qui
+  // exigeraient 'unsafe-inline'). Comportement identique : data-nav → navTo, data-act=newdce → nouveauDce.
+  document.addEventListener("click",function(e){var el=e.target.closest&&e.target.closest("[data-nav],[data-act]");if(!el)return;if(el.hasAttribute("data-nav"))navTo(el.getAttribute("data-nav"));else if(el.getAttribute("data-act")==="newdce")nouveauDce();});
+  document.addEventListener("keydown",function(e){if(e.key!=="Enter"&&e.key!==" ")return;var el=e.target.closest&&e.target.closest("[data-keynav]");if(!el)return;e.preventDefault();navTo(el.getAttribute("data-nav"));});
   $("#menuBtn").onclick=function(){$(".side").classList.toggle("open");$("#navBackdrop").classList.toggle("hidden");};
   $("#navBackdrop").onclick=function(){$(".side").classList.remove("open");this.classList.add("hidden");};
 
@@ -359,7 +363,7 @@
       $("#navCount").textContent=list.length;$("#statDces").textContent=list.length;
       $("#statLast").textContent=list.length?court(list[0].objet||"Projet",34):"—";
       $("#statLastD").textContent=list.length?("modifié le "+jourFr(list[0].updated_at)):"—";
-      if(!list.length){$("#dashRecent").innerHTML='<div class="empty"><div class="eic"><i data-lucide="file-plus-2" class="lucide"></i></div><h4>Votre premier DCE</h4><p>Décrivez un besoin, l\'IA rédige le projet complet.</p><button class="btn primary sm" onclick="window.__nav(\'creer\')">Créer un DCE</button></div>';icons();return;}
+      if(!list.length){$("#dashRecent").innerHTML='<div class="empty"><div class="eic"><i data-lucide="file-plus-2" class="lucide"></i></div><h4>Votre premier DCE</h4><p>Décrivez un besoin, l\'IA rédige le projet complet.</p><button class="btn primary sm" data-nav="creer">Créer un DCE</button></div>';icons();return;}
       $("#dashRecent").innerHTML=list.slice(0,6).map(function(d){
         return '<div class="ao-row" data-id="'+d.id+'" role="button" tabindex="0"><div class="score-ring" style="background:conic-gradient(var(--accent) 0 100%,var(--surface-3) 0)"><span><i data-lucide="file-text" class="lucide" style="width:16px;height:16px"></i></span></div><div class="ao-mid"><div class="ao-t">'+esc(d.objet||"Projet de DCE")+'</div><div class="ao-c">modifié le '+esc(jourFr(d.updated_at))+'</div></div><i data-lucide="chevron-right" class="ao-go lucide"></i></div>';}).join("");
       $$("#dashRecent .ao-row").forEach(function(it){var op=function(){openSavedDce(it.getAttribute("data-id"));};it.onclick=op;it.onkeydown=function(e){if(e.key==="Enter"||e.key===" "){e.preventDefault();op();}};});icons();});
@@ -373,7 +377,7 @@
     w.innerHTML='<div class="empty"><div class="adj-ripple"><div class="drop"></div><div class="wave"></div><div class="wave"></div><div class="wave"></div></div></div>';
     aFetch("/api/acheteur/dce",{headers:aHeaders()}).then(function(r){return r.ok?r.json():[];}).then(function(list){
       $("#navCount").textContent=list.length;
-      if(!list.length){w.innerHTML='<div class="card"><div class="empty"><div class="eic"><i data-lucide="folder" class="lucide"></i></div><h4>Aucune consultation</h4><p>Créez votre premier projet de DCE.</p><button class="btn primary sm" onclick="window.__nav(\'creer\')">Créer un DCE</button></div></div>';icons();return;}
+      if(!list.length){w.innerHTML='<div class="card"><div class="empty"><div class="eic"><i data-lucide="folder" class="lucide"></i></div><h4>Aucune consultation</h4><p>Créez votre premier projet de DCE.</p><button class="btn primary sm" data-nav="creer">Créer un DCE</button></div></div>';icons();return;}
       var by={preparation:0,publie:0,analyse:0,attribue:0,infructueux:0};list.forEach(function(d){by[d.statut]=(by[d.statut]||0)+1;});
       var _term={attribue:1,infructueux:1};   // consultations clôturées → en fin de liste (pas d'urgence)
       list.sort(function(a,b){var ta=_term[a.statut]?1:0,tb=_term[b.statut]?1:0;if(ta!==tb)return ta-tb;

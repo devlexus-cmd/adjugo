@@ -2,9 +2,14 @@
  "algorithme": "sha384",
  "fichiers": {
   "/static/app.js": {
-   "integrity": "sha384-bsIWAU5nytYSAaHAkMH3FQ9sl/YSl3IX2YquGBh0+hm0zbYCNyT148FjvrnoWdYg",
-   "octets": 591639,
-   "sha256": "1ae7d7c116dbfec5461a30252c96b29607163eb88efbe2f05843827fc107ba94"
+   "integrity": "sha384-Nm8h2w0nIiNdeM15Jzenu7MQyRVCYNqel84o3+qjW/+ZtQqAcwEtma7fuP5rsegS",
+   "octets": 591977,
+   "sha256": "1ab1e0a0df1b690277df1aa42b8d449c62e254fdf08b89ec931b0e6a396207b3"
+  },
+  "/static/app.render.js": {
+   "integrity": "sha384-BTAuhya1z9X7e7vHgzoEmmV7sqVY44HJcBC3a1SnHlK1dNQr6PIqvNZxNY0CYYOz",
+   "octets": 2213198,
+   "sha256": "2397c7f4fcde77a6c6bc57edf386e80a7814adf54529a40022f60ac1d7cbe529"
   },
   "/static/carnet-notes.js": {
    "integrity": "sha384-BlD0ZOe8GvU2A/UrOZPvlBWhqfWmplvFwf6Tr3MsW7XgMQW5bveM9WFMCBRKUH1Q",
@@ -40,6 +45,16 @@
    "integrity": "sha384-KYk+4lWOhWTo/BrM+zKkwLtFsD6cs2ClFbaGiX5ozDVHPqF4nOqxVGiHvcyWsw8B",
    "octets": 164475,
    "sha256": "0c78d42b3a28ea6fcfdb42307085e7a6346585aa6395d6731b33324a708c3b10"
+  },
+  "/static/vendor/vue.runtime-3.5.38.prod.js": {
+   "integrity": "sha384-kgxbiOpI24PWZCgWbnRYklBaYuzH7Piz9aeVnNHRaMIikjGaisw4omTqzM8LloOh",
+   "octets": 106166,
+   "sha256": "dffceb9d89dfab40c99569b41c8956bd26bd0c46fdd33b0d646f5e13bc8d6c03"
+  },
+  "/static/vue-precompiled.js": {
+   "integrity": "sha384-j7C1V29lVJD+zgqrjdOiaZWuSc+394zPPYZkoBdFHhCMw9W6oeYZxC2zdGCkiJ3+",
+   "octets": 1733,
+   "sha256": "f52c3ccd1ce75f95bec7b0d5994fcedad851101f9faecab2d10bf1b91af6cab5"
   }
  },
  "regeneration": "python scripts/sri_update.py",

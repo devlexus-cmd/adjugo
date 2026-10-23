@@ -243,9 +243,53 @@ _CONNECT_EXTRA = (" " + _ANALYTICS_ORIGIN) if _ANALYTICS_ORIGIN else ""
 # ses libs) : autorisés seulement hors production, là où la doc interactive existe encore.
 _DOCS_SCRIPT = "" if _IS_PROD else " https://cdn.jsdelivr.net"
 _DOCS_IMG = "" if _IS_PROD else " https://cdn.jsdelivr.net https://fastapi.tiangolo.com"
+
+
+def _inline_script_hashes() -> str:
+    """Empreintes sha256 (base64) des scripts EN LIGNE de toutes les pages HTML servies, pour la
+    CSP (script-src). C'est ce qui permet de RETIRER 'unsafe-inline' : seuls les scripts dont le
+    contenu correspond EXACTEMENT à l'une de ces empreintes s'exécutent. Calculé au démarrage à
+    partir des fichiers (toujours à jour : un script en ligne modifié met à jour son empreinte au
+    prochain démarrage). Les pages sont servies telles quelles — le SRI ne touche que les
+    <script src>, jamais les scripts en ligne, et aucun routeur ne génère de script en ligne — donc
+    l'empreinte du fichier correspond à ce que hache le navigateur. (Les pages légales n'ont aucun
+    script en ligne : la substitution {{AI_}} au service ne change donc aucune empreinte.)
+    'unsafe-eval' est retiré séparément : le front Vue est servi en build runtime-only avec des
+    gabarits PRÉCOMPILÉS (scripts/precompile_vue.mjs), donc plus aucune compilation (new Function)."""
+    import base64 as _b64, hashlib as _hl, re as _re2
+    static = os.path.join(os.path.dirname(__file__), "static")
+    tag = _re2.compile(r"<script\b([^>]*)>(.*?)</script>", _re2.IGNORECASE | _re2.DOTALL)
+    has_src = _re2.compile(r"\bsrc\s*=", _re2.IGNORECASE)
+    hashes = set()
+    for base in (static, os.path.join(static, "legal")):
+        try:
+            names = os.listdir(base)
+        except OSError:
+            continue
+        for fn in names:
+            if not fn.endswith(".html"):
+                continue
+            try:
+                with open(os.path.join(base, fn), encoding="utf-8") as _f:
+                    html = _f.read()
+            except OSError:
+                continue
+            for m in tag.finditer(html):
+                if has_src.search(m.group(1)):
+                    continue
+                body = m.group(2)
+                if not body.strip():
+                    continue
+                hashes.add("'sha256-" + _b64.b64encode(_hl.sha256(body.encode("utf-8")).digest()).decode("ascii") + "'")
+    return " ".join(sorted(hashes))
+
+
+_INLINE_SCRIPT_HASHES = _inline_script_hashes()
+# script-src SANS 'unsafe-inline' ni 'unsafe-eval' (note A+ Mozilla Observatory) : les scripts en
+# ligne sont autorisés par empreinte (ci-dessus), et Vue ne compile plus dans le navigateur.
 _CSP = (
     "default-src 'self'; "
-    f"script-src 'self' 'unsafe-inline' 'unsafe-eval'{_DOCS_SCRIPT}{_SCRIPT_EXTRA}; "
+    f"script-src 'self' {_INLINE_SCRIPT_HASHES}{_DOCS_SCRIPT}{_SCRIPT_EXTRA}; "
     f"style-src 'self' 'unsafe-inline' https://fonts.googleapis.com{_DOCS_SCRIPT}; "
     "font-src 'self' data: https://fonts.gstatic.com; "
     f"img-src 'self' data: blob:{_DOCS_IMG}; "

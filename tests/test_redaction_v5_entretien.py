@@ -808,39 +808,38 @@ def test_ecran_du_chef_de_file_regles_d_interface_et_branchements():
     assert ".atl-ent" in css and "@media (max-width:640px)" in css[css.index(".atl-ent {"):]
 
 
-def test_gabarit_de_l_application_compile_avec_le_vue_de_l_application():
-    """Le gabarit de app.html (bloc de l'entretien compris) se compile sans erreur avec le Vue vendu par l'application."""
-    import shutil
+def test_gabarit_de_l_application_precompile_a_jour():
+    """Les render functions PRÉCOMPILÉES (app/static/app.render.js) sont à jour vis-à-vis des
+    gabarits (le bloc #app de app.html + les `template:` des composants de app.js), à l'image du
+    SRI. Garde contre un gabarit modifié sans régénération (scripts/precompile_vue.mjs) — qui, en
+    build Vue runtime-only, casserait l'écran concerné. La régénération échoue si un gabarit ne
+    compile pas (ce test couvre donc aussi « le gabarit compile sans erreur »). Skippé si la chaîne
+    de build dev (node + @vue/compiler-dom@3.5.38 + jsdom) est absente, comme l'ancien test l'était
+    sans node."""
+    import shutil, tempfile
     node = shutil.which("node")
     if not node:
         pytest.skip("node indisponible")
-    vue = os.path.join(_STATIC, "vendor", "vue-3.5.38.prod.js")
-    prog = r"""
-const fs = require("fs"), vm = require("vm");
-const noop = () => {};
-const ENT = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " " };
-const dec = (s) => String(s).replace(/&(#x?[0-9a-f]+|\w+);/gi, (m, k) => k[0] === "#" ? String.fromCodePoint(parseInt(k.slice(k[1] === "x" ? 2 : 1), k[1] === "x" ? 16 : 10)) : (ENT[k] || m));
-const el = () => { let h = ""; return { setAttribute: noop, appendChild: noop, style: {}, classList: { add: noop }, addEventListener: noop,
-  set innerHTML(v) { h = String(v); }, get innerHTML() { return h; }, get textContent() { return dec(h); },
-  get children() { const m = /^<div foo="([\s\S]*)">$/.exec(h); return [{ getAttribute: () => dec(m ? m[1] : "") }]; } }; };
-const ctx = { console, setTimeout, clearTimeout, navigator: { userAgent: "node" },
-  document: { createElement: el, createElementNS: el, createTextNode: el, createComment: el, querySelector: () => null,
-              addEventListener: noop, documentElement: el(), head: el(), body: el() } };
-ctx.window = ctx; ctx.self = ctx; ctx.globalThis = ctx;
-vm.createContext(ctx);
-vm.runInContext(fs.readFileSync(process.argv[1], "utf8"), ctx);
-const html = fs.readFileSync(process.argv[2], "utf8");
-const open = html.indexOf(">", html.indexOf('<div id="app"')) + 1;
-const tpl = html.slice(open, html.lastIndexOf("</div>", html.indexOf("<script", open)));
-const errs = [];
-ctx.Vue.compile(tpl, { onError: e => errs.push(e.message), onWarn: noop });
-console.log(JSON.stringify({ errs, n: tpl.length }));
-"""
-    out = subprocess.run([node, "-e", prog, vue, os.path.join(_STATIC, "app.html")], capture_output=True, text=True,
-                         timeout=120)
-    assert out.returncode == 0, out.stderr[-2000:]
-    r = json.loads(out.stdout)
-    assert r["errs"] == [] and r["n"] > 100000, r["errs"][:5]
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    dep = subprocess.run([node, "-e", "require.resolve('@vue/compiler-dom');require.resolve('jsdom')"],
+                         cwd=root, capture_output=True)
+    if dep.returncode != 0:
+        pytest.skip("@vue/compiler-dom@3.5.38 / jsdom absents "
+                    "(npm install --no-save @vue/compiler-dom@3.5.38 jsdom)")
+    committed = os.path.join(_STATIC, "app.render.js")
+    assert os.path.exists(committed), "app.render.js manquant : lancez  node scripts/precompile_vue.mjs"
+    with tempfile.TemporaryDirectory() as d:
+        out = os.path.join(d, "app.render.js")
+        r = subprocess.run([node, os.path.join(root, "scripts", "precompile_vue.mjs")],
+                           cwd=root, capture_output=True, text=True, timeout=180,
+                           env={**os.environ, "ADJUGO_RENDER_OUT": out})
+        assert r.returncode == 0, r.stderr[-2000:]
+        with open(out, encoding="utf-8") as f:
+            regen = f.read()
+    with open(committed, encoding="utf-8") as f:
+        current = f.read()
+    assert regen == current, ("app.render.js périmé : lancez  node scripts/precompile_vue.mjs  "
+                              "(un gabarit a été modifié sans régénérer les render functions).")
 
 
 def test_ecran_du_partenaire_questions_posees_dans_son_espace_sous_node():

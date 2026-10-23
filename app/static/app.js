@@ -1391,6 +1391,10 @@ function atlNomFichier(cd, repli) {
 }
 
 const __adjApp = createApp({
+  // Render racine PRÉCOMPILÉ (scripts/precompile_vue.mjs → app.render.js) : le build runtime-only
+  // de Vue ne compile pas le gabarit in-DOM #app lui-même. Render identique à celui qu'aurait
+  // produit le compilateur embarqué (donc rendu inchangé), sans 'unsafe-eval'.
+  render: window.__ADJ_R && window.__ADJ_R["__root__"],
   data() {
     return {
       token: localStorage.getItem("adjugo_token") || "",
